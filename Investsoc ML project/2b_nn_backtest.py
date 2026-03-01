@@ -13,9 +13,6 @@ Architecture:
 This is a legitimate transformer — same attention mechanism as GPT/BERT, applied
 to the 26 financial features instead of tokens in a sentence.
 
-Reference: Gorishniy et al. (2021) "Revisiting Deep Learning Models for Tabular Data"
-           https://arxiv.org/abs/2106.11959
-
 Outputs (same format as 2_lgbm_backtest.py):
   - data/scores_transformer.parquet
   - data/bt_transformer.csv           (long-only top 50)
@@ -129,7 +126,9 @@ class FTTransformer(nn.Module):
             batch_first=True,
             norm_first=True,   # pre-norm (more stable training)
         )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer, num_layers=n_layers, enable_nested_tensor=False
+        )
 
         self.head = nn.Sequential(
             nn.LayerNorm(d_model),

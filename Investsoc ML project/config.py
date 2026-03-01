@@ -1,6 +1,6 @@
 """
 config.py — shared constants for the main pipeline
-(2_lgbm_backtest.py, 3_pca_rp_backtest.py, 4_benchmark_spx.py)
+(2_lgbm_backtest.py, 2b_nn_backtest.py, 3_pca_rp_backtest.py, 4_benchmark_spx.py)
 """
 from pathlib import Path
 
@@ -32,6 +32,22 @@ MIN_OBS       = 150            # minimum daily observations per ticker
 N_PCA         = 10             # PCA components to keep
 RIDGE         = 1e-3           # ridge regularization on covariance
 
+# ── FT-Transformer (2b_nn_backtest.py) ───────────────────────────────────────
+# Architecture: each of the N input features is embedded into d_model-dim vectors,
+# then processed by multi-head self-attention to learn feature interactions.
+# CPU training time: ~10-15 min total (auto-uses GPU if available).
+TRANSFORMER_PARAMS = dict(
+    d_model=64,         # embedding dimension per feature
+    n_heads=4,          # attention heads (must divide d_model)
+    n_layers=3,         # transformer encoder layers
+    dropout=0.1,        # regularisation
+    lr=1e-3,            # Adam learning rate
+    weight_decay=1e-4,  # L2 regularisation
+    epochs=150,         # max training epochs
+    patience=20,        # early stopping patience
+    batch_size=512,     # mini-batch size
+)
+
 # ── LightGBM ─────────────────────────────────────────────────────────────────
 LGBM_PARAMS = dict(
     n_estimators=3000,
@@ -45,4 +61,5 @@ LGBM_PARAMS = dict(
     reg_lambda=2.0,
     random_state=42,
     n_jobs=-1,
+    verbosity=-1,          # suppress -inf/-nan split-gain warnings
 )

@@ -14,6 +14,8 @@ Usage:
   python 5_pitch_validator.py              # will prompt for ticker
   python 5_pitch_validator.py AAPL MSFT NVDA   # compare multiple tickers
 
+Note: type tickers without exchange suffix (AAPL not AAPL.O — handled automatically).
+
 Requires:
   - data/scores_lgbm.parquet  (from 2_lgbm_backtest.py)
   - data/panel_monthly_enriched.parquet  (from 1_feature_engineering.py)
@@ -33,6 +35,7 @@ PANEL_IN  = DATA_DIR / "panel_monthly_enriched.parquet"
 FEATURE_LABELS = {
     # Base momentum
     "ret_1m":          "1-month return (short-term)",
+    "rev_1m":          "1-month reversal (short-term mean-reversion signal)",
     "ret_3m":          "3-month momentum",
     "ret_6m":          "6-month momentum",
     "ret_12m":         "12-month momentum",
@@ -78,7 +81,26 @@ def load_data():
     scores["n_stocks"] = scores.groupby("date")["score"].transform("count").astype(int)
     scores["pct_rank"] = (scores["rank"] / scores["n_stocks"] * 100).round(1)
 
-    return scores, panel
+    # Build clean→raw ticker map: "AAPL" → "AAPL.O", "JPM" → "JPM.N"
+    # yfinance appends exchange suffixes (.O = NASDAQ, .N = NYSE, etc.)
+    all_tickers = scores["ticker"].unique()
+    ticker_map = {t.split(".")[0]: t for t in all_tickers}
+
+    return scores, panel, ticker_map
+
+
+def resolve_ticker(ticker: str, ticker_map: dict) -> tuple:
+    """
+    Resolve a user-supplied ticker to its raw form (with exchange suffix).
+    Returns (raw_ticker, display_name).
+    Example: "AAPL" → ("AAPL.O", "AAPL")
+    """
+    ticker = ticker.upper()
+    if ticker in ticker_map:
+        return ticker_map[ticker], ticker          # clean input → raw internal
+    # User may have typed suffix themselves (e.g. "AAPL.O") — accept as-is
+    display = ticker.split(".")[0]
+    return ticker, display
 
 
 def get_feature_cols(panel: pd.DataFrame) -> list:
@@ -86,11 +108,12 @@ def get_feature_cols(panel: pd.DataFrame) -> list:
     return [c for c in panel.columns if c not in exclude]
 
 
-def validate_ticker(ticker: str, scores: pd.DataFrame) -> bool:
-    if ticker not in scores["ticker"].values:
-        print(f"  ✗  '{ticker}' not found in model scores. Check the ticker symbol.")
-        available = sorted(scores["ticker"].unique())
-        close = [t for t in available if ticker[:2].upper() in t][:5]
+def validate_ticker(raw: str, display: str, scores: pd.DataFrame) -> bool:
+    if raw not in scores["ticker"].values:
+        print(f"  ✗  '{display}' not found in model scores. Check the ticker symbol.")
+        # Show a few close matches from available tickers (clean names)
+        available_clean = sorted(t.split(".")[0] for t in scores["ticker"].unique())
+        close = [t for t in available_clean if display[:2] in t][:5]
         if close:
             print(f"     Similar tickers: {', '.join(close)}")
         return False
@@ -99,19 +122,18 @@ def validate_ticker(ticker: str, scores: pd.DataFrame) -> bool:
 
 def rank_badge(pct: float) -> str:
     """Return a visual badge for a percentile rank."""
-    if pct <= 5:   return "⭐ TOP 5%"
-    if pct <= 10:  return "🟢 TOP 10%"
-    if pct <= 25:  return "🟡 TOP 25%"
-    if pct <= 50:  return "🔵 TOP 50%"
-    if pct <= 75:  return "🟠 BOT 50%"
-    return             "🔴 BOT 25%"
+    if pct <= 5:   return "TOP 5%"
+    if pct <= 10:  return "TOP 10%"
+    if pct <= 25:  return "TOP 25%"
+    if pct <= 50:  return "TOP 50%"
+    if pct <= 75:  return "BOT 50%"
+    return             "BOT 25%"
 
 
 def trend_arrow(ranks: pd.Series) -> str:
     """Return an arrow based on rank trend (lower rank = better)."""
     if len(ranks) < 2:
         return "→"
-    # compare last 3 months vs first 3 months (lower rank = higher conviction)
     recent = ranks.iloc[-3:].mean() if len(ranks) >= 3 else ranks.iloc[-1]
     older  = ranks.iloc[:3].mean()  if len(ranks) >= 3 else ranks.iloc[0]
     delta = older - recent   # positive = rank improved (number got smaller)
@@ -126,19 +148,23 @@ def print_separator(char="─", width=62):
     print(char * width)
 
 
-def analyse_ticker(ticker: str, scores: pd.DataFrame, panel: pd.DataFrame, feat_cols: list):
-    ticker = ticker.upper()
-    if not validate_ticker(ticker, scores):
+def analyse_ticker(raw: str, display: str,
+                   scores: pd.DataFrame, panel: pd.DataFrame, feat_cols: list):
+    """
+    raw     : ticker as stored in parquet (e.g. "AAPL.O")
+    display : clean ticker shown to user (e.g. "AAPL")
+    """
+    if not validate_ticker(raw, display, scores):
         return
 
     # ── Score history ─────────────────────────────────────────────────────────
-    ts = scores[scores["ticker"] == ticker].sort_values("date")
+    ts = scores[scores["ticker"] == raw].sort_values("date")
     latest = ts.iloc[-1]
     latest_month = latest["date"].strftime("%Y-%m-%d")
 
     print()
     print_separator("═")
-    print(f"  PITCH VALIDATOR:  {ticker}")
+    print(f"  PITCH VALIDATOR:  {display}")
     print_separator("═")
     print(f"  Most recent month:  {latest_month}")
     print(f"  Model score:        {latest['score']:.4f}")
@@ -167,7 +193,7 @@ def analyse_ticker(ticker: str, scores: pd.DataFrame, panel: pd.DataFrame, feat_
     print()
 
     # ── Feature breakdown ─────────────────────────────────────────────────────
-    tp = panel[(panel["ticker"] == ticker)].sort_values("date")
+    tp = panel[panel["ticker"] == raw].sort_values("date")
     if tp.empty:
         print("  (No feature data available for this ticker)")
         return
@@ -177,7 +203,8 @@ def analyse_ticker(ticker: str, scores: pd.DataFrame, panel: pd.DataFrame, feat_
 
     # Feature values are cross-sectionally ranked to [-0.5, +0.5]
     # Convert to percentile: 0 = bottom, 100 = top
-    feat_vals = {c: latest_feats[c] for c in feat_cols if c in latest_feats.index and pd.notna(latest_feats[c])}
+    feat_vals = {c: latest_feats[c] for c in feat_cols
+                 if c in latest_feats.index and pd.notna(latest_feats[c])}
     feat_series = pd.Series(feat_vals)
 
     top5    = feat_series.nlargest(5)
@@ -190,9 +217,8 @@ def analyse_ticker(ticker: str, scores: pd.DataFrame, panel: pd.DataFrame, feat_
 
     print("  ── STRONGEST signals (bulls):")
     for feat, val in top5.items():
-        pct_pos = (val + 0.5) * 100   # convert [-0.5, 0.5] → [0%, 100%]
+        pct_pos = (val + 0.5) * 100
         label = FEATURE_LABELS.get(feat, feat)
-        bar = "█" * int(pct_pos / 10)
         print(f"  {feat:<26} top {pct_pos:4.0f}%  {label}")
 
     print()
@@ -206,21 +232,24 @@ def analyse_ticker(ticker: str, scores: pd.DataFrame, panel: pd.DataFrame, feat_
     print_separator("═")
 
 
-def compare_tickers(tickers: list, scores: pd.DataFrame):
-    """Side-by-side comparison table for multiple tickers."""
+def compare_tickers(resolved: list, scores: pd.DataFrame):
+    """
+    resolved : list of (raw_ticker, display_name) tuples
+    Shows a side-by-side comparison table for the most recent month.
+    """
     latest_month = scores["date"].max()
     latest = scores[scores["date"] == latest_month].copy()
 
     rows = []
-    for t in tickers:
-        t = t.upper()
-        row = latest[latest["ticker"] == t]
+    for raw, display in resolved:
+        row = latest[latest["ticker"] == raw]
         if row.empty:
-            rows.append({"Ticker": t, "Rank": "N/A", "Top %": "N/A", "Score": "N/A", "Badge": "✗ Not found"})
+            rows.append({"Ticker": display, "Rank": "N/A",
+                         "Top %": "N/A", "Score": "N/A", "Badge": "✗ Not found"})
         else:
             r = row.iloc[0]
             rows.append({
-                "Ticker": t,
+                "Ticker": display,
                 "Rank":   f"#{int(r['rank'])}/{int(r['n_stocks'])}",
                 "Top %":  f"{r['pct_rank']:.1f}%",
                 "Score":  f"{r['score']:.4f}",
@@ -242,7 +271,7 @@ def main():
 
     print("\nLoading model scores and feature panel...")
     try:
-        scores, panel = load_data()
+        scores, panel, ticker_map = load_data()
     except FileNotFoundError as e:
         print(f"\n  ERROR: {e}")
         print("  Run 2_lgbm_backtest.py first to generate scores_lgbm.parquet")
@@ -255,19 +284,22 @@ def main():
 
     # No ticker given → prompt
     if not args:
-        raw = input("\nEnter ticker(s) to analyse (e.g. AAPL  or  AAPL MSFT NVDA): ").strip()
-        args = [t.upper() for t in raw.split()]
+        raw_input = input("\nEnter ticker(s) to analyse (e.g. AAPL  or  AAPL MSFT NVDA): ").strip()
+        args = [t.upper() for t in raw_input.split()]
 
     if not args:
         print("No ticker provided. Exiting.")
         sys.exit(0)
 
-    # Multiple tickers → show comparison table first, then detailed view for each
-    if len(args) > 1:
-        compare_tickers(args, scores)
+    # Resolve all tickers (strip exchange suffix automatically)
+    resolved = [resolve_ticker(t, ticker_map) for t in args]
 
-    for ticker in args:
-        analyse_ticker(ticker, scores, panel, feat_cols)
+    # Multiple tickers → comparison table first, then detailed view for each
+    if len(resolved) > 1:
+        compare_tickers(resolved, scores)
+
+    for raw, display in resolved:
+        analyse_ticker(raw, display, scores, panel, feat_cols)
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ warnings.filterwarnings("ignore")
 # Config
 # -----------------------------
 DATA_DIR = "data"
-PANEL_PATH = os.path.join(DATA_DIR, "panel_monthly.parquet")
+PANEL_PATH = os.path.join(DATA_DIR, "panel_monthly_enriched.parquet")
 PRICES_PATH = os.path.join(DATA_DIR, "prices.parquet")
 
 OUT_SUMMARY_TXT = os.path.join(DATA_DIR, "diag_summary_lgbm_pca_rp.txt")
