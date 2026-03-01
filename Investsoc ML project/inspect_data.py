@@ -1,0 +1,26 @@
+import pandas as pd
+
+print("=" * 60)
+print("PANEL MONTHLY (ENRICHED)")
+print("=" * 60)
+panel = pd.read_parquet("data/panel_monthly_enriched.parquet")
+print(f"Shape: {panel.shape}")
+print(f"Columns: {panel.columns.tolist()}")
+print(f"Date range: {panel['date'].min()} to {panel['date'].max()}")
+print(f"Tickers: {panel['ticker'].nunique()}")
+print(f"\nSample:\n{panel.head(3)}")
+print(f"\nNull counts:\n{panel.isnull().sum()}")
+
+print("\n" + "=" * 60)
+print("PRICES")
+print("=" * 60)
+prices = pd.read_parquet("data/prices.parquet")
+print(f"Shape: {prices.shape}")
+print(f"Columns: {prices.columns.tolist()}")
+print(f"Date range: {prices['date'].min()} to {prices['date'].max()}")
+print(f"Tickers: {prices['ticker'].nunique()}")
+print(f"\nSample:\n{prices.head(3)}")
+
+print("\n" + "=" * 60)
+print("DIAGNOSTIC SCRIPT 6 - run separately if you have it")
+print("=" * 60)
