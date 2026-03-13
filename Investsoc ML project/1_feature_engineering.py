@@ -1,44 +1,68 @@
 """
-1_feature_engineering.py
-=========================
-Reads data/panel_monthly.parquet (your existing 10 features) and
-data/prices.parquet (daily OHLCV), then engineers ~25 additional
-features grounded in factor literature. Saves enriched panel to
-data/panel_monthly_enriched.parquet.
+1_feature_engineering.py  (v2 — 100+ factors)
+===============================================
+Reads daily OHLCV prices and the existing monthly panel, engineers 100+ factors
+across 10 categories, and saves the enriched panel.
 
-New feature groups:
-  A) Momentum extensions     (Jegadeesh & Titman, 1993)
-  B) Short-term reversal     (Jegadeesh, 1990)
-  C) Volatility ratios       (low-vol anomaly, Ang et al. 2006)
-  D) Volume / liquidity      (Datar et al. 1998; Amihud 2002)
-  E) Price level / 52w high  (George & Hwang 2004)
-  F) Trend / MA signals      (Han et al. 2016)
-  G) Cross-sectional rank    (rank-normalise key signals -- tree models love this)
+Data sources:
+  REQUIRED   data/prices.parquet          — daily OHLC (+ optional volume column)
+  REQUIRED   data/panel_monthly.parquet   — monthly panel with existing 9 momentum factors
+  OPTIONAL   data/fundamental.parquet     — fundamental data (Cat 9)
+  FETCHED    yfinance: ^GSPC, ^VIX, ^TNX, ^IRX, DX-Y.NYB, HYG (Cats 6, 8, 10)
 
-All features are cross-sectionally rank-normalised within each month
-to [-0.5, 0.5] to make them comparable and reduce outlier impact.
+Output:
+  data/panel_monthly_enriched.parquet   — all factors, cross-sectionally ranked
 
-Run time: ~2-5 minutes on a laptop.
+Factor categories built here:
+  Cat 1  — Multi-horizon momentum (6 new: ret_1w/2w/9m/18m/24m/36m)
+  Cat 2  — Volatility regimes (8 new)
+  Cat 3  — Tail risk (6 new)
+  Cat 4  — Price level / trend (11 new)
+  Cat 5  — Volume & liquidity (6 new, optional)
+  Cat 6  — Market beta / correlation (8 new)
+  Cat 7  — Intraday / microstructure (5 new)
+  Cat 8  — Cross-sectional relative (6 new)
+  Cat 9  — Fundamental / quality (12 optional)
+  Cat 10 — Macro / regime (9, time-series z-scored NOT cross-sectionally ranked)
+
+Run time: ~5-10 min on a laptop.
 """
 
 import numpy as np
 import pandas as pd
 from pathlib import Path
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 
-DATA_DIR = Path("data")
+from utils_factors import (
+    add_momentum_daily,
+    add_volatility_features,
+    add_tail_risk,
+    add_price_trend,
+    add_volume_liquidity,
+    add_beta_correlation,
+    add_microstructure,
+    add_cross_sectional_relative,
+    add_fundamental_factors,
+    fetch_macro_data,
+    add_macro_factors,
+)
+from config import MACRO_COLS
+import time as _time; _t0 = _time.time()
+
+DATA_DIR  = Path("data")
 PANEL_IN  = DATA_DIR / "panel_monthly.parquet"
 PRICES_IN = DATA_DIR / "prices.parquet"
+FUND_IN   = DATA_DIR / "fundamental.parquet"
 OUT_PATH  = DATA_DIR / "panel_monthly_enriched.parquet"
 
-# ── rolling window lengths (trading days) ─────────────────────────────────────
-VOL_SHORT  = 20
-VOL_MED    = 60
-VOL_LONG   = 252
-MA_SHORT   = 20
-MA_MED     = 60
-MA_LONG    = 200
-AMIHUD_WIN = 21   # ~1 month of daily observations
+# Intermediate column prefixes to exclude when sampling daily features at month-end
+_SKIP_PREFIXES = ("_", "ret_d", "spx_ret", "ret_neg", "ret_pos")
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def rank_norm(s: pd.Series) -> pd.Series:
     """Cross-sectional rank normalised to [-0.5, 0.5]. NaN stays NaN."""
@@ -47,224 +71,290 @@ def rank_norm(s: pd.Series) -> pd.Series:
 
 
 def cs_rank_all(df: pd.DataFrame, feat_cols: list, date_col: str = "date") -> pd.DataFrame:
-    """Apply rank_norm to feat_cols cross-sectionally within each date."""
+    """Apply rank_norm cross-sectionally within each date for feat_cols."""
     df = df.copy()
     for c in feat_cols:
         df[c] = df.groupby(date_col)[c].transform(rank_norm)
     return df
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 1: build daily feature table from prices
-# ─────────────────────────────────────────────────────────────────────────────
-def build_daily_features(prices: pd.DataFrame) -> pd.DataFrame:
+def ts_zscore(series: pd.Series, window: int = 36) -> pd.Series:
     """
-    Compute per-ticker daily features that we will then sample at month-end.
-    Input: prices with columns [date, ticker, open, high, low, close]
-    Output: same index, with added feature columns
+    Time-series rolling z-score (window periods lookback).
+    Used for macro columns which have zero cross-sectional variance.
     """
+    mu  = series.rolling(window, min_periods=max(6, window // 4)).mean()
+    sig = series.rolling(window, min_periods=max(6, window // 4)).std()
+    return (series - mu) / (sig + 1e-9)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SPX DATA FETCH
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def fetch_spx_daily(start_date: str, end_date: str) -> pd.DataFrame:
+    """Fetch SPX daily close and returns via yfinance."""
+    try:
+        import yfinance as yf
+        spx = yf.download("^GSPC", start=start_date, end=end_date,
+                           auto_adjust=True, progress=False)
+        spx_df = spx["Close"].reset_index()
+        spx_df.columns = ["date", "spx_close"]
+        spx_df["date"]    = pd.to_datetime(spx_df["date"])
+        spx_df["spx_ret"] = spx_df["spx_close"].pct_change()
+        return spx_df.sort_values("date").reset_index(drop=True)
+    except Exception as e:
+        print(f"  [WARN] Could not fetch SPX data: {e}")
+        return pd.DataFrame(columns=["date", "spx_close", "spx_ret"])
+
+
+def compute_spx_monthly_stats(spx_daily: pd.DataFrame,
+                               panel_dates) -> pd.DataFrame:
+    """
+    Compute SPX monthly returns and vol sampled at each month-end date.
+    Returns a date-indexed DataFrame used for Cat 8 cross-sectional factors.
+    """
+    if spx_daily.empty:
+        return pd.DataFrame()
+
+    spx  = spx_daily.set_index("date")["spx_close"].sort_index()
+    spx_r = spx_daily.set_index("date")["spx_ret"].sort_index()
+
+    rows = []
+    for dt in sorted(panel_dates):
+        slice_spx = spx.loc[:dt]
+        slice_ret = spx_r.loc[:dt]
+        if len(slice_spx) < 22:
+            continue
+
+        row = {"date": dt}
+        for w, label in [(21, "1m"), (63, "3m"), (126, "6m"), (252, "12m")]:
+            if len(slice_spx) > w:
+                row[f"spx_ret_{label}"] = (
+                    slice_spx.iloc[-1] / slice_spx.iloc[-w - 1] - 1
+                )
+            else:
+                row[f"spx_ret_{label}"] = np.nan
+        row["spx_vol_63d"] = slice_ret.iloc[-63:].std() if len(slice_ret) >= 63 else np.nan
+        rows.append(row)
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).set_index("date")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DAILY FEATURE PIPELINE  (Cats 1-7)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def build_daily_features(prices: pd.DataFrame,
+                          spx_daily: pd.DataFrame) -> pd.DataFrame:
+    """Orchestrate all per-ticker daily feature computation via utils_factors."""
     prices = prices.sort_values(["ticker", "date"]).copy()
 
-    grp = prices.groupby("ticker", group_keys=False)
-
-    # --- returns ---
-    prices["ret_d"] = grp["close"].pct_change()
-
-    # dollar volume proxy (close * volume not available; use close as proxy for price level)
-    # We DO have open/high/low so we can build range-based liquidity
-    prices["hl_ratio_d"] = (prices["high"] - prices["low"]) / prices["close"].clip(lower=1e-6)
-
-    # --- volatility features ---
-    for w in [VOL_SHORT, VOL_MED, VOL_LONG]:
-        prices[f"vol_{w}d_raw"] = grp["ret_d"].transform(
-            lambda x: x.rolling(w, min_periods=max(5, w // 2)).std()
-        )
-
-    # volatility ratios (short/long) -- captures vol regime change
-    prices["vol_ratio_sm"] = prices[f"vol_{VOL_SHORT}d_raw"] / (prices[f"vol_{VOL_MED}d_raw"] + 1e-9)
-    prices["vol_ratio_ml"] = prices[f"vol_{VOL_MED}d_raw"] / (prices[f"vol_{VOL_LONG}d_raw"] + 1e-9)
-
-    # --- moving average features ---
-    for w in [MA_SHORT, MA_MED, MA_LONG]:
-        prices[f"ma_{w}d"] = grp["close"].transform(
-            lambda x: x.rolling(w, min_periods=max(5, w // 2)).mean()
-        )
-
-    # price relative to MA (trend signal)
-    prices["price_to_ma20"]  = prices["close"] / (prices["ma_20d"]  + 1e-9) - 1
-    prices["price_to_ma60"]  = prices["close"] / (prices["ma_60d"]  + 1e-9) - 1
-    prices["price_to_ma200"] = prices["close"] / (prices["ma_200d"] + 1e-9) - 1
-
-    # MA cross-over ratio
-    prices["ma_20_60_cross"]  = prices["ma_20d"]  / (prices["ma_60d"]  + 1e-9) - 1
-    prices["ma_60_200_cross"] = prices["ma_60d"]  / (prices["ma_200d"] + 1e-9) - 1
-
-    # --- 52-week high (George & Hwang 2004) ---
-    prices["high_52w"] = grp["close"].transform(
-        lambda x: x.rolling(252, min_periods=120).max()
-    )
-    prices["nearness_52w"] = prices["close"] / (prices["high_52w"] + 1e-9) - 1
-
-    # --- Amihud illiquidity (abs_ret / range as proxy; no volume col) ---
-    # Use |ret| / hl_ratio as a rough liquidity measure
-    prices["amihud_proxy"] = prices["ret_d"].abs() / (prices["hl_ratio_d"] + 1e-9)
-    prices["amihud_21d"] = grp["amihud_proxy"].transform(
-        lambda x: x.rolling(AMIHUD_WIN, min_periods=10).mean()
+    # Base daily return
+    prices["ret_d"] = prices.groupby("ticker", group_keys=False)["close"].transform(
+        lambda x: x.pct_change()
     )
 
-    # --- downside deviation (Sortino proxy) ---
-    prices["ret_neg"] = prices["ret_d"].clip(upper=0)
-    prices["downvol_60d"] = grp["ret_neg"].transform(
-        lambda x: x.rolling(VOL_MED, min_periods=20).std()
-    )
-    # upside / downside vol ratio
-    prices["ret_pos"] = prices["ret_d"].clip(lower=0)
-    prices["upvol_60d"] = grp["ret_pos"].transform(
-        lambda x: x.rolling(VOL_MED, min_periods=20).std()
-    )
-    prices["up_down_vol"] = prices["upvol_60d"] / (prices["downvol_60d"] + 1e-9)
+    # Merge SPX daily returns for beta/correlation (Cats 2 & 6)
+    if not spx_daily.empty:
+        prices = prices.merge(spx_daily[["date", "spx_ret"]], on="date", how="left")
 
-    # --- realised skewness (60d) ---
-    prices["skew_60d"] = grp["ret_d"].transform(
-        lambda x: x.rolling(VOL_MED, min_periods=20).skew()
-    )
+    print("  Cat 1: multi-horizon momentum...")
+    prices = add_momentum_daily(prices)
 
-    # --- realised max drawdown (60d) ---
-    def rolling_maxdd(x: pd.Series, w: int = 60) -> pd.Series:
-        nav = (1 + x.fillna(0)).cumprod()
-        roll_max = nav.rolling(w, min_periods=10).max()
-        dd = nav / roll_max - 1
-        return dd.rolling(w, min_periods=10).min()
+    print("  Cat 2: volatility regimes...")
+    prices = add_volatility_features(prices)
 
-    prices["maxdd_60d"] = grp["ret_d"].transform(rolling_maxdd)
+    print("  Cat 3: tail risk...")
+    prices = add_tail_risk(prices)
+
+    print("  Cat 4: price level / trend...")
+    prices = add_price_trend(prices)
+
+    print("  Cat 5: volume & liquidity...")
+    prices = add_volume_liquidity(prices)
+
+    print("  Cat 6: market beta / correlation...")
+    prices = add_beta_correlation(prices)
+
+    print("  Cat 7: intraday / microstructure...")
+    prices = add_microstructure(prices)
 
     return prices
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 2: sample daily features at each month-end date in panel
-# ─────────────────────────────────────────────────────────────────────────────
-def sample_at_month_end(daily: pd.DataFrame, panel_dates: pd.DataFrame) -> pd.DataFrame:
-    """
-    For each (date, ticker) in panel_dates, find the last available daily
-    row on or before that date and extract the feature columns.
-    """
-    # columns we want to bring in
-    new_feat_cols = [
-        "vol_ratio_sm", "vol_ratio_ml",
-        "price_to_ma20", "price_to_ma60", "price_to_ma200",
-        "ma_20_60_cross", "ma_60_200_cross",
-        "nearness_52w",
-        "amihud_21d",
-        "up_down_vol",
-        "skew_60d",
-        "maxdd_60d",
-    ]
-    keep_cols = ["date", "ticker"] + new_feat_cols
+# ═══════════════════════════════════════════════════════════════════════════════
+# SAMPLE DAILY FEATURES AT MONTH-END
+# ═══════════════════════════════════════════════════════════════════════════════
 
+def sample_at_month_end(daily: pd.DataFrame,
+                         panel_dates: pd.DataFrame) -> pd.DataFrame:
+    """
+    For each (date, ticker) in panel_dates, extract daily feature values
+    at or just before that date via merge_asof.
+
+    Auto-detects feature columns: all columns except date, ticker, and
+    those starting with underscore or known intermediate prefixes.
+    """
+    exclude_cols = {"date", "ticker"}
+    new_feat_cols = [
+        c for c in daily.columns
+        if c not in exclude_cols
+        and not any(c.startswith(p) for p in _SKIP_PREFIXES)
+    ]
+
+    keep_cols = ["date", "ticker"] + new_feat_cols
     daily_sub = daily[keep_cols].dropna(subset=["date", "ticker"])
     daily_sub = daily_sub.sort_values(["ticker", "date"])
 
-    # merge_asof requires both sides sorted by the merge key (date)
-    left = panel_dates[["date", "ticker"]].copy().sort_values(["date", "ticker"]).reset_index(drop=True)
+    left  = panel_dates[["date", "ticker"]].sort_values(["date", "ticker"]).reset_index(drop=True)
     right = daily_sub.sort_values(["date", "ticker"]).reset_index(drop=True)
 
     result = pd.merge_asof(
-        left,
-        right,
-        on="date",
-        by="ticker",
+        left, right,
+        on="date", by="ticker",
         direction="backward",
         tolerance=pd.Timedelta("35 days"),
     )
     return result
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 3: momentum extensions from panel (already monthly)
-# ─────────────────────────────────────────────────────────────────────────────
-def add_momentum_extensions(panel: pd.DataFrame) -> pd.DataFrame:
-    """
-    From existing ret_1m .. ret_12m, build additional momentum signals.
-    """
-    panel = panel.copy()
+# ═══════════════════════════════════════════════════════════════════════════════
+# MOMENTUM EXTENSIONS FROM MONTHLY PANEL (carried over from v1)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    # skip-1-month momentum (2-12, classic Jegadeesh & Titman)
-    # ret_12m includes last 12 months, ret_1m is most recent; difference ~ 2-12m mom
+def add_momentum_extensions(panel: pd.DataFrame) -> pd.DataFrame:
+    """Build mom_2_12, mom_accel, ir_12m, ir_3m, rev_signal from monthly ret_Xm."""
+    panel = panel.copy()
     if "ret_12m" in panel.columns and "ret_1m" in panel.columns:
         panel["mom_2_12"] = panel["ret_12m"] - panel["ret_1m"]
-
-    # momentum acceleration: recent vs older
     if "ret_3m" in panel.columns and "ret_12m" in panel.columns:
         panel["mom_accel"] = panel["ret_3m"] - (panel["ret_12m"] - panel["ret_3m"])
-
-    # vol-adjusted momentum (return / vol -- information ratio proxy)
     if "ret_12m" in panel.columns and "vol_252d" in panel.columns:
         panel["ir_12m"] = panel["ret_12m"] / (panel["vol_252d"].abs() + 1e-6)
-
     if "ret_3m" in panel.columns and "vol_60d" in panel.columns:
         panel["ir_3m"] = panel["ret_3m"] / (panel["vol_60d"].abs() + 1e-6)
-
-    # reversal signal: if large prior move, expect mean reversion
     if "ret_1m" in panel.columns:
-        panel["rev_signal"] = -panel["ret_1m"]   # short-term reversal
-
+        panel["rev_signal"] = -panel["ret_1m"]
     return panel
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
 def main():
-    print("Loading data...")
-    panel = pd.read_parquet(PANEL_IN)
-    panel["date"] = pd.to_datetime(panel["date"])
-    panel = panel.sort_values(["date", "ticker"]).reset_index(drop=True)
+    print("=" * 65)
+    print("FEATURE ENGINEERING v2 — 100+ factors")
+    print("=" * 65)
 
+    # Load base data
+    print("\nLoading data...")
+    panel  = pd.read_parquet(PANEL_IN)
     prices = pd.read_parquet(PRICES_IN)
+    panel["date"]  = pd.to_datetime(panel["date"])
     prices["date"] = pd.to_datetime(prices["date"])
+    panel  = panel.sort_values(["date", "ticker"]).reset_index(drop=True)
     prices = prices.sort_values(["ticker", "date"]).reset_index(drop=True)
+    print(f"  Panel:  {panel.shape} | {panel['date'].min().date()} → {panel['date'].max().date()}")
+    print(f"  Prices: {prices.shape} | tickers={prices['ticker'].nunique()}")
+    vol_avail = "volume" in prices.columns
+    print(f"  Volume column: {'PRESENT (Cat 5 enabled)' if vol_avail else 'absent (Cat 5 skipped)'}")
 
-    print(f"Panel: {panel.shape} | Prices: {prices.shape}")
+    # Fetch SPX daily
+    start_str = str(prices["date"].min().date())
+    end_str   = str((prices["date"].max() + pd.Timedelta("5 days")).date())
+    print(f"\nFetching SPX daily data ({start_str} → {end_str})...")
+    spx_daily = fetch_spx_daily(start_str, end_str)
+    print(f"  SPX rows: {len(spx_daily):,}")
 
-    # --- Step A: daily features ---
-    print("Building daily features (this takes ~2-3 min)...")
-    daily = build_daily_features(prices)
+    # Build daily features (Cats 1-7)
+    print("\nBuilding daily features (Cats 1-7)...")
+    daily = build_daily_features(prices, spx_daily)
+    print(f"  Daily columns after feature engineering: {daily.shape[1]}")
 
-    # --- Step B: sample at month ends ---
+    # Sample at month-end
     print("Sampling daily features at month-end dates...")
     daily_at_month = sample_at_month_end(daily, panel[["date", "ticker"]])
 
-    # --- Step C: merge into panel ---
+    # Merge into panel
     panel = panel.merge(daily_at_month, on=["date", "ticker"], how="left")
 
-    # --- Step D: add momentum extensions ---
+    # Momentum extensions (from existing monthly returns)
     print("Adding momentum extensions...")
     panel = add_momentum_extensions(panel)
 
-    # --- Step E: cross-sectional rank normalise ALL features ---
-    # (keep fwd_ret_1m raw as target, rank everything else)
-    print("Cross-sectional rank normalising features...")
-    exclude = {"date", "ticker", "fwd_ret_1m"}
-    feat_cols = [c for c in panel.columns if c not in exclude]
-    panel = cs_rank_all(panel, feat_cols, date_col="date")
+    # Cat 8: cross-sectional relative
+    spx_monthly = compute_spx_monthly_stats(spx_daily, panel["date"].unique())
+    if not spx_monthly.empty:
+        print("Adding Cat 8: cross-sectional relative factors...")
+        panel = add_cross_sectional_relative(panel, spx_monthly)
 
-    # --- Step F: drop rows where target is NaN ---
+    # Cat 9: fundamental (optional)
+    if FUND_IN.exists():
+        print(f"\nFound {FUND_IN} — adding Cat 9: fundamental factors...")
+        fundamental = pd.read_parquet(FUND_IN)
+        fundamental["date"] = pd.to_datetime(fundamental["date"])
+        panel = add_fundamental_factors(panel, fundamental)
+    else:
+        print(f"\n{FUND_IN} not found — skipping Cat 9 fundamental factors.")
+
+    # Cat 10: macro / regime
+    print("\nFetching macro data (Cat 10)...")
+    macro_daily = fetch_macro_data(start_str, end_str, spx_daily=spx_daily)
+    if not macro_daily.empty:
+        print("Adding macro factors to panel...")
+        panel = add_macro_factors(panel, macro_daily)
+        found_macro = [c for c in MACRO_COLS if c in panel.columns]
+        print(f"  Macro columns added: {found_macro}")
+    else:
+        print("  Macro data unavailable — skipping Cat 10.")
+
+    # Identify all feature columns
+    always_exclude = {"date", "ticker", "fwd_ret_1m"}
+    macro_in_panel = [c for c in MACRO_COLS if c in panel.columns]
+    feat_cols_cs   = [c for c in panel.columns
+                      if c not in always_exclude and c not in macro_in_panel]
+    all_feat_cols  = feat_cols_cs + macro_in_panel
+
+    print(f"\nTotal features: {len(all_feat_cols)}")
+    print(f"  Cross-sectionally ranked: {len(feat_cols_cs)}")
+    print(f"  Time-series z-scored (macro): {len(macro_in_panel)}")
+
+    # Drop rows with no target
     before = len(panel)
-    panel = panel.dropna(subset=["fwd_ret_1m"]).reset_index(drop=True)
-    print(f"Dropped {before - len(panel)} rows with NaN target.")
+    panel  = panel.dropna(subset=["fwd_ret_1m"]).reset_index(drop=True)
+    print(f"Dropped {before - len(panel):,} rows with NaN target.")
 
-    # --- Step G: fill remaining NaNs with 0 (neutral rank = no signal) ---
-    panel[feat_cols] = panel[feat_cols].fillna(0.0)
+    # Cross-sectional rank all non-macro features
+    print("Cross-sectional rank normalising features...")
+    panel = cs_rank_all(panel, feat_cols_cs, date_col="date")
 
-    # --- Save ---
+    # Time-series z-score macro features
+    if macro_in_panel:
+        print("Time-series z-scoring macro features...")
+        macro_ts = (panel.drop_duplicates("date")
+                        .set_index("date")[macro_in_panel]
+                        .sort_index())
+        macro_z  = macro_ts.apply(lambda s: ts_zscore(s, window=36)).reset_index()
+        panel    = panel.drop(columns=macro_in_panel).merge(macro_z, on="date", how="left")
+
+    # Fill remaining NaNs with 0 (neutral rank)
+    panel[all_feat_cols] = panel[all_feat_cols].fillna(0.0)
+
+    # Save
     panel.to_parquet(OUT_PATH, index=False)
 
-    print(f"\nDone! Saved to {OUT_PATH}")
+    print(f"\n{'=' * 65}")
+    print(f"Done! Saved → {OUT_PATH}")
     print(f"Shape: {panel.shape}")
-    print(f"Features ({len(feat_cols)}): {feat_cols}")
-    print(f"Date range: {panel['date'].min().date()} -> {panel['date'].max().date()}")
+    print(f"Date range: {panel['date'].min().date()} → {panel['date'].max().date()}")
     print(f"Tickers: {panel['ticker'].nunique()}")
+    print(f"Features ({len(all_feat_cols)}): {sorted(all_feat_cols)}")
+    print("=" * 65)
+    print(f"Done in {(_time.time() - _t0) / 60:.1f} min")
 
 
 if __name__ == "__main__":

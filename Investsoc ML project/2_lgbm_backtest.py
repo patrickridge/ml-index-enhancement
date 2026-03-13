@@ -25,9 +25,16 @@ from lightgbm import LGBMRegressor
 from config import (
     DATA_DIR, START_DATE, TRAIN_END, VALID_END,
     TOP_N, BOTTOM_N, LONG_FRAC, RETRAIN_EVERY, LGBM_PARAMS,
+    USE_ORTHOGONALIZED_FEATURES,
 )
+import time as _time; _t0 = _time.time()
 
-PANEL_IN  = DATA_DIR / "panel_monthly_enriched.parquet"
+_panel_file = (
+    "panel_monthly_orthogonalized.parquet"
+    if USE_ORTHOGONALIZED_FEATURES
+    else "panel_monthly_enriched.parquet"
+)
+PANEL_IN  = DATA_DIR / _panel_file
 OUT_SCORES = DATA_DIR / "scores_lgbm.parquet"
 OUT_BT_LO  = DATA_DIR / "bt_lgbm.csv"        # long-only top 50
 OUT_BT_LS  = DATA_DIR / "bt_lgbm_ls.csv"     # long-short
@@ -175,6 +182,7 @@ def main():
     fi = pd.Series(model.feature_importances_, index=feat_cols).sort_values(ascending=False)
     print("\nTop 15 feature importances:")
     print(fi.head(15).to_string())
+    print(f"\nDone in {(_time.time() - _t0) / 60:.1f} min")
 
 
 if __name__ == "__main__":

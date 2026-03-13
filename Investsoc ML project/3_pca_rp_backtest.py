@@ -18,7 +18,9 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from config import DATA_DIR, TOP_N, VOL_LOOKBACK, MIN_OBS, N_PCA, RIDGE
+from config import DATA_DIR, TOP_N, VOL_LOOKBACK, MIN_OBS, N_PCA, RIDGE, USE_RMT_COV_DENOISING
+from utils_rmt import rmt_denoise
+import time as _time; _t0 = _time.time()
 
 SCORES_IN    = DATA_DIR / "scores_lgbm.parquet"
 PRICES_IN    = DATA_DIR / "prices.parquet"
@@ -121,7 +123,12 @@ def main():
         if mat.shape[0] < MIN_OBS or mat.shape[1] < 5:
             continue
 
-        cov = np.cov(mat.values, rowvar=False)
+        cov_raw = np.cov(mat.values, rowvar=False)
+        if USE_RMT_COV_DENOISING:
+            T_ret, N_assets = mat.shape
+            cov, _ = rmt_denoise(cov_raw, q=N_assets / T_ret, return_as_corr=False)
+        else:
+            cov = cov_raw
 
         # ── 3. PCA-RP weights ─────────────────────────────────────────────────
         w_arr = pca_rp_weights(cov, n_pca=N_PCA, ridge=RIDGE)
@@ -186,6 +193,7 @@ def main():
     print("=" * 65)
     print(f"ann={s['ann']*100:.2f}% | vol={s['vol']*100:.2f}% | "
           f"sharpe={s['sharpe']:.2f} | maxdd={s['maxdd']*100:.2f}%")
+    print(f"\nDone in {(_time.time() - _t0) / 60:.1f} min")
 
 
 if __name__ == "__main__":

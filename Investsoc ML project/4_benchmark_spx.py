@@ -19,6 +19,7 @@ import pandas as pd
 from pathlib import Path
 
 from config import DATA_DIR
+import time as _time; _t0 = _time.time()
 
 OUT_PATH = DATA_DIR / "benchmark_comparison.csv"
 
@@ -189,6 +190,7 @@ def main():
     # ── Save ──────────────────────────────────────────────────────────────────
     df_summary.to_csv(OUT_PATH)
     print(f"\nSaved to {OUT_PATH}")
+    print(f"Done in {(_time.time() - _t0) / 60:.1f} min")
 
 
 if __name__ == "__main__":
