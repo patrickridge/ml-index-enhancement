@@ -1,22 +1,24 @@
 """
-1c_fetch_market_cap.py — Fetch historical market-cap weights for index enhancement
-====================================================================================
-Downloads quarterly shares-outstanding history for every ticker in prices.parquet
-via yfinance, multiplies by monthly close price, and saves monthly SPX-constituent
-weights to data/spx_weights.parquet.
+1c_fetch_market_cap.py — Fetch market-cap weights for index enhancement
+========================================================================
+Gets current shares outstanding for every ticker via yfinance fast_info,
+then multiplies by monthly close prices to build a time-varying market-cap
+matrix. Saves monthly SPX-constituent weights to data/spx_weights.parquet.
 
-These weights are consumed by 6_index_enhancement.py to build the index-enhancement
-portfolio (overweight high-scoring stocks, underweight low-scoring ones vs the index).
+Approach: use current shares outstanding as a constant proxy across all months.
+For S&P 500 stocks, shares change slowly (buybacks/issuances are gradual), so
+current shares × historical price is a good approximation of relative cap weights.
+Weights are what matter for portfolio construction, not absolute market cap values.
 
 Output
 ------
 data/spx_weights.parquet
-    date        : month-end timestamp  (e.g. 2023-01-31)
-    ticker      : str
-    mktcap      : float  — market cap in USD (shares × close)
-    spx_weight  : float  — fraction of total market cap that month  (sums to ≈ 1)
+    date        : month-end timestamp
+    ticker      : str  (original format, e.g. AAPL.O — matches panel/scores files)
+    mktcap      : float  — proxy market cap (current shares × close price)
+    spx_weight  : float  — fraction of total market cap that month (sums to ≈ 1)
 
-Runtime: ~10 min on a standard broadband connection (504 tickers × 1 API call each)
+Runtime: ~2–4 min  (one fast_info call per ticker)
 """
 
 import time as _time
@@ -30,38 +32,51 @@ import pandas as pd
 import yfinance as yf
 from pathlib import Path
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+# ── Paths ──────────────────────────────────────────────────────────────────────
 DATA_DIR    = Path("data")
 PRICES_IN   = DATA_DIR / "prices.parquet"
 OUT_WEIGHTS = DATA_DIR / "spx_weights.parquet"
-
-# ── Date range ─────────────────────────────────────────────────────────────────
-START_DATE = "2009-01-01"   # one year before pipeline start to ensure coverage
-END_DATE   = "2026-01-01"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def fetch_shares(ticker: str, start: str, end: str) -> pd.Series | None:
+def clean_ticker(tk: str) -> str:
     """
-    Return a monthly (ME) series of shares outstanding for one ticker.
-    yfinance get_shares_full() returns sporadic dates (quarterly filings).
-    We resample to month-end and forward-fill.
-    Returns None if unavailable.
+    Convert exchange-suffixed ticker to yfinance format.
+    Examples:  AAPL.O → AAPL,  A.N → A,  BRK.B.N → BRK-B
     """
+    # Strip trailing single-char exchange suffix (.O NASDAQ, .N NYSE, .A AMEX)
+    if len(tk) >= 2 and tk[-2] == '.' and tk[-1].upper() in ('O', 'N', 'A'):
+        tk = tk[:-2]
+    # Replace remaining dots with hyphens (BRK.B → BRK-B for Yahoo Finance)
+    return tk.replace('.', '-')
+
+
+def fetch_current_shares(ticker: str) -> float | None:
+    """
+    Fetch current shares outstanding for one ticker via yfinance.
+    Tries fast_info first (faster), falls back to info dict.
+    Returns float shares or None if unavailable.
+    """
+    yf_tk = clean_ticker(ticker)
     try:
-        t = yf.Ticker(ticker)
-        shares = t.get_shares_full(start=start, end=end)
-        if shares is None or len(shares) == 0:
-            return None
-        shares = shares.sort_index()
-        # Resample to month-end, forward-fill within the date range
-        idx = pd.date_range(start=start, end=end, freq="ME")
-        shares = shares.reindex(shares.index.union(idx)).ffill().reindex(idx)
-        shares.name = ticker
-        return shares
+        t = yf.Ticker(yf_tk)
+        # Try fast_info.shares (single quick request)
+        try:
+            shares = t.fast_info.shares
+            if shares and shares > 0:
+                return float(shares)
+        except Exception:
+            pass
+        # Fall back to info dict
+        info = t.info
+        for key in ('sharesOutstanding', 'impliedSharesOutstanding', 'floatShares'):
+            val = info.get(key)
+            if val and val > 0:
+                return float(val)
+        return None
     except Exception:
         return None
 
@@ -69,14 +84,14 @@ def fetch_shares(ticker: str, start: str, end: str) -> pd.Series | None:
 def build_monthly_close(prices: pd.DataFrame) -> pd.DataFrame:
     """
     From daily OHLC, take the last close of each calendar month per ticker.
-    Returns wide DataFrame: index=month-end dates, columns=tickers.
+    Returns wide DataFrame: index=month-end dates, columns=original tickers.
     """
     prices["date"] = pd.to_datetime(prices["date"])
     monthly = (
         prices
         .set_index("date")
         .groupby("ticker")["close"]
-        .resample("ME")
+        .resample("M")
         .last()
         .unstack("ticker")
     )
@@ -97,37 +112,46 @@ def main():
     monthly_close = build_monthly_close(prices)
     print(f"  Monthly close: {monthly_close.shape[0]} months × {monthly_close.shape[1]} tickers")
 
-    # ── Fetch shares outstanding ─────────────────────────────────────────────────
-    print(f"\nFetching shares outstanding for {len(tickers)} tickers via yfinance …")
-    print("(this takes ~10 min — one API call per ticker)\n")
+    # ── Fetch current shares outstanding ─────────────────────────────────────────
+    print(f"\nFetching current shares outstanding for {len(tickers)} tickers …")
+    print("(~2–4 min)\n")
 
-    shares_dict = {}
-    failed      = []
+    shares_map = {}   # original_ticker → float shares
+    failed     = []
+
     for i, tk in enumerate(tickers, 1):
-        s = fetch_shares(tk, START_DATE, END_DATE)
+        s = fetch_current_shares(tk)
         if s is not None:
-            shares_dict[tk] = s
+            shares_map[tk] = s
         else:
             failed.append(tk)
         if i % 50 == 0 or i == len(tickers):
-            print(f"  {i}/{len(tickers)} done  |  ok={len(shares_dict)}  failed={len(failed)}")
+            print(f"  {i}/{len(tickers)} done  |  ok={len(shares_map)}  failed={len(failed)}")
 
-    print(f"\nShares fetched: {len(shares_dict)} / {len(tickers)}")
+    print(f"\nShares fetched: {len(shares_map)} / {len(tickers)}")
     if failed:
         print(f"Failed tickers ({len(failed)}): {failed[:20]}{'…' if len(failed)>20 else ''}")
 
+    if len(shares_map) == 0:
+        print("\nERROR: No shares data fetched.")
+        print(f"  Sample yfinance ticker: {clean_ticker(tickers[0])} (from {tickers[0]})")
+        print("  Check internet connection and yfinance version.")
+        return
+
     # ── Build market cap matrix ──────────────────────────────────────────────────
+    # Market cap = current_shares × historical monthly price
+    # Weights are relative so using current (constant) shares is a good approximation.
     print("\nBuilding market cap matrix …")
-    shares_wide = pd.DataFrame(shares_dict)                # rows=months, cols=tickers
 
-    # Align index
-    common_dates   = monthly_close.index.intersection(shares_wide.index)
-    common_tickers = monthly_close.columns.intersection(shares_wide.columns)
+    # Align shares with monthly_close columns
+    shares_series = pd.Series(shares_map)                    # index = original tickers
+    common_tickers = monthly_close.columns.intersection(shares_series.index)
 
-    close_m  = monthly_close.loc[common_dates, common_tickers]
-    shares_m = shares_wide.loc[common_dates, common_tickers]
+    close_m  = monthly_close[common_tickers]
+    shares_s = shares_series[common_tickers]
 
-    mktcap_wide = close_m * shares_m      # elementwise: price × shares = market cap
+    # Broadcast: each column × its constant shares count
+    mktcap_wide = close_m.multiply(shares_s, axis="columns")
 
     # ── Convert to long format ───────────────────────────────────────────────────
     mktcap_long = (
@@ -145,19 +169,18 @@ def main():
 
     # ── Coverage diagnostics ─────────────────────────────────────────────────────
     print("\nCoverage check:")
-    n_tickers_per_month = mktcap_long.groupby("date")["ticker"].count()
-    print(f"  Avg tickers per month  : {n_tickers_per_month.mean():.0f}")
-    print(f"  Min tickers per month  : {n_tickers_per_month.min()} ({n_tickers_per_month.idxmin().date()})")
-    print(f"  Max tickers per month  : {n_tickers_per_month.max()} ({n_tickers_per_month.idxmax().date()})")
-    print(f"  Weight sum check (sample month): "
-          f"{mktcap_long[mktcap_long['date'] == mktcap_long['date'].max()]['spx_weight'].sum():.4f}")
+    n_per_month = mktcap_long.groupby("date")["ticker"].count()
+    print(f"  Tickers covered (shares fetched) : {len(shares_map)}")
+    print(f"  Avg tickers per month            : {n_per_month.mean():.0f}")
+    wsum = mktcap_long[mktcap_long["date"] == mktcap_long["date"].max()]["spx_weight"].sum()
+    print(f"  Weight sum (most recent month)   : {wsum:.4f}")
 
-    # Show top-10 constituents in most recent month
+    # Top-10 constituents in most recent month
     latest = mktcap_long[mktcap_long["date"] == mktcap_long["date"].max()]
     top10  = latest.nlargest(10, "spx_weight")[["ticker", "spx_weight"]]
     print(f"\nTop 10 by market cap ({mktcap_long['date'].max().date()}):")
     for _, row in top10.iterrows():
-        print(f"  {row['ticker']:<8}  {row['spx_weight']*100:.2f}%")
+        print(f"  {row['ticker']:<10}  {row['spx_weight']*100:.2f}%")
 
     # ── Save ─────────────────────────────────────────────────────────────────────
     mktcap_long[["date", "ticker", "mktcap", "spx_weight"]].to_parquet(
