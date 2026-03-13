@@ -8,6 +8,8 @@ Strategies benchmarked:
   - LGBM Long-Short (Top/Bottom 10%)
   - FT-Transformer Long-Only
   - FT-Transformer Long-Short
+  - CS Transformer Long-Only
+  - CS Transformer Long-Short
   - LGBM + PCA-RP (experimental — known beta issue)
 
 Outputs:
@@ -28,9 +30,11 @@ OUT_PATH = DATA_DIR / "benchmark_comparison.csv"
 STRATEGIES = [
     ("LGBM Long-Only (Top 50)",        "bt_lgbm.csv",             "port_ret",   ""),
     ("LGBM Long-Short (Top/Bot 10%)",  "bt_lgbm_ls.csv",          "ls_ret",     ""),
-    ("Transformer Long-Only",          "bt_transformer.csv",       "port_ret",   ""),
-    ("Transformer Long-Short",         "bt_transformer_ls.csv",    "ls_ret",     ""),
-    ("LGBM + PCA-RP (experimental)",   "bt_monthly_pca_rp.csv",   "port_ret_m", "⚠ beta>2, broken weights"),
+    ("Transformer Long-Only",          "bt_transformer.csv",        "port_ret",   ""),
+    ("Transformer Long-Short",         "bt_transformer_ls.csv",     "ls_ret",     ""),
+    ("CS Transformer Long-Only",       "bt_cs_transformer.csv",     "port_ret",   ""),
+    ("CS Transformer Long-Short",      "bt_cs_transformer_ls.csv",  "ls_ret",     ""),
+    ("LGBM + PCA-RP (experimental)",   "bt_monthly_pca_rp.csv",    "port_ret_m", "⚠ experimental — high vol"),
 ]
 
 
