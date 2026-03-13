@@ -32,12 +32,15 @@ Expected CPU time:  ~45–90 min (not recommended)
 """
 
 import os
+import time as _time
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pathlib import Path
+
+_t0 = _time.time()
 
 # ── Paths (override via env vars if needed) ───────────────────────────────────
 DATA_DIR = Path(os.environ.get("ML_DATA_DIR", "/kaggle/input/investsoc-ml-data"))
@@ -425,6 +428,7 @@ def main():
     print(f"  {OUT_BT_LO.name}")
     print(f"  {OUT_BT_LS.name}")
     print("Copy them into your local data/ folder and run 4_benchmark_spx.py")
+    print(f"\nDone in {(_time.time() - _t0) / 60:.1f} min")
 
 
 if __name__ == "__main__":
