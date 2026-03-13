@@ -18,7 +18,7 @@ All hyperparameters are defined as plain variables at the top — easy to tweak 
 ║       Settings (right panel) → Accelerator → GPU T4 x2               ║
 ║                                                                      ║
 ║  4. Paste this entire file into a code cell and run.                 ║
-║     Or upload this file and run: !python 2b_nn_backtest_kaggle.py   ║
+║     Or upload this file and run: !python 2b_nn_backtest_kaggle.py    ║
 ║                                                                      ║
 ║  5. When done, download from Output:                                 ║
 ║       scores_transformer.parquet                                     ║
