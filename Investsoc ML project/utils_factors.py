@@ -272,13 +272,18 @@ def add_price_trend(prices: pd.DataFrame) -> pd.DataFrame:
     """
     grp = prices.groupby("ticker", group_keys=False)
 
-    # Moving averages
-    for w in [10, 50, 100]:
+    # Moving averages (10, 20, 50, 100, 200 day)
+    for w in [10, 20, 50, 100, 200]:
         ma_col = f"_ma_{w}d"
         prices[ma_col] = grp["close"].transform(
             lambda x, w=w: x.rolling(w, min_periods=max(5, w // 2)).mean()
         )
         prices[f"price_to_ma{w}"] = prices["close"] / (prices[ma_col] + 1e-9) - 1
+
+    # MA crossover signals (ratio of short MA to long MA, normalised)
+    # >0 means short MA above long MA (bullish trend)
+    prices["ma_cross_10_50"]  = prices["_ma_10d"]  / (prices["_ma_50d"]  + 1e-9) - 1
+    prices["ma_cross_50_200"] = prices["_ma_50d"]  / (prices["_ma_200d"] + 1e-9) - 1
 
     # 52-week low nearness (distance from 52-week low — high = stock broke out of bottom)
     prices["_low_52w"] = grp["close"].transform(
@@ -288,12 +293,17 @@ def add_price_trend(prices: pd.DataFrame) -> pd.DataFrame:
 
     # Wilder RSI
     prices["rsi_14"] = grp["close"].transform(lambda x: _wilder_rsi(x, w=14))
-    prices["rsi_21"] = grp["close"].transform(lambda x: _wilder_rsi(x, w=21))
+    # rsi_21 removed — R²=0.99 vs rsi_14, near-exact duplicate (VIF > 100)
 
-    # MACD signal: (EMA12 - EMA26) / close
+    # MACD: line = (EMA12 - EMA26) / close, histogram = line - 9-day EMA of line
     ema12 = grp["close"].transform(lambda x: x.ewm(span=12, adjust=False).mean())
     ema26 = grp["close"].transform(lambda x: x.ewm(span=26, adjust=False).mean())
-    prices["macd_signal"] = (ema12 - ema26) / (prices["close"] + 1e-9)
+    macd_line = ema12 - ema26
+    prices["macd_signal"] = macd_line / (prices["close"] + 1e-9)
+    # MACD histogram: MACD line minus its 9-day signal line (momentum of momentum)
+    macd_sig_line = (prices.groupby("ticker", group_keys=False)["macd_signal"]
+                     .transform(lambda x: x.ewm(span=9, adjust=False).mean()))
+    prices["macd_hist"] = prices["macd_signal"] - macd_sig_line
 
     # Bollinger Band %B  (window=20, 2σ)
     bb_mid   = grp["close"].transform(lambda x: x.rolling(20, min_periods=10).mean())
@@ -543,34 +553,27 @@ def add_cross_sectional_relative(
         spx_ret_12m, spx_vol_63d  (market monthly returns and vol).
 
     NEW COLUMNS:
-      ret_rel_spx_1m    — excess return vs market, 1m
-      ret_rel_spx_3m    — excess return vs market, 3m
-      ret_rel_spx_6m    — excess return vs market, 6m
-      vol_rel_spx_63d   — stock vol_63d / spx_vol_63d
-      beta_adj_ret_12m  — ret_12m - beta_252d * spx_ret_12m
-      residual_ret_12m  — alias for beta_adj_ret_12m (CAPM alpha proxy)
+      residual_ret_12m  — ret_12m - beta_252d * spx_ret_12m  (CAPM alpha proxy)
+
+    REMOVED (were exact duplicates after cross-sectional rank normalisation):
+      ret_rel_spx_1m/3m/6m — identical to ret_1m/3m/6m (SPX return is constant cross-sectionally)
+      vol_rel_spx_63d       — identical to vol_21d (denominator spx_vol_63d is constant)
+      beta_adj_ret_12m      — alias of residual_ret_12m
+
+    spx_ret_* and spx_vol_63d are kept in panel for MACRO_COLS time-series z-scoring.
     """
     panel = panel.copy()
     spx_monthly = spx_monthly.copy()
     spx_monthly.index = pd.to_datetime(spx_monthly.index)
 
-    # Merge SPX monthly stats into panel on date
+    # Merge SPX monthly stats into panel on date (used as macro regime cols)
     panel = panel.merge(spx_monthly, on="date", how="left")
 
-    for horizon, col in [("1m", "ret_1m"), ("3m", "ret_3m"), ("6m", "ret_6m")]:
-        spx_col = f"spx_ret_{horizon}"
-        out_col = f"ret_rel_spx_{horizon}"
-        if col in panel.columns and spx_col in panel.columns:
-            panel[out_col] = panel[col] - panel[spx_col]
-
-    if "vol_21d" in panel.columns and "spx_vol_63d" in panel.columns:
-        panel["vol_rel_spx_63d"] = panel["vol_21d"] / (panel["spx_vol_63d"] + 1e-9)
-
+    # CAPM residual return: ret_12m - beta * spx_ret_12m
     if "ret_12m" in panel.columns and "beta_252d" in panel.columns and "spx_ret_12m" in panel.columns:
-        panel["beta_adj_ret_12m"] = (
+        panel["residual_ret_12m"] = (
             panel["ret_12m"] - panel["beta_252d"] * panel["spx_ret_12m"]
         )
-        panel["residual_ret_12m"] = panel["beta_adj_ret_12m"]
 
     return panel
 

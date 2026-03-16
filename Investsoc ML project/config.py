@@ -77,6 +77,9 @@ MACRO_COLS = [
     "vix_level", "vix_change_21d", "yield_10y", "yield_spread_10y2y",
     "yield_change_21d", "dollar_index", "credit_proxy_change",
     "market_trend_spx", "market_vol_regime",
+    # SPX-level stats — same value for all stocks per month, must be time-series z-scored
+    # (cross-sectional ranking makes these constants → useless as CS factors)
+    "spx_ret_1m", "spx_ret_3m", "spx_ret_6m", "spx_ret_12m", "spx_vol_63d",
 ]
 
 # Cross-sectional transformer (2c_cs_transformer.py)

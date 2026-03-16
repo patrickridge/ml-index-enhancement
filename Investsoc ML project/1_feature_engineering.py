@@ -198,7 +198,8 @@ def sample_at_month_end(daily: pd.DataFrame,
     Auto-detects feature columns: all columns except date, ticker, and
     those starting with underscore or known intermediate prefixes.
     """
-    exclude_cols = {"date", "ticker"}
+    # Exclude raw OHLC price levels — not cross-sectional signals, only spurious size bias
+    exclude_cols = {"date", "ticker", "open", "high", "low", "close"}
     new_feat_cols = [
         c for c in daily.columns
         if c not in exclude_cols
@@ -236,8 +237,7 @@ def add_momentum_extensions(panel: pd.DataFrame) -> pd.DataFrame:
         panel["ir_12m"] = panel["ret_12m"] / (panel["vol_252d"].abs() + 1e-6)
     if "ret_3m" in panel.columns and "vol_60d" in panel.columns:
         panel["ir_3m"] = panel["ret_3m"] / (panel["vol_60d"].abs() + 1e-6)
-    if "ret_1m" in panel.columns:
-        panel["rev_signal"] = -panel["ret_1m"]
+    # rev_signal = -ret_1m after ranking → exact duplicate of ret_1m, removed
     return panel
 
 
@@ -253,6 +253,8 @@ def main():
     # Load base data
     print("\nLoading data...")
     panel  = pd.read_parquet(PANEL_IN)
+    # Drop rev_1m from v1 base panel — it is -ret_1m after ranking (exact duplicate)
+    panel  = panel.drop(columns=[c for c in ["rev_1m"] if c in panel.columns])
     prices = pd.read_parquet(PRICES_IN)
     panel["date"]  = pd.to_datetime(panel["date"])
     prices["date"] = pd.to_datetime(prices["date"])

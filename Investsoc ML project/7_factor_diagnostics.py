@@ -285,8 +285,9 @@ def main():
         if N == 2:
             corr_orth = np.array([[1.0, corr_orth], [corr_orth, 1.0]])
 
+        N_orth   = corr_orth.shape[0]
         off_raw  = np.abs(corr_matrix[np.triu_indices(N, k=1)]).mean()
-        off_orth = np.abs(corr_orth[np.triu_indices(N, k=1)]).mean()
+        off_orth = np.abs(corr_orth[np.triu_indices(N_orth, k=1)]).mean()
         print(f"  Mean |off-diag corr|: raw={off_raw:.4f} → orth={off_orth:.4f}")
         print(f"  Reduction: {(off_raw - off_orth) / off_raw * 100:.1f}%")
 
