@@ -36,12 +36,17 @@ MACRO_COLS = [
 ]
 
 # ── Load data ──────────────────────────────────────────────────────────────────
+TRAIN_START = "2010-01-01"
+TRAIN_END   = "2020-12-31"
+
 print("Loading panel …")
 panel = pq.read_table(DATA_DIR / "panel_monthly_enriched.parquet").to_pandas()
+panel["date"] = pd.to_datetime(panel["date"])
+panel = panel[(panel["date"] >= TRAIN_START) & (panel["date"] <= TRAIN_END)].reset_index(drop=True)
 all_cols   = [c for c in panel.columns if c not in ["date","ticker","fwd_ret_1m"] + MACRO_COLS]
 feat_cols  = [c for c in all_cols if panel[c].nunique() > 1]
 n_months   = panel["date"].nunique()
-print(f"  {len(feat_cols)} features | {n_months} months | {panel['ticker'].nunique()} tickers")
+print(f"  {len(feat_cols)} features | {n_months} train months ({TRAIN_START[:4]}–{TRAIN_END[:4]}) | {panel['ticker'].nunique()} tickers")
 
 
 # ── IC decay helper ────────────────────────────────────────────────────────────
