@@ -152,3 +152,146 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 - **fundamental data** — PE ratio confirmed, others TBD
 - Once data arrives: rebuild panel → re-run factor analysis → re-train all 3 models → re-run index enhancement
 - Then: run `1b_orthogonalize.py` → retrain with orthogonalized features → compare IR
+
+---
+
+## Phase 5 — Factor Analysis Overhaul (17–18 Mar 2026)
+
+### 5.1 — Extended IC Decay + Regime Stability
+
+**Changes to `5_factor_analysis.py`:**
+- Extended `MAX_IC_DECAY_LAGS` from 6 → 24 → 60 months (Kieran requested 2–3 year window to see longer trends)
+- Added `factor_turnover()` — % stocks changing quintile month-to-month
+- Added `ras_permutation_test()` — 100 permutations, p < 0.05 = real signal
+- Added `regime_stability()` — 4 market regimes, COVID crash Mar–May 2020 excluded as black swan:
+  - QE bull: 2010–2019
+  - COVID recovery: Jun 2020–2021
+  - Rate hike bear: 2022
+  - AI bull: 2023–present
+- Added `plot_quintile_bars()` — Q1–Q5 bar chart per factor
+- All figures moved to `data/figures/`
+
+**Regime stability results (59 factors):**
+- 43/59 factors pass regime stability (sign consistent across ≥3/4 regimes)
+- COVID crash excluded — "no one can predict COVID" (Kieran)
+- Filters applied: |IC| > 0 AND sign consistent → 43 factors kept
+
+### 5.2 — Abs IC Fix (17 Mar 2026)
+
+**Bug found:** Original filter used `ic_mean > 0`, dropping all contrarian factors.
+
+**Fix:** Changed to `|ic_mean| > 0` — keeps both positive and negative IC factors.
+
+**Rationale:** Negative IC is not useless — it means the factor works in reverse (contrarian signal). `bollinger_pct` (IC = -0.037, ICIR = -0.157) is one of the strongest factors but was being dropped. The sign just tells you the direction to trade.
+
+**New filter logic:**
+1. Filter 1: `|ic_mean| > 0` — any directional signal kept
+2. Filter 2: sign consistent across regimes — not flipping + to − between regimes
+
+**Result:** 43/59 factors survive (26 positive IC + 17 contrarian)
+
+**Separate plots for meeting:**
+- `factor_ic_summary_positive.png` — top 10 positive IC
+- `factor_ic_summary_negative.png` — top 10 contrarian
+- `factor_ic_decay_positive.png` — decay curves positive
+- `factor_ic_decay_negative.png` — decay curves contrarian
+
+### 5.3 — All-factor IC Decay Grid (18 Mar 2026)
+
+Added `5b_ic_decay_all.py` — computes and plots IC decay for all 59 factors in a grid layout (blue = positive IC, red = contrarian). 60-month window.
+
+**Key visual findings:**
+- `vol_252d`, `idio_vol_252d`, `vol_126d`, `beta_252d` — smooth persistent signal for 60 months (long-term factors)
+- `nearness_52w_low` — distinctive hump, peaks ~lag 12 (medium-term)
+- `ret_12m`, `ir_12m` — positive but dips at lag 12–24 (COVID recovery effect)
+- Short-term momentum (`ret_1m`, `ret_1w`, `ret_2w`) — chaotic, bouncing around zero at all lags
+- `maxdd_126d`, `var_95_21d`, `cvar_95_21d` — smooth persistent contrarian signal
+
+**Kieran's observation:** IC half-life is not a good metric — IC doesn't decay monotonically, it oscillates and bounces back. Agreed — dropped IC half-life idea.
+
+### 5.4 — Conceptual Clarifications (18 Mar 2026)
+
+**IC decay ≠ factor filtering (Kieran's correction):**
+- **Filtering** = is this factor worth using? (IC, ICIR, regime stability, RAS)
+- **IC decay** = how long does the signal last? Informs rebalancing frequency and factor weighting, not inclusion/exclusion
+- IC decay runs only on filtered survivors, not all factors
+
+**Negative IC is not useless (confirmed):**
+- IC = correlation between factor ranking and returns
+- Negative IC = factor works in reverse direction
+- |ICIR| is the quality metric — sign just tells you direction
+- ICIR = IC_mean / IC_std measures consistency over time
+
+**Factor longevity methods beyond IC decay:**
+- Factor value autocorrelation (ACF) — how sticky is the factor itself month-to-month
+- Quintile survival analysis — how long do top-ranked stocks stay in the top quintile
+- IC decay is the industry standard; half-life approach rejected as IC oscillates rather than monotonically decaying
+
+**Non-monotonic factors (Kieran's idea):**
+- Factors without clean Q5>Q4>Q3>Q2>Q1 ordering → only use top/bottom 100 stocks
+- Signal only works at extremes for these factors, not the middle quintiles
+
+**Factor weighting by decay profile (Kieran's idea):**
+- Short-term factors (fast IC decay) → higher weight for monthly rebalancing
+- Long-term factors (persistent IC) → lower rebalancing frequency / lower weight
+- To be implemented after model training
+
+### 5.5 — Train/Test Split Fix (18 Mar 2026)
+
+**Bug found:** Factor analysis (IC, ICIR, quintile, RAS) was using full 2010–2025 data. Since model test period is 2021–2025, this was lookahead bias — using test period data to select which factors to use.
+
+**Fix:** Added `TRAIN_END = "2020-12-31"` cutoff:
+- IC, ICIR, quintile backtests, RAS, turnover → **2010–2020 only** (training data)
+- Regime stability → **full panel** (needs 2022 rate hike bear + 2023 AI bull regimes)
+- IC decay → **training data only, survivors only**
+
+**Code change in `5_factor_analysis.py`:**
+```python
+TRAIN_START = "2010-01-01"
+TRAIN_END   = "2020-12-31"   # hold out 2021–2025 as test set
+panel_train = panel[panel["date"] <= TRAIN_END]
+```
+
+### 5.6 — Model Decision (18 Mar 2026)
+
+**LightGBM dropped** — project moving forward with:
+- **FT-Transformer** (Sharpe 1.60)
+- **Cross-Sectional Transformer** (Sharpe 1.25)
+- Plan: ensemble both models (blend stock scores) for final portfolio
+
+**Rationale:** Transformer models better suited for the cross-sectional structure of the data and Kieran's firm is building toward live deployment.
+
+### 5.7 — Kieran's Factor Data (18 Mar 2026)
+
+Kieran shared `factor data.xlsx` from his quant platform (Wind/similar):
+- **33 unique factors**, 503 S&P 500 tickers
+- Factor categories: money flow (buy/sell amt, order count), valuation (PE TTM, PB, PS, PCF, EV/EBITDA, dividend yield, PE relative to history), risk (beta 20/60/120d, vol ratio, Treynor ratio, residual vol), technical (turnover 5/10/20/60d)
+- All marked **PIT (Point-In-Time)** — no lookahead bias ✓
+- **Problem:** Only December 2025 data. Need full 2010–2025 history for IC tests and model training
+
+**Priority factors to pull (2010–2025 monthly):**
+```
+pe_ttm, val_petohist20/60/120/250, val_peindu_sw, val_pbindu_sw
+ps_ttm, val_psindu_sw, pcf_ocf_ttm, pcf_ncf_ttm
+dividendyield2, val_mvtoebitda_ttm
+risk_beta20/60/120, risk_residvol252
+mfd_buyamt_d, mfd_sellamt_d, tech_turnoverrate20/60
+```
+
+### 5.8 — Live Deployment Plan (18 Mar 2026)
+
+Kieran's Shenzhen firm gave him access to a quant platform for live strategy deployment. End-to-end pipeline to automate:
+1. Pull new factor data monthly from platform
+2. Run FT-Transformer + CS-Transformer → generate stock scores
+3. Compute portfolio weights: `w_i = w_SPX_i + α × z-score(ML_score_i)`
+4. Execute rebalancing trades automatically
+
+**Future integration:** Investsoc sector analyst picks could be incorporated as an overlay (quant-fundamental hybrid), boosting ML scores for stocks analysts also like.
+
+---
+
+## Waiting On (as of 18 Mar 2026)
+
+1. **Kieran's full historical factor data** (2010–2025) — main blocker for model training
+2. **Tonight's meeting** — align on: final filter criteria, factor weighting by decay, non-monotonic factor treatment, train/test setup
+3. **After data arrives:** merge panel → re-run factor analysis (train period only) → train FT-Transformer + CS-Transformer → ensemble → backtest → automate

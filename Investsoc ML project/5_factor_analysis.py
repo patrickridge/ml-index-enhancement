@@ -62,6 +62,12 @@ MAX_IC_DECAY_LAGS = 60    # compute IC at lags 0–60 months ahead (~5 years)
 N_QUINTILES       = 5     # quintile backtest buckets
 MIN_STOCKS        = 20    # skip month if fewer stocks
 
+# ── Train / test split ─────────────────────────────────────────────────────────
+# Factor analysis (IC, ICIR, quintile, RAS) uses TRAINING data only to avoid
+# lookahead bias. Regime stability uses full panel to cover all 4 regimes.
+TRAIN_START = "2010-01-01"
+TRAIN_END   = "2020-12-31"   # hold out 2021–2025 as test set
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # IC HELPERS
@@ -381,26 +387,32 @@ def main():
     print(f"\nLoading {PANEL_IN} …")
     panel = pq.read_table(PANEL_IN).to_pandas()
     panel["date"] = pd.to_datetime(panel["date"])
-    panel = panel[panel["date"] >= "2010-01-01"].reset_index(drop=True)
+    panel = panel[panel["date"] >= TRAIN_START].reset_index(drop=True)
 
     always_exclude = {"date", "ticker", "fwd_ret_1m"}
     macro_in_panel = [c for c in MACRO_COLS if c in panel.columns]
     feat_cols = [c for c in panel.columns
                  if c not in always_exclude and c not in macro_in_panel]
 
-    n_months = panel["date"].nunique()
+    # Training panel: used for IC, ICIR, quintile, RAS (no test period leakage)
+    panel_train = panel[panel["date"] <= TRAIN_END].reset_index(drop=True)
+
+    n_months_full  = panel["date"].nunique()
+    n_months_train = panel_train["date"].nunique()
     n_tickers = panel["ticker"].nunique()
-    print(f"  {len(feat_cols)} features | {n_months} months | {n_tickers} tickers")
+    print(f"  {len(feat_cols)} features | {n_months_train} train months ({TRAIN_START[:4]}–{TRAIN_END[:4]}) "
+          f"| {n_months_full} total months | {n_tickers} tickers")
+    print(f"  Test period held out: 2021-01-01 → present ({n_months_full - n_months_train} months)")
     if macro_in_panel:
         print(f"  Macro features skipped (not cross-sectional): {macro_in_panel}")
 
-    # ── Per-factor IC ────────────────────────────────────────────────────────────
-    print(f"\nComputing monthly IC for {len(feat_cols)} features …")
+    # ── Per-factor IC (training data only) ───────────────────────────────────────
+    print(f"\nComputing monthly IC for {len(feat_cols)} features (train: {TRAIN_START[:4]}–{TRAIN_END[:4]}) …")
     ic_records = []
     ic_series_all = {}
 
     for i, fac in enumerate(feat_cols, 1):
-        ic_s = monthly_ic(panel, fac)
+        ic_s = monthly_ic(panel_train, fac)
         ic_series_all[fac] = ic_s
         stats = ic_summary(ic_s)
         stats["factor"] = fac
@@ -452,7 +464,8 @@ def main():
     # Regimes: QE bull (2010–2019), COVID recovery (Jun 2020–2021),
     #          rate hike bear (2022), AI bull (2023–present)
     # Pass: IC > 0 in ≥ 75% of regimes.
-    print(f"\nFilter 2 — Regime stability (COVID Mar–May 2020 excluded) …")
+    # Regime stability uses FULL panel (needs 2022 rate hike bear + 2023 AI bull)
+    print(f"\nFilter 2 — Regime stability (full panel, COVID Mar–May 2020 excluded) …")
     regime_records = []
     for i, fac in enumerate(summary_df["factor"].tolist(), 1):
         res = regime_stability(panel, fac)
@@ -507,7 +520,7 @@ def main():
     print(f"\nComputing IC decay (lags 0–{MAX_IC_DECAY_LAGS}) for top 10 positive + top 10 negative factors …")
     decay_records = {}
     for i, fac in enumerate(top20, 1):
-        decay_records[fac] = ic_decay_series(panel, fac)
+        decay_records[fac] = ic_decay_series(panel_train, fac)
         print(f"  {i}/{len(top20)}: {fac}")
 
     decay_df = pd.DataFrame(decay_records).T
@@ -517,12 +530,12 @@ def main():
     print(f"Saved → factor_ic_decay.csv")
 
     # ── Quintile Backtest + Turnover + RAS ───────────────────────────────────────
-    print(f"\nRunning quintile backtests, turnover & RAS tests for top 20 positive-IC factors …")
+    print(f"\nRunning quintile backtests, turnover & RAS tests (train: {TRAIN_START[:4]}–{TRAIN_END[:4]}) …")
     print(f"  (RAS uses 100 random permutations per factor — takes ~2 min)")
     quintile_records = []
     quintile_frames  = {}
     for i, fac in enumerate(top20, 1):
-        qt = quintile_backtest(panel, fac)
+        qt = quintile_backtest(panel_train, fac)
         if qt.empty:
             continue
         spread = qt["spread"].dropna()
@@ -537,9 +550,9 @@ def main():
         monotonic = all(q_vals[q] > q_vals[q-1] for q in range(1, N_QUINTILES)
                         if not np.isnan(q_vals[q]) and not np.isnan(q_vals[q-1]))
         # Turnover: % of stocks changing quintile each month (lower = cheaper to trade)
-        turnover = factor_turnover(panel, fac)
+        turnover = factor_turnover(panel_train, fac)
         # RAS permutation test: is the spread real or just noise?
-        _, ras_pval = ras_permutation_test(panel, fac, n_permutations=100)
+        _, ras_pval = ras_permutation_test(panel_train, fac, n_permutations=100)
         quintile_records.append({
             "factor":               fac,
             **q_means,
@@ -576,7 +589,8 @@ def main():
     print("FACTOR ANALYSIS COMPLETE")
     print(f"{'='*65}")
     print(f"  Features analysed:  {len(feat_cols)}")
-    print(f"  Months:             {n_months}  ({panel['date'].min().date()} → {panel['date'].max().date()})")
+    print(f"  Train months:       {n_months_train}  ({TRAIN_START} → {TRAIN_END})")
+    print(f"  Total months:       {n_months_full}  ({panel['date'].min().date()} → {panel['date'].max().date()})")
     print(f"  Significant factors (|ICIR|>0.3, |t|>2): "
           f"{len(sig_positive)+len(sig_negative)} / {len(feat_cols)}")
     print(f"\n  Files saved to data/:")
