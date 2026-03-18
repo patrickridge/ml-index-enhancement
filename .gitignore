@@ -1,0 +1,19 @@
+# Claude internals
+.claude/
+
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Large data files
+*.parquet
+*.xlsx
+*.csv
+
+# Environments
+.env
+*.egg-info/
