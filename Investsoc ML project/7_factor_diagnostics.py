@@ -139,6 +139,8 @@ def main():
     print(f"\nLoading {PANEL_IN}...")
     panel = pd.read_parquet(PANEL_IN)
     panel["date"] = pd.to_datetime(panel["date"])
+    panel = panel[(panel["date"] >= "2010-01-01") & (panel["date"] <= "2020-12-31")].reset_index(drop=True)
+    print(f"  Using training period only: 2010-01-01 → 2020-12-31 ({panel['date'].nunique()} months)")
 
     always_exclude = {"date", "ticker", "fwd_ret_1m"}
     macro_in_panel = [c for c in MACRO_COLS if c in panel.columns]
