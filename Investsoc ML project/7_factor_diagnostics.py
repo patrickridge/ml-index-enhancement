@@ -50,7 +50,7 @@ from utils_rmt import rmt_denoise, marchenko_pastur_upper
 from config import MACRO_COLS
 
 DATA_DIR = Path("data")
-FIG_DIR  = DATA_DIR / "figures"
+FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 PANEL_IN = DATA_DIR / "panel_monthly_enriched.parquet"
 ORTH_IN  = DATA_DIR / "panel_monthly_orthogonalized.parquet"

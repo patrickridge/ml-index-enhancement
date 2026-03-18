@@ -22,7 +22,7 @@ import math, time as _time
 _t0 = _time.time()
 
 DATA_DIR = Path("data")
-FIG_DIR  = DATA_DIR / "figures"
+FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_IC_DECAY_LAGS = 60

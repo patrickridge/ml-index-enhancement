@@ -54,7 +54,7 @@ except ImportError:
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 DATA_DIR = Path("data")
-FIG_DIR  = DATA_DIR / "figures"
+FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 PANEL_IN = DATA_DIR / "panel_monthly_enriched.parquet"
 
