@@ -50,6 +50,8 @@ from utils_rmt import rmt_denoise, marchenko_pastur_upper
 from config import MACRO_COLS
 
 DATA_DIR = Path("data")
+FIG_DIR  = DATA_DIR / "figures"
+FIG_DIR.mkdir(parents=True, exist_ok=True)
 PANEL_IN = DATA_DIR / "panel_monthly_enriched.parquet"
 ORTH_IN  = DATA_DIR / "panel_monthly_orthogonalized.parquet"
 
@@ -193,7 +195,7 @@ def main():
     plot_corr_heatmap(
         ic_df,
         title=f"Spearman IC Correlation Matrix  ({N} features, {T:,} obs)",
-        out_path=DATA_DIR / "diag_ic_corr_heatmap.png",
+        out_path=FIG_DIR / "diag_ic_corr_heatmap.png",
         flag_val=IC_CORR_FLAG,
     )
 
@@ -237,7 +239,7 @@ def main():
     plot_corr_heatmap(
         pd.DataFrame(corr_clean, index=feat_cols, columns=feat_cols),
         title=f"RMT-Denoised Correlation Matrix  (signal={rmt_info['n_signal']}/{N})",
-        out_path=DATA_DIR / "diag_rmt_corr_heatmap.png",
+        out_path=FIG_DIR / "diag_rmt_corr_heatmap.png",
         flag_val=IC_CORR_FLAG,
     )
 
@@ -294,7 +296,7 @@ def main():
         plot_corr_heatmap(
             pd.DataFrame(corr_orth, index=feat_orth, columns=feat_orth),
             title=f"IC Correlation Matrix (ORTHOGONALIZED, {N} features)",
-            out_path=DATA_DIR / "diag_ic_corr_orth_heatmap.png",
+            out_path=FIG_DIR / "diag_ic_corr_orth_heatmap.png",
             flag_val=IC_CORR_FLAG,
         )
     else:
