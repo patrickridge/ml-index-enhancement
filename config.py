@@ -19,9 +19,9 @@ TRAIN_END     = "2020-12-31"   # ~132 months training (extended with 20yr data)
 VALID_END     = "2022-12-31"   # ~24 months validation; test = 2023+ (~24 months)
 
 # ── Portfolio construction ────────────────────────────────────────────────────
-TOP_N         = 50             # long-only portfolio size
-BOTTOM_N      = 50             # short leg size
-LONG_FRAC     = 0.10           # top/bottom fraction for long-short
+TOP_N         = 100            # overweight top N stocks vs benchmark
+BOTTOM_N      = 100            # underweight bottom N stocks vs benchmark
+LONG_FRAC     = 0.20           # top/bottom fraction for long-short
 
 # ── Walk-forward retraining ───────────────────────────────────────────────────
 RETRAIN_EVERY = 12             # retrain every N months (expanding window)

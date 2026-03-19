@@ -57,15 +57,22 @@ def build_enhanced_portfolio(
     scores: pd.DataFrame,
     weights: pd.DataFrame,
     alpha: float,
+    top_n: int = 100,
+    bottom_n: int = 100,
 ) -> pd.DataFrame:
     """
     Given ML scores and SPX weights, construct index-enhanced portfolio.
 
+    Overweights top_n stocks and underweights bottom_n stocks vs benchmark.
+    Middle stocks held at benchmark weight.
+
     Parameters
     ----------
-    scores  : DataFrame with columns [date, ticker, score, fwd_ret_1m]
-    weights : DataFrame with columns [date, ticker, spx_weight]
-    alpha   : tilt strength scalar
+    scores   : DataFrame with columns [date, ticker, score, fwd_ret_1m]
+    weights  : DataFrame with columns [date, ticker, spx_weight]
+    alpha    : tilt strength scalar
+    top_n    : number of stocks to overweight
+    bottom_n : number of stocks to underweight
 
     Returns
     -------
@@ -77,24 +84,23 @@ def build_enhanced_portfolio(
 
     results = []
     for dt, grp in df.groupby("date"):
-        if len(grp) < 10:
+        if len(grp) < top_n + bottom_n:
             continue
 
-        # Cross-sectional z-score of ML scores
-        mu  = grp["score"].mean()
-        sig = grp["score"].std(ddof=1)
-        if sig < 1e-8:
-            continue
-        grp = grp.copy()
-        grp["score_z"] = (grp["score"] - mu) / sig
+        grp = grp.copy().sort_values("score", ascending=False).reset_index(drop=True)
+        n = len(grp)
 
-        # Active weights
-        raw_w = grp["spx_weight"] + alpha * grp["score_z"]
-        raw_w = raw_w.clip(lower=0.0)           # long-only
+        # Assign tilt: +alpha to top_n, -alpha to bottom_n, 0 to middle
+        tilt = pd.Series(0.0, index=grp.index)
+        tilt.iloc[:top_n] = alpha
+        tilt.iloc[n - bottom_n:] = -alpha
+
+        # Active weights = benchmark + tilt, clipped long-only, renormalised
+        raw_w = (grp["spx_weight"] + tilt).clip(lower=0.0)
         total = raw_w.sum()
         if total < 1e-8:
             continue
-        grp["port_weight"] = raw_w / total      # renormalise to sum = 1
+        grp["port_weight"] = raw_w / total
 
         # Returns
         port_ret  = (grp["port_weight"] * grp["fwd_ret_1m"]).sum()
@@ -127,11 +133,6 @@ def ie_stats(bt: pd.DataFrame) -> dict:
     if n < 6:
         return {}
 
-    # Portfolio stats
-    ann_port = (1 + r_port).prod() ** (12 / n) - 1
-    vol_port = r_port.std(ddof=1) * np.sqrt(12)
-    sharpe   = ann_port / vol_port if vol_port > 0 else np.nan
-
     # Benchmark stats
     ann_bench = (1 + r_bench).prod() ** (12 / n) - 1
 
@@ -140,20 +141,27 @@ def ie_stats(bt: pd.DataFrame) -> dict:
     track_err  = r_active.std(ddof=1) * np.sqrt(12)
     info_ratio = ann_alpha / track_err if track_err > 0 else np.nan
 
+    # Hit rate — % of months portfolio beats benchmark
+    hit_rate = (r_active > 0).mean()
+
+    # Max active drawdown — worst sustained underperformance vs benchmark
+    active_nav    = (1 + r_active).cumprod()
+    max_active_dd = (active_nav / active_nav.cummax() - 1).min()
+
     # Max drawdown on portfolio
     nav   = (1 + r_port).cumprod()
     maxdd = (nav / nav.cummax() - 1).min()
 
     return dict(
-        months     = n,
-        ann_port   = ann_port,
-        ann_bench  = ann_bench,
-        ann_alpha  = ann_alpha,
-        vol_port   = vol_port,
-        sharpe     = sharpe,
-        track_err  = track_err,
-        info_ratio = info_ratio,
-        maxdd      = maxdd,
+        months        = n,
+        ann_port      = (1 + r_port).prod() ** (12 / n) - 1,
+        ann_bench     = ann_bench,
+        ann_alpha     = ann_alpha,
+        track_err     = track_err,
+        info_ratio    = info_ratio,
+        hit_rate      = hit_rate,
+        max_active_dd = max_active_dd,
+        maxdd         = maxdd,
     )
 
 
@@ -165,8 +173,10 @@ def print_stats(label: str, s: dict):
     print(f"    Ann port={s['ann_port']*100:.1f}%  Ann bench={s['ann_bench']*100:.1f}%  "
           f"Ann alpha={s['ann_alpha']*100:.2f}%")
     print(f"    Tracking error={s['track_err']*100:.2f}%  "
-          f"Info ratio={s['info_ratio']:.3f}  "
-          f"Sharpe={s['sharpe']:.2f}  MaxDD={s['maxdd']*100:.1f}%")
+          f"IR={s['info_ratio']:.3f}  "
+          f"Hit rate={s['hit_rate']*100:.1f}%  "
+          f"Max active DD={s['max_active_dd']*100:.1f}%  "
+          f"MaxDD={s['maxdd']*100:.1f}%")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,36 @@
+=== LGBM score + PCA Risk Parity | Full Diagnostics ===
+Panel: data/panel_monthly.parquet
+Prices: data/prices.parquet
+
+== Split ==
+Total months: 239
+Train=144, Valid=36, Test=59
+MSE train=0.007659 | valid=0.010001 | test=0.008414
+
+== Strategy Performance (TEST) ==
+Top50 Long-only (LGBM + PCA-RP): ann= 22.52% | vol= 22.36% | sharpe= 1.01 | maxDD=-27.39%
+Top10 Long-only (LGBM + PCA-RP): ann= 27.87% | vol= 38.39% | sharpe= 0.73 | maxDD=-46.48%
+L/S Top10 - Bottom50 (EqualW): ann= 11.74% | vol= 34.00% | sharpe= 0.35 | maxDD=-50.02%
+L/S Top10 - Bottom10 (EqualW): ann=  7.33% | vol= 28.87% | sharpe= 0.25 | maxDD=-47.84%
+
+== Turnover (TEST) ==
+Top50: avg_half_turnover=0.682 | avg_name_overlap=0.446 | avg_max_w=0.076 | avg_hhi=0.042
+Top10: avg_half_turnover=0.639 | avg_name_overlap=0.500 | avg_max_w=0.210 | avg_hhi=0.157
+
+== Rank Decay (Top50; avg fwd ret of selected names) ==
+Mean t+1=0.0212 | t+2=0.0193 | t+3=0.0187
+
+== PCA Covariance Diagnostics (Top50 universe) ==
+Avg raw condition number: 1608.6
+Avg denoised condition number: 448.2
+Avg k PCs kept: 31.5
+Avg explained variance: 0.952
+Avg cov stability raw: 0.9444
+Avg cov stability denoised: 0.9451
+
+== Output files ==
+- data/diag_summary_lgbm_pca_rp.txt
+- data/diag_turnover_lgbm_pca_rp.csv
+- data/diag_rank_decay_lgbm_pca_rp.csv
+- data/diag_pca_cov_lgbm_pca_rp.csv
+- data/diag_strategy_compare_lgbm_pca_rp.csv

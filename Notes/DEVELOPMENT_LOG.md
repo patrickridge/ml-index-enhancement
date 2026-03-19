@@ -295,3 +295,66 @@ Kieran's Shenzhen firm gave him access to a quant platform for live strategy dep
 1. **Kieran's full historical factor data** (2010–2025) — main blocker for model training
 2. **Tonight's meeting** — align on: final filter criteria, factor weighting by decay, non-monotonic factor treatment, train/test setup
 3. **After data arrives:** merge panel → re-run factor analysis (train period only) → train FT-Transformer + CS-Transformer → ensemble → backtest → automate
+
+---
+
+## Phase 6 — Model Training Prep (19 Mar 2026)
+
+### 6.1 — Portfolio Construction: Top/Bottom 100
+
+**Change:** Moved from continuous z-score tilt (all 500 stocks) to discrete top/bottom 100 approach.
+
+**Old:** `w_i = w_SPX_i + α × z-score(score_i)` applied to all stocks
+**New:** Overweight top 100 stocks by ML score, underweight bottom 100, hold middle ~300 at benchmark weight
+
+**Config change:** `TOP_N = 100`, `BOTTOM_N = 100` (was 50/50)
+
+**Rationale:** Kieran's suggestion — cleaner signal, avoids applying weak/noisy scores to middle stocks.
+
+### 6.2 — Metrics Overhaul
+
+**Removed:** Sharpe ratio as primary metric
+**Added:**
+- **Information Ratio (IR)** = alpha / tracking error — primary metric for index enhancement
+- **Hit rate** — % of months portfolio beats benchmark
+- **Max active drawdown** — worst sustained underperformance vs benchmark
+- **Active return** — raw monthly alpha
+
+**Rationale:** Sharpe doesn't capture relative performance vs benchmark. Since portfolio stays close to S&P 500, IR and hit rate are more meaningful. Small alpha over index requires precise relative metrics.
+
+### 6.3 — Sign Flipping for Contrarian Factors
+
+**Plan:** Flip sign of negative IC factors (bollinger, RSI, price_to_MA etc.) before feeding into ML model so all features point in the same direction (higher = better predicted return).
+
+**Factors to flip:** All 17 contrarian factors identified in regime stability analysis.
+
+### 6.4 — Gradual Training Plan (Kieran's roommate's suggestion)
+
+Train model incrementally, one improvement at a time:
+1. **Step 1:** Baseline — IC filter + RAS, contrarian factors sign-flipped, predict `fwd_ret_1m`
+2. **Step 2:** IC decay curve fitting — find smooth representation of each factor's decay, use for factor weighting. Also adjust quintile treatment for non-monotonic factors (top/bottom 100 only)
+3. **Step 3:** Add Kieran's fundamental factors (PE, PB, money flow etc.) once data arrives
+4. **Step 4:** Factor weighting by decay profile (short-term vs long-term)
+
+### 6.5 — Project Structure Cleanup (19 Mar 2026)
+
+- Moved `DEVELOPMENT_LOG.md`, `STRATEGY.md`, `notes.md` → `Notes/`
+- Renamed `"1 price parquet.py"` → `1_price_parquet.py`, `"6 Diagonstic test.py"` → `6_diagnostic_test.py`
+- Deleted one-off scripts: `check_overfit.py`, `inspect_data.py`, `5_pitch_validator.py`, `report.ipynb`, `data.xlsx`
+- Moved `2_lgbm_backtest.py`, kaggle scripts, `3_pca_rp_backtest.py`, `6_diagnostic_test.py` → `archive/`
+- Moved all `*.png` figures → `figures/` at repo root
+- Restructured repo: moved all files from `Investsoc ML project/` subfolder to repo root
+- Added `.gitignore` (excludes `.claude/`, `*.parquet`, `*.csv`, `*.xlsx`, `__pycache__`)
+
+### 6.6 — 7_factor_diagnostics.py date fix (pending)
+
+`7_factor_diagnostics.py` uses full panel with no date cutoff. Should be filtered to 2010–2020 training period only to avoid test period leakage in correlation/RMT/VIF analysis. Low priority — diagnostics only, not used in training.
+
+---
+
+## Current Status (19 Mar 2026)
+
+- Factor analysis complete and clean (train period only)
+- Portfolio construction updated (top/bottom 100, new metrics)
+- Ready to run baseline FT-Transformer training (`2b_nn_backtest.py`)
+- Blocked on Kieran's full historical fundamental data for full model
