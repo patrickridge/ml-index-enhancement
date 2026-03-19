@@ -352,9 +352,88 @@ Train model incrementally, one improvement at a time:
 
 ---
 
+---
+
+## Phase 7 — Backtest Execution & Known Issues (19 Mar 2026)
+
+### 7.1 — FT-Transformer Kaggle Run (19 Mar 2026)
+
+Results from `2b_nn_backtest_kaggle.py` with updated TOP_N=100, LONG_FRAC=0.20:
+
+| Strategy | Sharpe | Ann Ret | Max DD |
+|----------|--------|---------|--------|
+| Long-Only Top 100 | 1.45 | 28.35% | -16.95% |
+| Long-Short top/bot 20% | 1.23 | 19.09% | -9.65% |
+
+Note: Sharpe dropped slightly vs Phase 1 (1.60 → 1.45) because TOP_N increased from 50 → 100 (more diversified = lower concentration = lower return and vol). Expected.
+
+Trained in 10.7 min on Kaggle GPU T4.
+`scores_transformer.parquet` saved to `data/`.
+
+### 7.2 — Timers Added
+
+Added `Done in X.X min` timer to all scripts missing it:
+- `2_lgbm_backtest.py`
+- `2c_cs_transformer.py`
+- `3_pca_rp_backtest.py`
+
+### 7.3 — `6_index_enhancement.py` Sharpe Bug Fixed
+
+`ie_stats()` was missing `sharpe` key but it was referenced in the print table. Fixed by adding portfolio Sharpe computation to `ie_stats()`.
+
+### 7.4 — SPX Weights Data Quality Issue (NEEDS FIXING)
+
+`1c_fetch_market_cap.py` ran successfully (500/504 tickers, 2 min) but market cap weights are distorted:
+- NVDA showing 25.38% (should be ~6-7%)
+- WMT showing 12.92% (should be ~0.7%)
+
+**Root cause:** yfinance `get_shares_full()` returns inconsistent/stale shares outstanding for some tickers — current shares applied to historical prices without adjusting for splits/buybacks creates relative weight distortion.
+
+**Impact:** `6_index_enhancement.py` will run but the benchmark return won't accurately reflect the true S&P 500. Active returns and IR figures will be directionally correct but numerically off.
+
+**Fix options (in priority order):**
+1. Use a proper data source for SPX constituent weights (Kieran's platform may have this)
+2. Cross-check with known cap weights from another free source (e.g. SPDR holdings CSV)
+3. Use equal-weight benchmark as fallback
+
+**Status:** Not blocking — pipeline works, fix before any final results presentation.
+
+### 7.5 — New Scripts Added
+
+- `5c_ic_decay_daily.py` — daily IC decay (1–90 trading days) per factor. Kieran's suggestion to confirm monthly rebalancing is optimal horizon.
+
+### 7.6 — Kieran's New Ideas (19 Mar 2026)
+
+- **Barra-style factors** — size (mktcap), value (P/B), leverage (D/E), earnings yield. Can approximate from yfinance. Kieran's platform data will likely cover these.
+- **Smart money factors** — institutional ownership changes (13F), short interest, insider buying. Harder to get without a data vendor.
+- **Daily IC decay** — built as `5c_ic_decay_daily.py`. To send to Kieran once run.
+- **Focus for now:** Complete backtesting framework first, then factor additions.
+
+---
+
+### 7.7 — Index Enhancement Results (19 Mar 2026)
+
+First full run of `6_index_enhancement.py` with all 3 model scores. Best α per model (target TE 1–5%):
+
+| Model | Ann α | Tracking Error | IR | Sharpe | Max DD |
+|-------|-------|---------------|-----|--------|--------|
+| CS-Transformer | **1.76%** | 2.27% | **0.776** | 2.46 | -9.0% |
+| FT-Transformer | 0.70% | 2.57% | 0.271 | 2.42 | -8.5% |
+| LGBM | 0.25% | 1.96% | 0.130 | 2.49 | -8.2% |
+
+All at α=0.002. Larger tilts hurt — alpha drops quickly as α increases.
+
+**Key finding:** CS-Transformer dominates in index enhancement despite being middle-ranked in standalone mode. Sees all 500 stocks simultaneously so learns relative rankings directly — exactly what IE needs. LGBM scores stocks independently so signal gets noisy across full universe.
+
+**Caveats:** SPX weights distorted (WMT 12.92%, NVDA 25.38%) so IR figures are directionally correct but numerically off. Only 35 months test data in a bull market.
+
+---
+
 ## Current Status (19 Mar 2026)
 
-- Factor analysis complete and clean (train period only)
-- Portfolio construction updated (top/bottom 100, new metrics)
-- Ready to run baseline FT-Transformer training (`2b_nn_backtest.py`)
-- Blocked on Kieran's full historical fundamental data for full model
+- All 3 model scores generated and index enhancement pipeline working end-to-end
+- **Blocked on:** Kieran's full historical fundamental data + fixing SPX weight distortion
+- **Next steps when unblocked:**
+  1. Fix SPX weights (use proper source or Kieran's platform data)
+  2. Ingest Kieran's factor data → rebuild panel → re-run factor analysis
+  3. Re-train models on Kaggle → re-run `6_index_enhancement.py`

@@ -148,19 +148,23 @@ def ie_stats(bt: pd.DataFrame) -> dict:
     active_nav    = (1 + r_active).cumprod()
     max_active_dd = (active_nav / active_nav.cummax() - 1).min()
 
-    # Max drawdown on portfolio
-    nav   = (1 + r_port).cumprod()
-    maxdd = (nav / nav.cummax() - 1).min()
+    # Portfolio standalone stats
+    ann_port = (1 + r_port).prod() ** (12 / n) - 1
+    vol_port = r_port.std(ddof=1) * np.sqrt(12)
+    sharpe   = ann_port / vol_port if vol_port > 0 else np.nan
+    nav      = (1 + r_port).cumprod()
+    maxdd    = (nav / nav.cummax() - 1).min()
 
     return dict(
         months        = n,
-        ann_port      = (1 + r_port).prod() ** (12 / n) - 1,
+        ann_port      = ann_port,
         ann_bench     = ann_bench,
         ann_alpha     = ann_alpha,
         track_err     = track_err,
         info_ratio    = info_ratio,
         hit_rate      = hit_rate,
         max_active_dd = max_active_dd,
+        sharpe        = sharpe,
         maxdd         = maxdd,
     )
 

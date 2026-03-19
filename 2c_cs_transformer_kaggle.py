@@ -58,9 +58,9 @@ TRAIN_END     = "2020-12-31"
 VALID_END     = "2022-12-31"
 
 # ── Portfolio settings ────────────────────────────────────────────────────────
-TOP_N         = 50
-BOTTOM_N      = 50
-LONG_FRAC     = 0.10
+TOP_N         = 100
+BOTTOM_N      = 100
+LONG_FRAC     = 0.20
 RETRAIN_EVERY = 12   # retrain every N test months (expanding window)
 
 # ── Cross-Sectional Transformer hyperparameters ───────────────────────────────
