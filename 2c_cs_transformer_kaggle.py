@@ -43,7 +43,7 @@ from pathlib import Path
 _t0 = _time.time()
 
 # ── Paths (override via env vars if needed) ───────────────────────────────────
-DATA_DIR = Path(os.environ.get("ML_DATA_DIR", "/kaggle/input/investsoc-ml-data"))
+DATA_DIR = Path(os.environ.get("ML_DATA_DIR", "/kaggle/input/datasets/patrickridge/investsoc-ml-data"))
 OUT_DIR  = Path(os.environ.get("ML_OUT_DIR",  "/kaggle/working"))
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
