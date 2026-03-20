@@ -56,21 +56,38 @@ def clean_ticker(tk: str) -> str:
 
 def fetch_current_shares(ticker: str) -> float | None:
     """
-    Fetch current shares outstanding for one ticker via yfinance.
-    Tries fast_info first (faster), falls back to info dict.
-    Returns float shares or None if unavailable.
+    Fetch implied shares outstanding for one ticker via yfinance.
+
+    Strategy: use fast_info.market_cap / fast_info.last_price to derive
+    implied float shares. This is more reliable than fast_info.shares, which
+    can return stale or non-float-adjusted values (causing WMT / NVDA distortion).
+
+    Falls back to fast_info.shares, then info dict if market_cap unavailable.
+    Returns float implied_shares or None if unavailable.
     """
     yf_tk = clean_ticker(ticker)
     try:
         t = yf.Ticker(yf_tk)
-        # Try fast_info.shares (single quick request)
+        fi = t.fast_info
+
+        # Primary: implied shares = market_cap / last_price
         try:
-            shares = t.fast_info.shares
+            mktcap = fi.market_cap
+            price  = fi.last_price
+            if mktcap and price and mktcap > 0 and price > 0:
+                return float(mktcap / price)
+        except Exception:
+            pass
+
+        # Fallback 1: fast_info.shares
+        try:
+            shares = fi.shares
             if shares and shares > 0:
                 return float(shares)
         except Exception:
             pass
-        # Fall back to info dict
+
+        # Fallback 2: info dict
         info = t.info
         for key in ('sharesOutstanding', 'impliedSharesOutstanding', 'floatShares'):
             val = info.get(key)
@@ -166,6 +183,14 @@ def main():
     # ── Compute SPX weights (cap-weighted fraction per month) ────────────────────
     total_cap = mktcap_long.groupby("date")["mktcap"].transform("sum")
     mktcap_long["spx_weight"] = mktcap_long["mktcap"] / total_cap
+
+    # ── Winsorise: cap any single stock at 8% and renormalise ────────────────────
+    # Prevents any outlier (wrong shares data) from dominating the benchmark.
+    # Real S&P 500 largest holdings are ~6–7% (AAPL, NVDA, MSFT).
+    CAP = 0.08
+    mktcap_long["spx_weight"] = mktcap_long["spx_weight"].clip(upper=CAP)
+    total_w = mktcap_long.groupby("date")["spx_weight"].transform("sum")
+    mktcap_long["spx_weight"] = mktcap_long["spx_weight"] / total_w
 
     # ── Coverage diagnostics ─────────────────────────────────────────────────────
     print("\nCoverage check:")

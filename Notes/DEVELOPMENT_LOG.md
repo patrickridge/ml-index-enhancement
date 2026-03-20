@@ -429,11 +429,51 @@ All at α=0.002. Larger tilts hurt — alpha drops quickly as α increases.
 
 ---
 
-## Current Status (19 Mar 2026)
+---
 
-- All 3 model scores generated and index enhancement pipeline working end-to-end
-- **Blocked on:** Kieran's full historical fundamental data + fixing SPX weight distortion
-- **Next steps when unblocked:**
-  1. Fix SPX weights (use proper source or Kieran's platform data)
-  2. Ingest Kieran's factor data → rebuild panel → re-run factor analysis
-  3. Re-train models on Kaggle → re-run `6_index_enhancement.py`
+## Phase 8 — Factor Framework & Weight Fixes (19 Mar 2026)
+
+### 8.1 — `5d_factor_weights.py` (new script)
+
+Combines all factor analysis outputs into a single clean table for model training.
+
+**Steps:**
+1. **Filter** — |IC| > 0 AND regime_stable → 43/59 factors survive
+2. **IC decay weighting** — persistence weight = mean |IC| over lags 0–12 months (area under 1-year decay curve). Factors with longer-lasting signal get higher weight. Normalised to sum to 1.
+3. **Partial flag** — `use_partial = True` for non-monotonic factors (Q5→Q1 ordering broken). For these, only top/bottom 100 stocks carry signal — middle 300 held at benchmark weight.
+
+**Output:** `data/factor_selected.csv` — complete factor list with weights and flags, ready for model training.
+
+**Why mean |IC| over lags 0–12 (not half-life):** IC doesn't decay monotonically — it oscillates and bounces back (Kieran's observation). Half-life fitting is unstable. Mean area under curve is robust and captures integrated signal strength over a 1-year window.
+
+### 8.2 — SPX Weights Fix
+
+**Root cause of WMT/NVDA distortion:** `fast_info.shares` from yfinance returns stale or non-float-adjusted share counts for some tickers. WMT was returning ~8× too many shares.
+
+**Fix 1 (primary):** Changed `fetch_current_shares()` to derive implied shares from `market_cap / last_price` instead of using raw share count. `fast_info.market_cap` is more reliably reported.
+
+**Fix 2 (safety net):** Added 8% winsorisation after computing weights — any single stock capped at 8% weight, then renormalised. Prevents any remaining outlier from dominating the benchmark. Real S&P 500 top holdings are ~6–7% (AAPL, NVDA, MSFT).
+
+### 8.3 — CS-Transformer Kaggle Script Confirmed Correct
+
+`2c_cs_transformer_kaggle.py` already had `TOP_N=100`, `BOTTOM_N=100`, `LONG_FRAC=0.20`. No changes needed.
+
+---
+
+## Current Status (19 Mar 2026 — evening)
+
+**Completed today:**
+- All 3 models trained and scored (LGBM, FT-Transformer, CS-Transformer)
+- Full IE pipeline working — CS-Transformer IR=0.776 best result
+- Factor framework complete: filtering → decay weighting → partial flags
+- SPX weights fix (market_cap/price + 8% winsorisation)
+- Daily IC decay script built (`5c_ic_decay_daily.py`)
+
+**Blocked on:** Kieran's full historical fundamental data (2010–2025)
+
+**Next steps when data arrives:**
+1. Re-run `1c_fetch_market_cap.py` → verify top-10 weights now realistic
+2. Merge Kieran's factors → rebuild panel (`1_feature_engineering.py`)
+3. Re-run `5_factor_analysis.py` → `5d_factor_weights.py` on expanded factor set
+4. Re-train FT-Transformer + CS-Transformer on Kaggle with `factor_selected.csv` filter
+5. Re-run `6_index_enhancement.py` → compare IR vs current baseline

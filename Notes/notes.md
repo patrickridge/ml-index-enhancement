@@ -6,7 +6,8 @@ Hold all 500 S&P 500 stocks but tilt the weights using an ML model — overweigh
 
 This is a real strategy used by institutional quant funds. The key insight is you're not trying to pick stocks dramatically, just nudge weights slightly, which keeps risk low. The ML model (transformers) is better than traditional approaches because it can learn non-linear relationships between factors and returns.
 
-Where you are now: Factor testing is done. Waiting for historical fundamental data (PE, PB etc.) to train the model. Once that arrives it's model training → backtest → automate.
+## Where you are now 
+Factor testing is done. Waiting for historical fundamental data (PE, PB etc.) to train the model. Once that arrives it's model training → backtest → automate.
 
 "enchanced index" funds 
 Basically every large quant asset manager offers some version of this.
