@@ -471,9 +471,57 @@ Combines all factor analysis outputs into a single clean table for model trainin
 
 **Blocked on:** Kieran's full historical fundamental data (2010–2025)
 
-**Next steps when data arrives:**
-1. Re-run `1c_fetch_market_cap.py` → verify top-10 weights now realistic
-2. Merge Kieran's factors → rebuild panel (`1_feature_engineering.py`)
-3. Re-run `5_factor_analysis.py` → `5d_factor_weights.py` on expanded factor set
-4. Re-train FT-Transformer + CS-Transformer on Kaggle with `factor_selected.csv` filter
-5. Re-run `6_index_enhancement.py` → compare IR vs current baseline
+---
+
+## Phase 9 — Survivorship Bias Fix (20 Mar 2026)
+
+### 9.1 — Problem Identified
+
+Kieran flagged survivorship bias: `prices.parquet` only had ~504 current S&P 500 members. Companies removed between 2010–2025 (acquired, bankrupt, delisted) were missing, inflating backtest returns by ~1–2%/year.
+
+### 9.2 — `1d_fetch_historical_constituents.py` (new script)
+
+- Downloads full historical S&P 500 constituent list from GitHub (`fja05680/sp500`)
+- 826 unique tickers ever in S&P 500 during 2005–2025 scope
+- 386 already in `prices.parquet`, 440 missing
+- Tried yfinance for all 440: **188 succeeded**, 252 failed (bankrupt/fully delisted)
+- `prices.parquet` updated: **504 → 692 tickers**
+- Three lists saved: `tickers_existing.csv`, `tickers_new_fetched.csv`, `tickers_missing.csv`
+- Sent `tickers_missing.csv` (252 tickers) to Kieran for CRSP/Compustat pull
+
+### 9.3 — `1e_rebuild_base_panel.py` (new script)
+
+`panel_monthly.parquet` was originally built from `data.xlsx` (deleted during cleanup). Rebuilt it directly from `prices.parquet`:
+- Computes daily returns → rolling vol (20d/60d/252d) → HL range
+- Samples at month-end, computes multi-horizon returns + forward return
+- Output: `panel_monthly.parquet` — **692 tickers, 147,517 rows**
+
+### 9.4 — Feature Engineering Re-run
+
+Re-ran `1_feature_engineering.py` on expanded universe:
+- **Before:** 502 tickers, 106,944 rows
+- **After:** 692 tickers, 147,517 rows
+- Same 79 features, same pipeline
+
+### 9.5 — Known Issues (20 Mar 2026)
+
+- **SPX weights** still distorted (top 4 stocks at 12.66% each after winsorisation) — iterative winsorisation needed or proper data source
+- **252 missing tickers** — waiting on Kieran's CRSP/Compustat pull
+- **Fundamental factors** — `data/fundamental.parquet` still missing, Cat 9 skipped. Biggest remaining gap for model improvement
+- **Factor analysis** — should re-run `5_factor_analysis.py` + `5d_factor_weights.py` on new 692-ticker universe
+
+---
+
+## Current Status (20 Mar 2026)
+
+**Completed today:**
+- Survivorship bias partially fixed (504 → 692 tickers)
+- Panel rebuilt from scratch (`1e_rebuild_base_panel.py`)
+- Three ticker lists exported for Kieran's CRSP pull
+- New `panel_monthly_enriched.parquet` ready for Kaggle upload
+
+**Next steps:**
+1. Upload new panel to Kaggle → retrain both models
+2. Re-run `6_index_enhancement.py` with updated scores
+3. Wait for Kieran: 252 missing tickers (CRSP) + fundamental factors
+4. When data arrives: rebuild panel again → re-run everything
