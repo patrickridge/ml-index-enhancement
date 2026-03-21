@@ -525,3 +525,19 @@ Re-ran `1_feature_engineering.py` on expanded universe:
 2. Re-run `6_index_enhancement.py` with updated scores
 3. Wait for Kieran: 252 missing tickers (CRSP) + fundamental factors
 4. When data arrives: rebuild panel again → re-run everything
+
+---
+
+## Future Ideas (beyond current scope)
+
+### Double-Layered Deep Reinforcement Learning (Kieran, 21 Mar 2026)
+
+Kieran suggested using double-layered DRL for a more advanced version of the strategy:
+
+- **What is DRL:** Agent learns by trial and error — rewarded for good portfolio decisions, penalised for bad ones. Simulates thousands of trading periods to learn what works.
+- **Layer 1:** RL agent learns which fundamental factors to weight dynamically based on market regime (replaces our fixed IC decay weighting)
+- **Layer 2:** RL agent learns optimal portfolio weights and position sizing (replaces our fixed top/bottom 100 tilt)
+- **Why better:** Adapts dynamically — more aggressive in bull markets, more defensive in bear markets. Used by Two Sigma, Renaissance etc.
+- **Why not now:** Requires much more data, compute, and complexity. Current transformer approach must be validated first.
+
+Natural next evolution once the current pipeline is stable and producing consistent alpha.
