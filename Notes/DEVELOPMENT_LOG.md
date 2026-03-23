@@ -59,7 +59,7 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 
 ## Phase 3 — Factor Analysis (15 Mar 2026)
 
-**Decision:** Kieran's methodology — do factor analysis before ML training.
+**Decision:** the methodology — do factor analysis before ML training.
 
 ### Scripts added
 - `5_factor_analysis.py` — IC analysis, IC decay (lags 0–6 months), quintile backtests
@@ -74,9 +74,9 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 | Price/trend | price_to_ma10 | -0.138 | -3.2% | Reverses at lag 1 (mean reversion) |
 | Junk (removed) | open/high/low/close | ±0.26–0.27 | -10% | Spurious size bias |
 
-**Key insight:** Dominant signal is volatility risk premium — high-vol stocks outperform in the 2010–2025 bull market. IC is flat over 6+ months → structural tilt, not timing signal. Fundamental factors (PE, ROE) absent — Kieran's new data will fill this gap.
+**Key insight:** Dominant signal is volatility risk premium — high-vol stocks outperform in the 2010–2025 bull market. IC is flat over 6+ months → structural tilt, not timing signal. Fundamental factors (PE, ROE) absent — new fundamental data will fill this gap.
 
-### Kieran's feedback (15 Mar)
+### Feedback (15 Mar)
 1. Remove `open`, `high`, `low`, `close` as features (raw dollar prices, not alpha)
 2. Add more technical indicators: MACD variants, more MA windows/crossovers
 
@@ -141,9 +141,9 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 **Options:**
 1. **Run `1b_orthogonalize.py`** — PCA residualization already built, reduces mean off-diag corr 0.235 → 0.100 (57.5% reduction). ML models then see decorrelated inputs.
 2. **RMT covariance denoising** — already in `utils_rmt.py`, used by CS Transformer. Could apply to LGBM feature set too.
-3. **Hard feature selection** — keep only factors with |ICIR| above threshold (currently best is 0.172, none above 0.3). Wait for Kieran's fundamental data — PE/ROE factors likely to score much higher.
+3. **Hard feature selection** — keep only factors with |ICIR| above threshold (currently best is 0.172, none above 0.3). Wait for the team's fundamental data — PE/ROE factors likely to score much higher.
 
-**Recommended:** Run `1b_orthogonalize.py` after Kieran's data arrives and feature set is finalised. Orthogonalizing now before new data = wasted computation.
+**Recommended:** Run `1b_orthogonalize.py` after the team's data arrives and feature set is finalised. Orthogonalizing now before new data = wasted computation.
 
 ---
 
@@ -160,7 +160,7 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 ### 5.1 — Extended IC Decay + Regime Stability
 
 **Changes to `5_factor_analysis.py`:**
-- Extended `MAX_IC_DECAY_LAGS` from 6 → 24 → 60 months (Kieran requested 2–3 year window to see longer trends)
+- Extended `MAX_IC_DECAY_LAGS` from 6 → 24 → 60 months (Requested 2–3 year window to see longer trends)
 - Added `factor_turnover()` — % stocks changing quintile month-to-month
 - Added `ras_permutation_test()` — 100 permutations, p < 0.05 = real signal
 - Added `regime_stability()` — 4 market regimes, COVID crash Mar–May 2020 excluded as black swan:
@@ -173,7 +173,7 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 
 **Regime stability results (59 factors):**
 - 43/59 factors pass regime stability (sign consistent across ≥3/4 regimes)
-- COVID crash excluded — "no one can predict COVID" (Kieran)
+- COVID crash excluded — "no one can predict COVID" 
 - Filters applied: |IC| > 0 AND sign consistent → 43 factors kept
 
 ### 5.2 — Abs IC Fix (17 Mar 2026)
@@ -207,11 +207,11 @@ Added `5b_ic_decay_all.py` — computes and plots IC decay for all 59 factors in
 - Short-term momentum (`ret_1m`, `ret_1w`, `ret_2w`) — chaotic, bouncing around zero at all lags
 - `maxdd_126d`, `var_95_21d`, `cvar_95_21d` — smooth persistent contrarian signal
 
-**Kieran's observation:** IC half-life is not a good metric — IC doesn't decay monotonically, it oscillates and bounces back. Agreed — dropped IC half-life idea.
+**observation:** IC half-life is not a good metric — IC doesn't decay monotonically, it oscillates and bounces back. Agreed — dropped IC half-life idea.
 
 ### 5.4 — Conceptual Clarifications (18 Mar 2026)
 
-**IC decay ≠ factor filtering (Kieran's correction):**
+**IC decay ≠ factor filtering (correction):**
 - **Filtering** = is this factor worth using? (IC, ICIR, regime stability, RAS)
 - **IC decay** = how long does the signal last? Informs rebalancing frequency and factor weighting, not inclusion/exclusion
 - IC decay runs only on filtered survivors, not all factors
@@ -227,11 +227,11 @@ Added `5b_ic_decay_all.py` — computes and plots IC decay for all 59 factors in
 - Quintile survival analysis — how long do top-ranked stocks stay in the top quintile
 - IC decay is the industry standard; half-life approach rejected as IC oscillates rather than monotonically decaying
 
-**Non-monotonic factors (Kieran's idea):**
+**Non-monotonic factors (approach):**
 - Factors without clean Q5>Q4>Q3>Q2>Q1 ordering → only use top/bottom 100 stocks
 - Signal only works at extremes for these factors, not the middle quintiles
 
-**Factor weighting by decay profile (Kieran's idea):**
+**Factor weighting by decay profile (approach):**
 - Short-term factors (fast IC decay) → higher weight for monthly rebalancing
 - Long-term factors (persistent IC) → lower rebalancing frequency / lower weight
 - To be implemented after model training
@@ -259,11 +259,11 @@ panel_train = panel[panel["date"] <= TRAIN_END]
 - **Cross-Sectional Transformer** (Sharpe 1.25)
 - Plan: ensemble both models (blend stock scores) for final portfolio
 
-**Rationale:** Transformer models better suited for the cross-sectional structure of the data and Kieran's firm is building toward live deployment.
+**Rationale:** Transformer models better suited for the cross-sectional structure of the data and the firm is building toward live deployment.
 
-### 5.7 — Kieran's Factor Data (18 Mar 2026)
+### 5.7 — Factor Data from Quant Platform (18 Mar 2026)
 
-Kieran shared `factor data.xlsx` from his quant platform (Wind/similar):
+Shared from quant platform: `factor data.xlsx` from his quant platform (Wind/similar):
 - **33 unique factors**, 503 S&P 500 tickers
 - Factor categories: money flow (buy/sell amt, order count), valuation (PE TTM, PB, PS, PCF, EV/EBITDA, dividend yield, PE relative to history), risk (beta 20/60/120d, vol ratio, Treynor ratio, residual vol), technical (turnover 5/10/20/60d)
 - All marked **PIT (Point-In-Time)** — no lookahead bias ✓
@@ -280,7 +280,7 @@ mfd_buyamt_d, mfd_sellamt_d, tech_turnoverrate20/60
 
 ### 5.8 — Live Deployment Plan (18 Mar 2026)
 
-Kieran's Shenzhen firm gave him access to a quant platform for live strategy deployment. End-to-end pipeline to automate:
+the team's Shenzhen firm gave him access to a quant platform for live strategy deployment. End-to-end pipeline to automate:
 1. Pull new factor data monthly from platform
 2. Run FT-Transformer + CS-Transformer → generate stock scores
 3. Compute portfolio weights: `w_i = w_SPX_i + α × z-score(ML_score_i)`
@@ -292,7 +292,7 @@ Kieran's Shenzhen firm gave him access to a quant platform for live strategy dep
 
 ## Waiting On (as of 18 Mar 2026)
 
-1. **Kieran's full historical factor data** (2010–2025) — main blocker for model training
+1. **full historical factor data** (2010–2025) — main blocker for model training
 2. **Tonight's meeting** — align on: final filter criteria, factor weighting by decay, non-monotonic factor treatment, train/test setup
 3. **After data arrives:** merge panel → re-run factor analysis (train period only) → train FT-Transformer + CS-Transformer → ensemble → backtest → automate
 
@@ -309,7 +309,7 @@ Kieran's Shenzhen firm gave him access to a quant platform for live strategy dep
 
 **Config change:** `TOP_N = 100`, `BOTTOM_N = 100` (was 50/50)
 
-**Rationale:** Kieran's suggestion — cleaner signal, avoids applying weak/noisy scores to middle stocks.
+**Rationale:** suggestion — cleaner signal, avoids applying weak/noisy scores to middle stocks.
 
 ### 6.2 — Metrics Overhaul
 
@@ -328,12 +328,12 @@ Kieran's Shenzhen firm gave him access to a quant platform for live strategy dep
 
 **Factors to flip:** All 17 contrarian factors identified in regime stability analysis.
 
-### 6.4 — Gradual Training Plan (Kieran's roommate's suggestion)
+### 6.4 — Gradual Training Plan (an external suggestion)
 
 Train model incrementally, one improvement at a time:
 1. **Step 1:** Baseline — IC filter + RAS, contrarian factors sign-flipped, predict `fwd_ret_1m`
 2. **Step 2:** IC decay curve fitting — find smooth representation of each factor's decay, use for factor weighting. Also adjust quintile treatment for non-monotonic factors (top/bottom 100 only)
-3. **Step 3:** Add Kieran's fundamental factors (PE, PB, money flow etc.) once data arrives
+3. **Step 3:** Add fundamental factors (PE, PB, money flow etc.) once data arrives
 4. **Step 4:** Factor weighting by decay profile (short-term vs long-term)
 
 ### 6.5 — Project Structure Cleanup (19 Mar 2026)
@@ -392,7 +392,7 @@ Added `Done in X.X min` timer to all scripts missing it:
 **Impact:** `6_index_enhancement.py` will run but the benchmark return won't accurately reflect the true S&P 500. Active returns and IR figures will be directionally correct but numerically off.
 
 **Fix options (in priority order):**
-1. Use a proper data source for SPX constituent weights (Kieran's platform may have this)
+1. Use a proper data source for SPX constituent weights (the quant platform may have this)
 2. Cross-check with known cap weights from another free source (e.g. SPDR holdings CSV)
 3. Use equal-weight benchmark as fallback
 
@@ -400,13 +400,13 @@ Added `Done in X.X min` timer to all scripts missing it:
 
 ### 7.5 — New Scripts Added
 
-- `5c_ic_decay_daily.py` — daily IC decay (1–90 trading days) per factor. Kieran's suggestion to confirm monthly rebalancing is optimal horizon.
+- `5c_ic_decay_daily.py` — daily IC decay (1–90 trading days) per factor. suggestion to confirm monthly rebalancing is optimal horizon.
 
-### 7.6 — Kieran's New Ideas (19 Mar 2026)
+### 7.6 — Ideas for Next Phase (19 Mar 2026)
 
-- **Barra-style factors** — size (mktcap), value (P/B), leverage (D/E), earnings yield. Can approximate from yfinance. Kieran's platform data will likely cover these.
+- **Barra-style factors** — size (mktcap), value (P/B), leverage (D/E), earnings yield. Can approximate from yfinance. the quant platform data will likely cover these.
 - **Smart money factors** — institutional ownership changes (13F), short interest, insider buying. Harder to get without a data vendor.
-- **Daily IC decay** — built as `5c_ic_decay_daily.py`. To send to Kieran once run.
+- **Daily IC decay** — built as `5c_ic_decay_daily.py`. To send to the team once run.
 - **Focus for now:** Complete backtesting framework first, then factor additions.
 
 ---
@@ -444,7 +444,7 @@ Combines all factor analysis outputs into a single clean table for model trainin
 
 **Output:** `data/factor_selected.csv` — complete factor list with weights and flags, ready for model training.
 
-**Why mean |IC| over lags 0–12 (not half-life):** IC doesn't decay monotonically — it oscillates and bounces back (Kieran's observation). Half-life fitting is unstable. Mean area under curve is robust and captures integrated signal strength over a 1-year window.
+**Why mean |IC| over lags 0–12 (not half-life):** IC doesn't decay monotonically — it oscillates and bounces back (observation). Half-life fitting is unstable. Mean area under curve is robust and captures integrated signal strength over a 1-year window.
 
 ### 8.2 — SPX Weights Fix
 
@@ -469,7 +469,7 @@ Combines all factor analysis outputs into a single clean table for model trainin
 - SPX weights fix (market_cap/price + 8% winsorisation)
 - Daily IC decay script built (`5c_ic_decay_daily.py`)
 
-**Blocked on:** Kieran's full historical fundamental data (2010–2025)
+**Blocked on:** full historical fundamental data (2010–2025)
 
 ---
 
@@ -477,7 +477,7 @@ Combines all factor analysis outputs into a single clean table for model trainin
 
 ### 9.1 — Problem Identified
 
-Kieran flagged survivorship bias: `prices.parquet` only had ~504 current S&P 500 members. Companies removed between 2010–2025 (acquired, bankrupt, delisted) were missing, inflating backtest returns by ~1–2%/year.
+Survivorship bias: `prices.parquet` only had ~504 current S&P 500 members. Companies removed between 2010–2025 (acquired, bankrupt, delisted) were missing, inflating backtest returns by ~1–2%/year.
 
 ### 9.2 — `1d_fetch_historical_constituents.py` (new script)
 
@@ -487,7 +487,7 @@ Kieran flagged survivorship bias: `prices.parquet` only had ~504 current S&P 500
 - Tried yfinance for all 440: **188 succeeded**, 252 failed (bankrupt/fully delisted)
 - `prices.parquet` updated: **504 → 692 tickers**
 - Three lists saved: `tickers_existing.csv`, `tickers_new_fetched.csv`, `tickers_missing.csv`
-- Sent `tickers_missing.csv` (252 tickers) to Kieran for CRSP/Compustat pull
+- Sent `tickers_missing.csv` (252 tickers) to the team for CRSP/Compustat pull
 
 ### 9.3 — `1e_rebuild_base_panel.py` (new script)
 
@@ -506,7 +506,7 @@ Re-ran `1_feature_engineering.py` on expanded universe:
 ### 9.5 — Known Issues (20 Mar 2026)
 
 - **SPX weights** still distorted (top 4 stocks at 12.66% each after winsorisation) — iterative winsorisation needed or proper data source
-- **252 missing tickers** — waiting on Kieran's CRSP/Compustat pull
+- **252 missing tickers** — waiting on CRSP/Compustat pull
 - **Fundamental factors** — `data/fundamental.parquet` still missing, Cat 9 skipped. Biggest remaining gap for model improvement
 - **Factor analysis** — should re-run `5_factor_analysis.py` + `5d_factor_weights.py` on new 692-ticker universe
 
@@ -517,22 +517,203 @@ Re-ran `1_feature_engineering.py` on expanded universe:
 **Completed today:**
 - Survivorship bias partially fixed (504 → 692 tickers)
 - Panel rebuilt from scratch (`1e_rebuild_base_panel.py`)
-- Three ticker lists exported for Kieran's CRSP pull
+- Three ticker lists exported for the CRSP pull
 - New `panel_monthly_enriched.parquet` ready for Kaggle upload
 
 **Next steps:**
 1. Upload new panel to Kaggle → retrain both models
 2. Re-run `6_index_enhancement.py` with updated scores
-3. Wait for Kieran: 252 missing tickers (CRSP) + fundamental factors
+3. Waiting on: 252 missing tickers (CRSP) + fundamental factors
 4. When data arrives: rebuild panel again → re-run everything
+
+---
+
+## Phase 10 — Missing Ticker Recovery (21 Mar 2026)
+
+### 10.1 — `1f_fetch_missing_tickers.py` (new script)
+
+Secondary yfinance attempt + Stooq fallback for 252 failed tickers.
+
+- **yfinance fix:** Used `Ticker.history()` instead of `yf.download()` — avoids `YFTzMissingError`
+- **Result:** Only 4 additional tickers recovered (252 → 248 missing)
+- **Stooq via pandas-datareader:** Returns 0 rows for delisted stocks — confirmed dead end for this approach
+- `prices.parquet` updated: **692 → 696 tickers**
+
+### 10.2 — Tiingo API Attempts
+
+Tiingo API (free tier: 500 requests/hour) specifically has delisted/acquired stock data.
+
+- **First run:** Recovered ~33 tickers but save failed (exit code 1) — data lost. Root cause: timezone-aware dates causing type mismatch with `pa.Table.from_pandas()`.
+- **Second run:** Immediately hit hourly rate limit (429 error) — had used 496/500 calls across first two runs.
+- **Third run (this session):** Rate limit still active — 50 tickers tried, all returned "not available". Rate limit reset needed.
+- **Script:** `1g_fetch_tiingo.py` — includes rate limit detection, 65s auto-retry, fixed timezone stripping (`dt.tz_localize(None)`)
+- **Key fix:** `df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None).dt.normalize()` before saving
+
+**Status:** Tiingo hourly limit reset needed before retry. Some tickers not available on Tiingo (especially older/obscure ones).
+
+### 10.3 — Wind XLSX Ingestion (`1h_ingest_wind_xlsx.py`)
+
+Exported from Wind: `missing data.xlsx` from his Wind platform — OHLCV for AABA.O (Yahoo/Altaba).
+
+**Wind export format:**
+- Sheet: `工作表1` (default Chinese)
+- Rows 3–6: metadata (start/end date, ticker code like `AABA.O`, name)
+- Row 7–8: bilingual column headers
+- Row 9+: data — Date, Open, High, Low, Close (no volume)
+
+**Script `1h_ingest_wind_xlsx.py`:**
+- Scans `data/wind_exports/` folder for all xlsx files (drop files here)
+- Also picks up any xlsx in `data/` (handles ad-hoc Export)
+- Extracts ticker from metadata rows automatically
+- Strips Wind formula cells, handles NaN open prices
+- Merges into `prices.parquet`, updates ticker log (status: `ok_wind`)
+- Run: `python 1h_ingest_wind_xlsx.py` after adding new xlsx files
+
+**Result:** AABA.O added (2010–2025, 3,886 rows). `prices.parquet`: **696 → 697 tickers**
+
+### 10.4 — Workflow for Wind Exports
+
+1. Export missing tickers from Wind (one or multiple files)
+2. Place xlsx files in `data/wind_exports/`
+3. Run `python 1h_ingest_wind_xlsx.py`
+4. Run `python 1e_rebuild_base_panel.py`
+5. Run `python 1_feature_engineering.py`
+6. Upload to Kaggle, retrain models
+
+### 10.5 — Current Universe Status (21 Mar 2026)
+
+| Source | Count |
+|--------|-------|
+| existing (original prices.parquet) | 386 |
+| ok (yfinance, 1d/1f) | 192+4=196 |
+| ok_tiingo (pending retry) | 0 (33 lost in save failure) |
+| ok_wind | 1 (AABA.O) |
+| **still missing** | **248** |
+| **Total tickers** | **697** |
+
+---
+
+## Current Status (21 Mar 2026)
+
+**Completed today:**
+- `1f_fetch_missing_tickers.py` — 4 extra tickers via yfinance fix
+- `1g_fetch_tiingo.py` — Tiingo fetcher with rate limit handling and timezone fix
+- `1h_ingest_wind_xlsx.py` — Wind xlsx ingestion pipeline
+- AABA.O added from Wind export
+
+**Blocked on:**
+- Tiingo hourly rate limit (reset needed, then retry `1g_fetch_tiingo.py`)
+- Wind exports for remaining 248 tickers (drop in `data/wind_exports/`)
+- Full historical fundamental data (2010–2025)
+
+**Next steps once data available:**
+1. Run `1h_ingest_wind_xlsx.py` (after exporting Wind data)
+2. Run `1g_fetch_tiingo.py` (after rate limit resets)
+3. Run `1e_rebuild_base_panel.py`
+4. Run `1_feature_engineering.py`
+5. Upload to Kaggle → retrain FT-Transformer + CS-Transformer
+6. Re-run `6_index_enhancement.py` with updated scores
+
+---
+
+## Phase 11 — Advanced Framework (23 Mar 2026)
+
+### 11.1 — Name Cleanup
+
+Removed all personal name references from markdown documentation files for cleaner version-controlled notes.
+
+### 11.2 — Regime Backtesting Engine (`8_regime_engine.py`)
+
+Adds per-regime performance breakdown to the index enhancement backtest.
+
+**Two modes:**
+- `python 8_regime_engine.py` — rule-based (same 4 hardcoded regimes as factor analysis)
+- `python 8_regime_engine.py --hmm` — 2-state HMM on SPX returns + VIX (risk-on / risk-off)
+
+**Outputs:** `data/ie_regime_breakdown.csv`, `figures/ie_regime_breakdown.png`
+
+**Key finding:** All 24 test months (Jan 2023–Oct 2025) fall in the AI Bull regime. Strategy IR = 0.960 throughout this period. HMM mode needed to further subdivide this regime (e.g. 2024 rate cut pivot vs 2025 tariff volatility).
+
+**Per-regime metrics reported:** ann_alpha, tracking_error, info_ratio, hit_rate, max_active_drawdown, n_months
+
+### 11.3 — Differentiable IC Optimisation (`5e_ic_optimise.py`)
+
+Replaces static IC-decay factor weights with gradient-optimised weights that directly maximise cross-sectional IC on the training set.
+
+**Method:**
+- Weight vector w ∈ R^43, softmax-normalised
+- Combined score = Σ w_j × z-score(factor_j) per month, with sign flip for contrarian factors
+- Loss = -mean(Pearson IC) across 142 training months (2010–2020)
+- Optimiser: Adam, lr=0.01, 500 epochs, PyTorch autograd
+
+**Results:**
+
+| | Train IC (2010–2020) | Val IC (2021–2022) |
+|-|---------------------|-------------------|
+| IC-decay weights (current) | 0.0254 | 0.0318 |
+| Optimised weights | **0.0758** | **0.0434** |
+| Improvement | +197% | +36% |
+
+**Key weight shifts:**
+- `residual_ret_12m` 0.008 → **0.225** (largest upweight — 12m residual momentum)
+- `ret_18m` 0.011 → **0.143** (medium-term momentum)
+- `ir_3m` 0.011 → **0.135** (short-term information ratio)
+- `vol_252d` 0.050 → 0.004 (volatility factors largely downweighted)
+
+**Insight:** Current IC-decay weighting overweights volatility factors (which have high persistent IC at the index level but lower IC in cross-section). The optimiser strongly prefers momentum/return-based factors. This is a meaningful improvement that should flow through to IR once models are retrained.
+
+**Outputs:** `data/factor_selected_optimised.csv`, `figures/factor_weights_optimised.png`
+
+**Next step:** Feed `weight_optimised` column into model training as sample weights or as a pre-combination step before the transformer input.
+
+### 11.4 — RL Architecture Decisions (Research Phase)
+
+Not implementing yet — waiting for complete universe and fundamental data. Architecture agreed:
+
+**Layer 1 — Factor weighting agent (maximise IC):**
+- State: current regime label + rolling IC history per factor (last 6 months)
+- Action: 43-dim weight vector (softmax-bounded)
+- Reward: next-month cross-sectional IC of combined factor score
+- Algorithm: **SAC** (Soft Actor-Critic) — better sample efficiency than PPO, built-in entropy regularisation prevents overfitting to specific market regimes
+
+**Layer 2 — Portfolio tilt agent (maximise IR):**
+- State: factor scores + market regime + recent tracking error
+- Action: tilt strength α (scalar, clipped to valid TE range)
+- Reward: active_return − λ × max(0, track_err − TE_max)
+- Algorithm: **SAC** or **TD3** — both handle continuous action spaces well
+
+**Why SAC over PPO:** PPO is on-policy (sample inefficient, needs many episodes). SAC is off-policy, stores past experience in a replay buffer, and converges faster on small financial datasets (~140 monthly observations). Built-in entropy maximisation also prevents mode collapse to a single regime strategy.
+
+**Implementation timeline:** Post fundamental data arrival + model retrain. Build Layer 1 first.
+
+---
+
+## Current Status (23 Mar 2026)
+
+**Completed today:**
+- `8_regime_engine.py` — per-regime backtest breakdown (rule-based + HMM)
+- `5e_ic_optimise.py` — differentiable IC optimisation (+197% train IC, +36% val IC)
+- Cleaned all documentation files
+- RL architecture design documented (SAC, two-layer framework)
+
+**Blocked on:**
+- 248 missing tickers (Wind exports from quant platform)
+- Full historical fundamental data (PE, PB, money flow, 2010–2025)
+
+**Next steps once data available:**
+1. Merge fundamental data into panel
+2. Re-run `5_factor_analysis.py` + `5e_ic_optimise.py` on expanded feature set
+3. Retrain CS-Transformer + FT-Transformer on Kaggle
+4. Re-run `6_index_enhancement.py` + `8_regime_engine.py`
+5. Build RL Layer 1 (factor weighting agent)
 
 ---
 
 ## Future Ideas (beyond current scope)
 
-### Double-Layered Deep Reinforcement Learning (Kieran, 21 Mar 2026)
+### Double-Layered Deep Reinforcement Learning (21 Mar 2026)
 
-Kieran suggested using double-layered DRL for a more advanced version of the strategy:
+Proposed: using double-layered DRL for a more advanced version of the strategy:
 
 - **What is DRL:** Agent learns by trial and error — rewarded for good portfolio decisions, penalised for bad ones. Simulates thousands of trading periods to learn what works.
 - **Layer 1:** RL agent learns which fundamental factors to weight dynamically based on market regime (replaces our fixed IC decay weighting)
