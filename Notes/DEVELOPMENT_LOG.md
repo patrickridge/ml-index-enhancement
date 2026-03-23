@@ -604,10 +604,10 @@ Exported from Wind: `missing data.xlsx` from his Wind platform — OHLCV for AAB
 **Blocked on:**
 - Tiingo hourly rate limit (reset needed, then retry `1g_fetch_tiingo.py`)
 - Wind exports for remaining 248 tickers (drop in `data/wind_exports/`)
-- Full historical fundamental data (2010–2025)
+- full historical fundamental data (2010–2025)
 
 **Next steps once data available:**
-1. Run `1h_ingest_wind_xlsx.py` (after exporting Wind data)
+1. Run `1h_ingest_wind_xlsx.py` (after Export Wind data)
 2. Run `1g_fetch_tiingo.py` (after rate limit resets)
 3. Run `1e_rebuild_base_panel.py`
 4. Run `1_feature_engineering.py`
@@ -618,94 +618,83 @@ Exported from Wind: `missing data.xlsx` from his Wind platform — OHLCV for AAB
 
 ## Phase 11 — Advanced Framework (23 Mar 2026)
 
-### 11.1 — Name Cleanup
+### 11.1 — Regime Backtesting Engine (`8_regime_engine.py`)
 
-Removed all personal name references from markdown documentation files for cleaner version-controlled notes.
-
-### 11.2 — Regime Backtesting Engine (`8_regime_engine.py`)
-
-Adds per-regime performance breakdown to the index enhancement backtest.
+Breaks IE backtest performance out by market regime.
 
 **Two modes:**
-- `python 8_regime_engine.py` — rule-based (same 4 hardcoded regimes as factor analysis)
+- `python 8_regime_engine.py` — rule-based (4 hardcoded regimes)
 - `python 8_regime_engine.py --hmm` — 2-state HMM on SPX returns + VIX (risk-on / risk-off)
+
+**HMM results (test period Jan 2023–Oct 2025, 24 months: 17 risk-on, 7 risk-off):**
+
+| Model | Risk-Off IR | Risk-On IR | Full Period IR |
+|-------|------------|-----------|----------------|
+| CS-Transformer | **1.019** | **0.931** | 0.960 |
+| FT-Transformer | 1.866 | 0.086 | 0.438 |
+| LGBM | 1.397 | 0.224 | 0.384 |
+
+**Key finding:** CS-Transformer is the only regime-stable model — IR consistent across both risk-on and risk-off. FT-Transformer and LGBM generate almost all alpha in risk-off periods only. Confirms CS-Transformer as the primary model.
 
 **Outputs:** `data/ie_regime_breakdown.csv`, `figures/ie_regime_breakdown.png`
 
-**Key finding:** All 24 test months (Jan 2023–Oct 2025) fall in the AI Bull regime. Strategy IR = 0.960 throughout this period. HMM mode needed to further subdivide this regime (e.g. 2024 rate cut pivot vs 2025 tariff volatility).
+### 11.2 — Differentiable IC Optimisation (`5e_ic_optimise.py`)
 
-**Per-regime metrics reported:** ann_alpha, tracking_error, info_ratio, hit_rate, max_active_drawdown, n_months
+Replaces static IC-decay factor weights with gradient-optimised weights.
 
-### 11.3 — Differentiable IC Optimisation (`5e_ic_optimise.py`)
-
-Replaces static IC-decay factor weights with gradient-optimised weights that directly maximise cross-sectional IC on the training set.
-
-**Method:**
-- Weight vector w ∈ R^43, softmax-normalised
-- Combined score = Σ w_j × z-score(factor_j) per month, with sign flip for contrarian factors
-- Loss = -mean(Pearson IC) across 142 training months (2010–2020)
-- Optimiser: Adam, lr=0.01, 500 epochs, PyTorch autograd
-
-**Results:**
+**Method:** Weight vector w ∈ R^43, softmax-normalised. Loss = −mean(Pearson IC). Adam, lr=0.01, 500 epochs, PyTorch.
 
 | | Train IC (2010–2020) | Val IC (2021–2022) |
 |-|---------------------|-------------------|
-| IC-decay weights (current) | 0.0254 | 0.0318 |
+| IC-decay weights | 0.0254 | 0.0318 |
 | Optimised weights | **0.0758** | **0.0434** |
 | Improvement | +197% | +36% |
 
-**Key weight shifts:**
-- `residual_ret_12m` 0.008 → **0.225** (largest upweight — 12m residual momentum)
-- `ret_18m` 0.011 → **0.143** (medium-term momentum)
-- `ir_3m` 0.011 → **0.135** (short-term information ratio)
-- `vol_252d` 0.050 → 0.004 (volatility factors largely downweighted)
-
-**Insight:** Current IC-decay weighting overweights volatility factors (which have high persistent IC at the index level but lower IC in cross-section). The optimiser strongly prefers momentum/return-based factors. This is a meaningful improvement that should flow through to IR once models are retrained.
+**Key shifts:** `residual_ret_12m` 0.008 → 0.225, `ret_18m` 0.011 → 0.143, `ir_3m` 0.011 → 0.135. Volatility factors mostly downweighted. Momentum/return factors dominate.
 
 **Outputs:** `data/factor_selected_optimised.csv`, `figures/factor_weights_optimised.png`
 
-**Next step:** Feed `weight_optimised` column into model training as sample weights or as a pre-combination step before the transformer input.
+### 11.3 — Factor-Combo Baseline (`6b_factor_combo_baseline.py`)
 
-### 11.4 — RL Architecture Decisions (Research Phase)
+Linear weighted factor combination (no ML) as IE signal — quantifies what the transformer adds.
 
-Not implementing yet — waiting for complete universe and fundamental data. Architecture agreed:
+| Model | IR |
+|-------|----|
+| Factor-Combo linear (optimised weights) | **−0.046** |
+| LGBM | 0.384 |
+| FT-Transformer | 0.438 |
+| CS-Transformer | **0.960** |
 
-**Layer 1 — Factor weighting agent (maximise IC):**
-- State: current regime label + rolling IC history per factor (last 6 months)
-- Action: 43-dim weight vector (softmax-bounded)
-- Reward: next-month cross-sectional IC of combined factor score
-- Algorithm: **SAC** (Soft Actor-Critic) — better sample efficiency than PPO, built-in entropy regularisation prevents overfitting to specific market regimes
+Linear combo underperforms the benchmark. CS-Transformer goes −0.046 → 0.960 — confirms the transformer is learning genuine non-linear cross-sectional patterns, not just repackaging factor exposures.
 
-**Layer 2 — Portfolio tilt agent (maximise IR):**
-- State: factor scores + market regime + recent tracking error
-- Action: tilt strength α (scalar, clipped to valid TE range)
-- Reward: active_return − λ × max(0, track_err − TE_max)
-- Algorithm: **SAC** or **TD3** — both handle continuous action spaces well
+### 11.4 — RL Architecture (Planned)
 
-**Why SAC over PPO:** PPO is on-policy (sample inefficient, needs many episodes). SAC is off-policy, stores past experience in a replay buffer, and converges faster on small financial datasets (~140 monthly observations). Built-in entropy maximisation also prevents mode collapse to a single regime strategy.
+Not implementing yet — waiting for fundamental data + complete universe.
 
-**Implementation timeline:** Post fundamental data arrival + model retrain. Build Layer 1 first.
+- **Layer 1 (factor weighting):** SAC agent, state = regime + rolling IC history, action = 43-dim weight vector, reward = next-month IC
+- **Layer 2 (portfolio tilt):** SAC/TD3 agent, action = tilt α, reward = active_return − λ × TE_penalty
+- **Why SAC over PPO:** Off-policy, sample efficient, entropy regularisation prevents regime overfitting
 
 ---
 
 ## Current Status (23 Mar 2026)
 
-**Completed today:**
-- `8_regime_engine.py` — per-regime backtest breakdown (rule-based + HMM)
-- `5e_ic_optimise.py` — differentiable IC optimisation (+197% train IC, +36% val IC)
-- Cleaned all documentation files
-- RL architecture design documented (SAC, two-layer framework)
+**Completed:**
+- Regime breakdown — CS-Transformer regime-stable (IR 0.93–1.02), others risk-off dependent
+- IC optimisation — train IC +197%, val IC +36%, momentum > volatility
+- Factor-combo baseline — linear IR=−0.046 vs CS-Transformer 0.960, validates transformer complexity
+- Wind xlsx ingestion pipeline, AABA.O added (697 tickers)
+- Documentation cleaned
 
 **Blocked on:**
-- 248 missing tickers (Wind exports from quant platform)
-- Full historical fundamental data (PE, PB, money flow, 2010–2025)
+- 248 missing tickers (Wind exports — drop xlsx in `data/wind_exports/`)
+- Full historical fundamental data (PE, PB, money flow 2010–2025)
 
-**Next steps once data available:**
-1. Merge fundamental data into panel
-2. Re-run `5_factor_analysis.py` + `5e_ic_optimise.py` on expanded feature set
-3. Retrain CS-Transformer + FT-Transformer on Kaggle
-4. Re-run `6_index_enhancement.py` + `8_regime_engine.py`
-5. Build RL Layer 1 (factor weighting agent)
+**Next steps once data arrives:**
+1. `python 1h_ingest_wind_xlsx.py`
+2. `python 1e_rebuild_base_panel.py` + `python 1_feature_engineering.py`
+3. `python 5e_ic_optimise.py` on expanded feature set
+4. Retrain on Kaggle → `python 6_index_enhancement.py` + `python 8_regime_engine.py`
 
 ---
 
@@ -713,7 +702,7 @@ Not implementing yet — waiting for complete universe and fundamental data. Arc
 
 ### Double-Layered Deep Reinforcement Learning (21 Mar 2026)
 
-Proposed: using double-layered DRL for a more advanced version of the strategy:
+Suggested using double-layered DRL for a more advanced version of the strategy:
 
 - **What is DRL:** Agent learns by trial and error — rewarded for good portfolio decisions, penalised for bad ones. Simulates thousands of trading periods to learn what works.
 - **Layer 1:** RL agent learns which fundamental factors to weight dynamically based on market regime (replaces our fixed IC decay weighting)
