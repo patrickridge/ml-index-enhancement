@@ -762,17 +762,15 @@ with tab4:
 # TAB 5 — Volatility Surface
 # ═════════════════════════════════════════════════════════════════════════════
 with tab5:
-    st.markdown("## Cross-Sectional Volatility Surface")
+    st.markdown("## Cross-Sectional Return Distribution Surface")
     st.caption(
-        "3-D surface showing how the cross-sectional distribution of volatility-related "
-        "factor scores has evolved across S&P 500 constituents over time. "
-        "Values are cross-sectionally rank-normalised to [−0.5, +0.5] within each month "
-        "(standard pipeline normalisation). "
-        "X axis: month (2010–2025). Y axis: percentile of the cross-sectional distribution. "
-        "Z axis: rank-normalised factor score at that percentile. "
-        "The surface shape — its kurtosis, skew and regime-driven shifts — "
-        "reveals how the factor's distribution compresses or spreads across market regimes. "
-        "vol_252d and idio_vol_252d are the two strongest factors by ICIR in this project."
+        "3-D surface of the cross-sectional distribution of S&P 500 stock returns over time. "
+        "X axis: month. Y axis: cross-sectional percentile (0 = worst stock, 100 = best stock). "
+        "Z axis: actual monthly return at that percentile. "
+        "The surface reveals regime structure: COVID crash (Mar 2020) shows a sharp spike downward "
+        "across all percentiles; AI bull (2023–2025) shows persistent upward skew in the top decile. "
+        "Factor scores (vol_252d etc.) are cross-sectionally rank-normalised to [−0.5, +0.5] "
+        "and produce a flat surface by construction — fwd_ret_1m is the meaningful default."
     )
 
     PANEL_PATH = DATA_DIR / "panel_monthly_enriched.parquet"
@@ -786,10 +784,18 @@ with tab5:
         with col_feat:
             vol_factor = st.selectbox(
                 "Factor:",
-                ["vol_252d", "idio_vol_252d", "vol_126d",
-                 "vol_60d", "vol_20d", "beta_252d"],
+                [
+                    "fwd_ret_1m",      # actual monthly returns — NOT normalised, best for regimes
+                    "vol_252d",        # cross-sectional rank score (flat by construction)
+                    "idio_vol_252d",
+                    "vol_126d",
+                    "ret_12m",
+                    "beta_252d",
+                ],
                 index=0,
                 key="vol_factor",
+                help="fwd_ret_1m (actual returns) produces the most visually meaningful surface. "
+                     "Factor scores are rank-normalised to [−0.5, +0.5] and produce a nearly flat surface.",
             )
         with col_pct:
             pct_step = st.select_slider(
@@ -816,7 +822,10 @@ with tab5:
             for j, dt in enumerate(months):
                 vals = panel.loc[panel["date"] == dt, factor].values
                 if len(vals) >= 20:
-                    Z[:, j] = np.percentile(vals, pcts)
+                    # Winsorise at 1st/99th percentile to suppress extreme outliers
+                    lo, hi = np.percentile(vals, [1, 99])
+                    vals_w  = np.clip(vals, lo, hi)
+                    Z[:, j] = np.percentile(vals_w, pcts)
             m_labels = [pd.Timestamp(m).strftime("%Y-%m") for m in months]
             return Z, pcts, m_labels, months
 
@@ -831,22 +840,33 @@ with tab5:
         tick_idx    = m_idx[::12]
         tick_labels = [m_labels[i] for i in tick_idx]
 
+        # Symmetric diverging colorscale for returns (red=negative, blue=positive)
+        # Viridis for non-return factors
+        is_return = vol_factor in ("fwd_ret_1m", "ret_1m", "ret_3m", "ret_6m", "ret_12m")
+        colorscale = (
+            [[0.0, "#8B0000"], [0.35, "#E87070"],
+             [0.5,  "#F5F5F5"],
+             [0.65, "#6BAED6"], [1.0, "#08306B"]]
+            if is_return else "Viridis"
+        )
         fig_surf = go.Figure(data=[go.Surface(
             x=m_idx,
             y=pcts,
             z=Z,
-            colorscale="Viridis",
-            opacity=0.92,
+            colorscale=colorscale,
+            cmid=0.0 if is_return else None,
+            opacity=0.95,
             showscale=True,
             colorbar=dict(
                 title=dict(text=vol_factor, side="right", font=dict(size=10)),
                 thickness=14, len=0.65,
                 tickfont=dict(size=9),
+                tickformat=".1%" if is_return else ".3f",
             ),
             hovertemplate=(
                 "Month: %{x}<br>"
                 "Percentile: %{y}<br>"
-                f"{vol_factor}: " + "%{z:.4f}<extra></extra>"
+                f"{vol_factor}: " + "%{z:.3f}<extra></extra>"
             ),
         )])
 
@@ -876,8 +896,8 @@ with tab5:
                     gridcolor="#E0E0E0",
                     backgroundcolor="rgb(248,249,250)",
                 ),
-                camera=dict(eye=dict(x=1.6, y=-1.6, z=0.8)),
-                aspectratio=dict(x=2.0, y=1.0, z=0.65),
+                camera=dict(eye=dict(x=1.4, y=-1.8, z=1.0)),
+                aspectratio=dict(x=2.2, y=1.0, z=0.9),
             ),
             margin=dict(l=0, r=0, t=40, b=0),
             title=dict(
@@ -894,10 +914,14 @@ with tab5:
         st.markdown("## Percentile Time Series")
         st.caption("Select which percentile bands to overlay on the 2-D chart below.")
 
+        pct_options  = [int(p) for p in pcts]
+        pct_defaults = [p for p in [10, 25, 50, 75, 90] if p in pct_options]
+        if not pct_defaults:
+            pct_defaults = [pct_options[len(pct_options) // 2]]   # fallback: midpoint
         show_pct = st.multiselect(
             "Percentiles to display:",
-            options=[int(p) for p in pcts if p % 10 == 0],
-            default=[10, 50, 90],
+            options=pct_options,
+            default=pct_defaults,
             key="show_pcts",
         )
 

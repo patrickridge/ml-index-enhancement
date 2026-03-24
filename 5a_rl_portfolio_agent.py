@@ -252,7 +252,7 @@ def build_episodes(scores, weights, ref_alpha=0.01):
 # =============================================================================
 
 if HAS_TORCH:
-    LOG_STD_MIN, LOG_STD_MAX = -5, 2
+    LOG_STD_MIN, LOG_STD_MAX = -10, 2
 
     class MLP(nn.Module):
         def __init__(self, in_dim, out_dim, hidden=HIDDEN_DIM):
@@ -357,6 +357,7 @@ class SACAgent:
 
     def select_action(self, state, deterministic=False):
         s = torch.FloatTensor(state).unsqueeze(0)
+        s = torch.nan_to_num(s, nan=0.0, posinf=0.0, neginf=0.0)
         with torch.no_grad():
             if deterministic:
                 mean, _ = self.actor(s)
@@ -450,7 +451,7 @@ def train(agent, episodes):
         ep_rewards = []
 
         for i, (dt, row) in enumerate(train_rows):
-            state = np.nan_to_num(row[STATE_COLS].values.astype(np.float32), nan=0.0)
+            state = np.nan_to_num(row[STATE_COLS].values.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
             alpha = agent.select_action(state)
 
             result = simulate_month(row["_scores"], row["_weights"], alpha=alpha)
@@ -469,7 +470,7 @@ def train(agent, episodes):
                 next_state = np.zeros(len(STATE_COLS), dtype=np.float32)
                 done_flag  = 1.0
             else:
-                next_state = np.nan_to_num(train_rows[i + 1][1][STATE_COLS].values.astype(np.float32), nan=0.0)
+                next_state = np.nan_to_num(train_rows[i + 1][1][STATE_COLS].values.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
                 done_flag  = 0.0
 
             agent.buffer.push(state, alpha, reward, next_state, done_flag)
@@ -496,7 +497,7 @@ def evaluate(agent, episodes, fixed_alpha=0.01):
         if str(dt.date()) < TEST_START:
             continue
 
-        state = np.nan_to_num(row[STATE_COLS].values.astype(np.float32), nan=0.0)
+        state = np.nan_to_num(row[STATE_COLS].values.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
 
         if agent is not None:
             alpha_rl = agent.select_action(state, deterministic=True)
