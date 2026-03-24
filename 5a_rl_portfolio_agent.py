@@ -15,9 +15,10 @@ Architecture:
   State  (6 features): signal strength, signal dispersion, benchmark vol,
                         recent active return, regime, rolling tracking error
   Action : alpha in [0.002, 0.05]  (continuous — how much to tilt this month)
-  Reward : annualised portfolio Sharpe ratio  ← Sharpe maximisation
-           (port_ret - RF) / port_vol × √12
-           where port_vol ≈ √(bench_vol² + rolling_te²) monthly
+  Reward : Sharpe of active return = IR proxy
+           active_ret × 12 − TE_penalty − bench_vol_penalty
+           (total-portfolio Sharpe doesn't work: benchmark dominates
+           numerator+denominator, agent gets no learning signal)
   Policy : MLP(6 -> 64 -> 64 -> 1)  — NO memory
 
 Two-layer RL design — objectives are complementary, not conflicting:
@@ -418,29 +419,34 @@ class SACAgent:
 # REWARD
 # =============================================================================
 
-def compute_reward(port_ret: float, bench_vol_ann: float, rolling_te_ann: float) -> float:
+def compute_reward(active_ret: float, bench_vol_ann: float, rolling_te_ann: float) -> float:
     """
-    Layer 2 reward: annualised portfolio Sharpe ratio.
+    Layer 2 reward: risk-adjusted active return (Sharpe of the active component).
 
-    Sharpe = (port_ret - RF_monthly) / port_vol_monthly × √12
+    For index enhancement, the agent only controls the ACTIVE component
+    (how much to tilt away from the benchmark). The appropriate reward is
+    therefore the Sharpe of that active component, which equals the IR:
 
-    Portfolio monthly vol is approximated as:
-        port_vol_m ≈ √(bench_vol_m² + te_m²)
-    where bench_vol_m and te_m are the monthly equivalents of their
-    annualised counterparts in the state vector.
+        reward = active_ret × 12  −  risk_penalty
 
-    This makes Layer 2 maximise total risk-adjusted return, which is
-    distinct from Layer 1's IC/ICIR objective and does not conflict with it:
-    - A stronger signal (high IC from L1) should lead L2 to tilt more
-      aggressively, because more alpha per unit of tilt raises Sharpe.
-    - High market vol leads L2 to tilt less, as it raises port_vol
-      denominator without increasing expected return.
+    where the risk penalty incorporates both tracking error AND total
+    portfolio vol (bench_vol + te), so the agent accounts for the full
+    risk environment when choosing how aggressively to tilt.
+
+    Note: using total portfolio Sharpe = (port_ret - RF) / port_vol does NOT
+    work here — the benchmark dominates both numerator and denominator and
+    the agent's alpha barely moves the ratio, giving near-zero learning signal.
+
+    Two-layer design (non-conflicting):
+      Layer 1 (5b): maximises IC/ICIR of the combined factor signal.
+      Layer 2 (this): maximises Sharpe of the active return = IR.
+      L1 asks "which factors to trust?", L2 asks "how hard to act on them?".
     """
-    bench_vol_m  = bench_vol_ann / np.sqrt(12)
-    te_m         = max(rolling_te_ann, ALPHA_MIN) / np.sqrt(12)
-    port_vol_m   = np.sqrt(bench_vol_m ** 2 + te_m ** 2) + 1e-6
-    sharpe_m     = (port_ret - RF_MONTHLY) / port_vol_m
-    return float(sharpe_m * np.sqrt(12))   # annualise
+    annualised  = active_ret * 12.0
+    te_breach   = max(0.0, rolling_te_ann - TE_TARGET)
+    # Additional penalty when total market vol is high (risk-off regime)
+    vol_penalty = 0.5 * max(0.0, bench_vol_ann - 0.15)  # penalise excess bench vol
+    return annualised - TE_PENALTY * te_breach ** 2 - vol_penalty
 
 
 # =============================================================================
@@ -471,7 +477,7 @@ def train(agent, episodes):
                 continue
 
             reward    = compute_reward(
-                result["port_ret"],
+                result["active_ret"],
                 float(row["bench_vol"]),
                 float(row["rolling_te"]),
             )
