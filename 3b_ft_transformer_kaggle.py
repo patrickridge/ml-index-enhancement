@@ -1,7 +1,7 @@
 """
-2b_nn_backtest_kaggle.py  — GPU-ready standalone version
+3b_nn_backtest_kaggle.py  — GPU-ready standalone version
 =========================================================
-Identical logic to 2b_nn_backtest.py but with NO dependency on config.py.
+Identical logic to 3a_nn_backtest.py but with NO dependency on config.py.
 All hyperparameters are defined as plain variables at the top — easy to tweak on Kaggle.
 
 ╔══════════════════════════════════════════════════════════════════════╗
