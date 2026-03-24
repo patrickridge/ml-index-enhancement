@@ -419,34 +419,18 @@ class SACAgent:
 # REWARD
 # =============================================================================
 
-def compute_reward(active_ret: float, bench_vol_ann: float, rolling_te_ann: float) -> float:
+def compute_reward(active_ret: float, bench_vol_ann: float = 0.0,
+                   rolling_te_ann: float = 0.0) -> float:
     """
-    Layer 2 reward: risk-adjusted active return (Sharpe of the active component).
+    Layer 2 reward: annualised active return.
 
-    For index enhancement, the agent only controls the ACTIVE component
-    (how much to tilt away from the benchmark). The appropriate reward is
-    therefore the Sharpe of that active component, which equals the IR:
-
-        reward = active_ret × 12  −  risk_penalty
-
-    where the risk penalty incorporates both tracking error AND total
-    portfolio vol (bench_vol + te), so the agent accounts for the full
-    risk environment when choosing how aggressively to tilt.
-
-    Note: using total portfolio Sharpe = (port_ret - RF) / port_vol does NOT
-    work here — the benchmark dominates both numerator and denominator and
-    the agent's alpha barely moves the ratio, giving near-zero learning signal.
-
-    Two-layer design (non-conflicting):
-      Layer 1 (5b): maximises IC/ICIR of the combined factor signal.
-      Layer 2 (this): maximises Sharpe of the active return = IR.
-      L1 asks "which factors to trust?", L2 asks "how hard to act on them?".
+    The TE constraint is implicit: high alpha × weak signal → negative active_ret
+    → agent learns to reduce alpha when signal quality is low.
+    No explicit TE penalty needed — and it cannot be applied here anyway because
+    rolling_te in the state vector is z-score normalised (STATE_COLS), so comparing
+    it against TE_TARGET=0.03 (raw %) produces massive spurious penalties (avg -3.5).
     """
-    annualised  = active_ret * 12.0
-    te_breach   = max(0.0, rolling_te_ann - TE_TARGET)
-    # Additional penalty when total market vol is high (risk-off regime)
-    vol_penalty = 0.5 * max(0.0, bench_vol_ann - 0.15)  # penalise excess bench vol
-    return annualised - TE_PENALTY * te_breach ** 2 - vol_penalty
+    return active_ret * 12.0
 
 
 # =============================================================================

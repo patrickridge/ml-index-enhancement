@@ -248,20 +248,32 @@ def fit_linear_bridge(macro: pd.DataFrame) -> tuple:
     coefs, _, _, _ = np.linalg.lstsq(X_aug, y, rcond=None)
     intercept_mv = coefs[0]
     coefs_mv     = coefs[1:]
-    y_pred = X_aug @ coefs
-    ss_res = np.sum((y - y_pred) ** 2)
+    y_pred       = X_aug @ coefs
+    residuals    = y - y_pred
+    residual_std = float(np.std(residuals))
+    ss_res = np.sum(residuals ** 2)
     ss_tot = np.sum((y - y.mean()) ** 2)
     r2     = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
-    print(f"  Linear bridge R² = {r2:.3f} (n={len(merged)} months)")
-    return coefs_mv, intercept_mv, r2
+    print(f"  Linear bridge R² = {r2:.3f}  residual σ = {residual_std*100:.3f}%  (n={len(merged)} months)")
+    return coefs_mv, intercept_mv, r2, residual_std
 
 
 def synthetic_to_active_returns(X_synth_norm: np.ndarray, X_mean: np.ndarray,
                                  X_std: np.ndarray, coefs: np.ndarray,
-                                 intercept: float) -> np.ndarray:
-    """Denormalise synthetic features, then apply linear bridge."""
+                                 intercept: float,
+                                 residual_std: float = 0.0) -> np.ndarray:
+    """
+    Denormalise synthetic features, apply linear bridge, then add residual noise.
+
+    The OLS bridge explains only part of the variance in active returns (low R²
+    is typical with 3 macro features). Without residual noise, all 1,000 synthetic
+    predictions cluster tightly around the regression mean → std ≈ 0 → IR blows up.
+    Adding N(0, residual_std) restores realistic return dispersion.
+    """
     X_real = X_synth_norm * X_std + X_mean
-    return intercept + X_real @ coefs
+    y_hat  = intercept + X_real @ coefs
+    noise  = np.random.normal(0.0, residual_std, size=len(y_hat)) if residual_std > 0 else 0.0
+    return y_hat + noise
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -465,9 +477,11 @@ def main():
 
     # ── Linear bridge: features → active returns
     print("\nFitting linear bridge (active_ret ~ macro features) ...")
-    coefs, intercept, r2 = fit_linear_bridge(macro)
+    coefs, intercept, r2, residual_std = fit_linear_bridge(macro)
 
-    synth_active = synthetic_to_active_returns(X_synth_bear, X_mean, X_std, coefs, intercept)
+    synth_active = synthetic_to_active_returns(
+        X_synth_bear, X_mean, X_std, coefs, intercept, residual_std
+    )
 
     # ── Statistics
     synth_stats = stress_ir(synth_active)
