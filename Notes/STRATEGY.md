@@ -182,9 +182,9 @@ IR > 0.5 = good (top-quartile institutional fund managers typically hit ~0.3–0
 
 CS-Transformer is the only model that generates consistent alpha regardless of market regime. FT-Transformer IR collapses to near-zero after retraining — confirms CS-T's cross-sectional architecture is the key differentiator.
 
-### RL Agent Results (5a_rl_portfolio_agent.py)
+### RL Agent Results
 
-SAC agent replacing fixed-alpha tilt — adapts aggressiveness monthly based on signal and regime:
+**Layer 2 — Portfolio Tilt (5a_rl_portfolio_agent.py)**
 
 | Metric | RL Agent | Fixed α=0.01 |
 |--------|---------|-------------|
@@ -193,6 +193,17 @@ SAC agent replacing fixed-alpha tilt — adapts aggressiveness monthly based on 
 | Hit Rate | 54.2% | 54.2% |
 
 RL agent learns higher alpha in risk-off months (avg 3.15%) vs risk-on (avg 1.97%).
+
+**Layer 1 — Adaptive Factor Weighting (5b_rl_factor_agent.py)**
+
+| Method | Mean IC | ICIR | Hit Rate |
+|--------|---------|------|---------|
+| **RL adaptive weights** | **0.0507** | **0.368** | **65.8%** |
+| Equal weights | 0.0119 | 0.058 | 57.9% |
+| IC-decay weights | 0.0110 | 0.051 | 57.9% |
+| IC-optimised weights | 0.0040 | 0.033 | 47.4% |
+
+RL IC is 4× higher than next best. Static optimised weights underperform — overfit to training period signal. The RL agent dynamically upweights factors with recent positive IC and downweights those that have stopped working.
 
 ---
 
@@ -232,22 +243,29 @@ RL agent learns higher alpha in risk-off months (avg 3.15%) vs risk-on (avg 1.97
 4. Retrain CS-Transformer + FT-Transformer on Kaggle with expanded universe
 5. Re-run `4b_index_enhancement.py` + `4c_regime_engine.py`
 
-**Reinforcement Learning — Layer 2 (implemented in `5a_rl_portfolio_agent.py`):**
+**Two-layer RL design — objectives are complementary, not conflicting:**
 
-A SAC (Soft Actor-Critic) agent replaces the fixed alpha with a dynamic decision each month.
+| Layer | File | Objective | What it optimises |
+|-------|------|-----------|-------------------|
+| **Layer 1** | `5b_rl_factor_agent.py` | Maximise IC / ICIR | *What signal to generate* — which factors to trust each month |
+| **Layer 2** | `5a_rl_portfolio_agent.py` | Maximise portfolio Sharpe | *How aggressively to act* on that signal each month |
+
+No conflict: Layer 1 never sees portfolio vol. Layer 2 takes signal quality as given and adjusts tilt to maximise risk-adjusted total return. A stronger signal (high recent IC from L1) should cause L2 to tilt more aggressively, as more alpha per unit of tilt raises Sharpe.
+
+**Layer 2 — Portfolio Tilt (`5a_rl_portfolio_agent.py`):**
 
 - **State (6 features):** signal strength, signal dispersion, benchmark vol, recent active return, regime indicator, rolling tracking error
 - **Action:** alpha in [0.002, 0.05] — how aggressively to tilt this month
-- **Reward:** active return x 12 − penalty if tracking error exceeds 3% target
-- **Policy:** MLP only — NO memory, NO recurrence. Each month is fully independent (Markov). Hard constraint to prevent data leakage.
+- **Reward:** annualised portfolio Sharpe ratio = (port_ret − RF) / port_vol × √12, where port_vol ≈ √(bench_vol² + rolling_te²) monthly
+- **Policy:** MLP only — NO memory, NO recurrence. Each month is fully independent (Markov).
 - **Training:** factor-combo scores on full panel 2010–2022 (12 years, ~103 months)
 - **Evaluation:** CS-Transformer scores on test period 2023–2025
 
-**Layer 1 — Factor Weighting RL (implemented in `5b_rl_factor_agent.py`):**
+**Layer 1 — Adaptive Factor Weighting (`5b_rl_factor_agent.py`):**
 
 - **State (133-dim):** rolling 6m IC per factor (43) + rolling 12m IC per factor (43) + IC momentum (43) + macro (4)
 - **Action:** 43-dim weight vector — how much to trust each factor this month
-- **Reward:** IC of combined signal (direct IC maximisation, not a proxy)
+- **Reward:** direct monthly IC of the combined weighted factor signal (IC/ICIR maximisation)
 - **Policy:** MLP only, no memory, fully Markov
 - In momentum regimes: upweights momentum/quality factors. In mean-reversion regimes: shifts to contrarian factors.
 
@@ -259,7 +277,7 @@ A SAC (Soft Actor-Critic) agent replaces the fixed alpha with a dynamic decision
 streamlit run 6_regime_dashboard.py
 ```
 
-4-tab Streamlit app: regime breakdown, block bootstrap CI on IR, Monte Carlo forward projection, full stats table with IR heatmap. Sidebar controls for model/regime selection and stochastic engine settings.
+5-tab Streamlit app: Regime Breakdown, Bootstrap Analysis, Monte Carlo Projection, Statistics table with IR heatmap, 3-D Volatility Surface. Sidebar controls for model/regime selection and stochastic engine settings. Run: `streamlit run 6_regime_dashboard.py` (opens localhost:8501).
 
 ---
 

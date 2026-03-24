@@ -50,3 +50,9 @@ The SAC agent (`5a_rl_portfolio_agent.py`) is trained on factor-combo scores (20
 
 ### 9. RL Test Period Too Short for Reliable IR
 The RL agent is evaluated on 24 test months (2023–2025). IR of 0.284 on 24 months has a wide confidence interval (~±0.4). Cannot reliably distinguish skill from luck at this sample size. As more test months accumulate, the estimate will stabilise.
+
+### 10. Layer 1 and Layer 2 RL Not Yet Connected End-to-End
+Layer 1 (5b — factor weighting, objective: maximise IC/ICIR) and Layer 2 (5a — portfolio tilt, objective: maximise portfolio Sharpe) are currently trained and evaluated independently. The objectives are deliberately non-conflicting: L1 optimises signal quality, L2 optimises how aggressively to act on that signal. The full pipeline should feed L1's recent IC directly into L2's state vector so L2 can trust the signal more when L1 has high recent IC. Requires joint or sequential training once more CS-T test months accumulate.
+
+### 11. FT-Transformer Dropped from IE
+After retraining on 240 months, FT-Transformer IE IR collapsed to 0.015. It is no longer useful for index enhancement. Only CS-Transformer and LGBM are viable IE models. An ensemble of CS-T + LGBM has not yet been evaluated and could improve IR further.

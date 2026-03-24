@@ -890,14 +890,31 @@ Regime breakdown (HMM):
 - FT-Transformer retrained (240 months) — awaiting IE pipeline rerun
 - PATH fixed for streamlit
 
-**In progress:**
-- 5b_rl_factor_agent.py training (running locally)
-- IE pipeline rerun with updated FT-T scores (pending file download from Kaggle)
+### 13.5 — Layer 1 RL Results (24 Mar 2026)
+
+Fixed performance bug: original script recomputed full panel IC 91,200 times (800 epochs × 114 months). Fixed by precomputing z-scored factor matrices once before training — reduced runtime from ~3 hours to ~8 minutes.
+
+Test period IC results (2023+):
+
+| Method | Mean IC | ICIR | Hit Rate |
+|--------|---------|------|---------|
+| **RL adaptive weights** | **0.0507** | **0.368** | **65.8%** |
+| Equal weights | 0.0119 | 0.058 | 57.9% |
+| IC-decay weights | 0.0110 | 0.051 | 57.9% |
+| IC-optimised weights | 0.0040 | 0.033 | 47.4% |
+
+**RL IC is 4× higher than next best.** Static optimised weights perform worst — overfit to training period signal that doesn't hold in 2023+. RL agent adapts dynamically to recent IC history + macro state.
+
+**Current status:**
+- Both RL layers complete and working
+- Regime dashboard live
+- All results updated
 
 **Next steps:**
-1. Download FT-T scores from Kaggle → `python 4b_index_enhancement.py` → `python 4c_regime_engine.py --hmm`
-2. Wait for 5b training to complete → review Layer 1 RL IC results
-3. Commit and push all new scripts + results
+1. Commit and push all new scripts + results
+2. Connect Layer 1 → Layer 2 into full end-to-end RL pipeline
+3. Ensemble CS-T + LGBM scores (FT-T dropped from IE)
+4. Update presentation slides before Thursday
 
 ---
 

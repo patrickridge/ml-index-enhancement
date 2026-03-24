@@ -15,8 +15,18 @@ Architecture:
   State  (6 features): signal strength, signal dispersion, benchmark vol,
                         recent active return, regime, rolling tracking error
   Action : alpha in [0.002, 0.05]  (continuous — how much to tilt this month)
-  Reward : monthly active return - penalty for tracking error violations
+  Reward : annualised portfolio Sharpe ratio  ← Sharpe maximisation
+           (port_ret - RF) / port_vol × √12
+           where port_vol ≈ √(bench_vol² + rolling_te²) monthly
   Policy : MLP(6 -> 64 -> 64 -> 1)  — NO memory
+
+Two-layer RL design — objectives are complementary, not conflicting:
+  Layer 1 (5b_rl_factor_agent.py) : maximises IC / ICIR of the combined
+    factor signal — optimises WHAT signal to generate.
+  Layer 2 (this file)             : maximises portfolio Sharpe ratio —
+    optimises HOW AGGRESSIVELY to act on that signal each month.
+  No conflict: L1 never sees portfolio vol; L2 takes signal quality as given
+  and adjusts tilt to maximise risk-adjusted total return.
 
 SAC (Soft Actor-Critic):
   - Off-policy, model-free RL for continuous action spaces
@@ -73,8 +83,10 @@ WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
 # ── Hyperparameters ────────────────────────────────────────────────────────────
 ALPHA_MIN   = 0.002
 ALPHA_MAX   = 0.050
-TE_TARGET   = 0.030          # 3% annualised tracking error soft target
-TE_PENALTY  = 5.0
+TE_TARGET   = 0.030          # 3% annualised tracking error (used in state feature only)
+TE_PENALTY  = 5.0            # legacy — no longer used in reward (kept for reference)
+RF_ANNUAL   = 0.042          # approximate risk-free rate (4.2% — US 3m T-bill 2024 avg)
+RF_MONTHLY  = RF_ANNUAL / 12 # monthly risk-free rate for Sharpe calculation
 
 TRAIN_START = "2010-01-01"
 TRAIN_END   = "2022-12-31"
@@ -396,10 +408,29 @@ class SACAgent:
 # REWARD
 # =============================================================================
 
-def compute_reward(active_ret, approx_te):
-    annualised = active_ret * 12.0
-    te_breach  = max(0.0, approx_te - TE_TARGET)
-    return annualised - TE_PENALTY * te_breach ** 2
+def compute_reward(port_ret: float, bench_vol_ann: float, rolling_te_ann: float) -> float:
+    """
+    Layer 2 reward: annualised portfolio Sharpe ratio.
+
+    Sharpe = (port_ret - RF_monthly) / port_vol_monthly × √12
+
+    Portfolio monthly vol is approximated as:
+        port_vol_m ≈ √(bench_vol_m² + te_m²)
+    where bench_vol_m and te_m are the monthly equivalents of their
+    annualised counterparts in the state vector.
+
+    This makes Layer 2 maximise total risk-adjusted return, which is
+    distinct from Layer 1's IC/ICIR objective and does not conflict with it:
+    - A stronger signal (high IC from L1) should lead L2 to tilt more
+      aggressively, because more alpha per unit of tilt raises Sharpe.
+    - High market vol leads L2 to tilt less, as it raises port_vol
+      denominator without increasing expected return.
+    """
+    bench_vol_m  = bench_vol_ann / np.sqrt(12)
+    te_m         = max(rolling_te_ann, ALPHA_MIN) / np.sqrt(12)
+    port_vol_m   = np.sqrt(bench_vol_m ** 2 + te_m ** 2) + 1e-6
+    sharpe_m     = (port_ret - RF_MONTHLY) / port_vol_m
+    return float(sharpe_m * np.sqrt(12))   # annualise
 
 
 # =============================================================================
@@ -426,8 +457,11 @@ def train(agent, episodes):
             if result is None:
                 continue
 
-            approx_te = abs(result["active_ret"]) * np.sqrt(12)
-            reward    = compute_reward(result["active_ret"], approx_te)
+            reward    = compute_reward(
+                result["port_ret"],
+                float(row["bench_vol"]),
+                float(row["rolling_te"]),
+            )
             ep_rewards.append(reward)
 
             done = (i == len(train_rows) - 1)
