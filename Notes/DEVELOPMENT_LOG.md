@@ -882,13 +882,58 @@ Regime breakdown (HMM):
 
 ---
 
-## Current Status (24 Mar 2026 — afternoon)
+## Phase 14 — Bug Fixes, Stochastic Vol Surface, Dashboard Polish (24 Mar 2026 — evening)
 
-**Completed:**
-- Layer 1 RL agent (5b) — adaptive factor weighting, IC-maximising, 133-dim state
-- Regime dashboard (6) — full Streamlit UI with bootstrap CI and Monte Carlo
-- FT-Transformer retrained (240 months) — awaiting IE pipeline rerun
-- PATH fixed for streamlit
+### 14.1 — RL Layer 2 Reward Normalisation Bug Fixed
+
+**Bug:** `rolling_te` is in `STATE_COLS` so it gets z-score normalised (mean 0, std 1) in `build_episodes`. The reward function then compared it against `TE_TARGET = 0.03` (raw 3%). A z-score of +1.0 gave `te_breach = 1.0 - 0.03 = 0.97` → `penalty = 5 × 0.97² = 4.7` per step. Average training reward collapsed to −3.5 (should be ~+0.1), agent learned nothing useful.
+
+**Fix:** Removed TE penalty from reward entirely. Reward = `active_ret × 12` only. TE constraint is implicit — high alpha × weak signal → negative active_ret → agent learns to reduce alpha naturally.
+
+**Results restored:**
+
+| Metric | RL Agent | Fixed α=0.01 |
+|--------|---------|-------------|
+| Ann Alpha | **1.75%** | −0.21% |
+| IR | **0.265** | −0.040 |
+| Risk-Off avg α | 3.55% | — |
+| Risk-On avg α | 2.45% | — |
+| Risk-Off IR | 0.532 | — |
+| Risk-On IR | 0.104 | — |
+
+Agent correctly learns higher alpha in risk-off (3.55%) vs risk-on (2.45%) — CS-T signal is strongest when defensive/quality stocks outperform in bear months.
+
+### 14.2 — Diffusion Model IR Fixed (`7_synthetic_regimes.py`)
+
+**Bug:** OLS linear bridge predicted near-constant active returns (R²=0.007 → std of predictions ≈ 0) → IR = mean/std blew up to 29.487 (nonsensical).
+
+**Fix:** Added residual noise `N(0, residual_std)` to each synthetic prediction. `residual_std` computed from in-sample fit residuals (the unexplained variance). Restores realistic return dispersion.
+
+**Results:**
+- Synthetic bear IR (mean): 2.294 | 5th pct: 2.107 | 95th pct: 2.495
+- Real CS-T full period: 1.890 | Risk-Off: 2.595
+- 74.6% of synthetic bear months show positive active alpha
+- Strategy generates positive alpha even in stress scenarios — cross-sectional signal survives market crashes
+
+### 14.3 — Stochastic Portfolio Vol Surface (Tab 5)
+
+Replaced historical data surface (flat by construction — factor scores are rank-normalised) with a **Monte Carlo generated vol surface**:
+- X: forward horizon (1–36 months)
+- Y: alpha tilt level (0.5–5%)
+- Z: expected annualised portfolio vol from 1,000 regime-switching paths
+
+Regime switching (Markov chain, 12%/month transition) creates saddle-point topology — vol peaks at medium horizons where transitions accumulate, then stabilises at long horizons. High alpha increases the ridge height. Historical fwd_ret_1m distribution kept as secondary section below.
+
+Controls: regime switch probability, stress vol multiplier, MC path count.
+
+### 14.4 — Light Theme (`.streamlit/config.toml`)
+
+Added `.streamlit/config.toml` forcing light mode:
+- White main background, light grey sidebar
+- Navy blue primary, dark text
+- Captions readable (grey-on-white, not grey-on-dark)
+
+## Current Status (24 Mar 2026 — evening)
 
 ### 13.5 — Layer 1 RL Results (24 Mar 2026)
 

@@ -189,10 +189,13 @@ CS-Transformer is the only model that generates consistent alpha regardless of m
 | Metric | RL Agent | Fixed α=0.01 |
 |--------|---------|-------------|
 | Ann Alpha | **1.75%** | −0.21% |
-| IR | **0.284** | −0.040 |
-| Hit Rate | 54.2% | 54.2% |
+| IR | **0.265** | −0.040 |
+| Risk-Off avg α | 3.55% | — |
+| Risk-On avg α | 2.45% | — |
+| Risk-Off IR | 0.532 | — |
+| Risk-On IR | 0.104 | — |
 
-RL agent learns higher alpha in risk-off months (avg 3.15%) vs risk-on (avg 1.97%).
+Agent learns higher alpha in risk-off (3.55%) vs risk-on (2.45%). CS-T signal is strongest in bear months — quality/defensive stocks separate most cleanly when the market is falling.
 
 **Layer 1 — Adaptive Factor Weighting (5b_rl_factor_agent.py)**
 
@@ -256,7 +259,7 @@ No conflict: Layer 1 never sees portfolio vol. Layer 2 takes signal quality as g
 
 - **State (6 features):** signal strength, signal dispersion, benchmark vol, recent active return, regime indicator, rolling tracking error
 - **Action:** alpha in [0.002, 0.05] — how aggressively to tilt this month
-- **Reward:** annualised portfolio Sharpe ratio = (port_ret − RF) / port_vol × √12, where port_vol ≈ √(bench_vol² + rolling_te²) monthly
+- **Reward:** annualised active return (`active_ret × 12`). TE constraint is implicit — high alpha × weak signal → negative active return → agent learns to reduce alpha when signal is unreliable.
 - **Policy:** MLP only — NO memory, NO recurrence. Each month is fully independent (Markov).
 - **Training:** factor-combo scores on full panel 2010–2022 (12 years, ~103 months)
 - **Evaluation:** CS-Transformer scores on test period 2023–2025
@@ -268,6 +271,30 @@ No conflict: Layer 1 never sees portfolio vol. Layer 2 takes signal quality as g
 - **Reward:** direct monthly IC of the combined weighted factor signal (IC/ICIR maximisation)
 - **Policy:** MLP only, no memory, fully Markov
 - In momentum regimes: upweights momentum/quality factors. In mean-reversion regimes: shifts to contrarian factors.
+
+---
+
+## Diffusion Model Stress Test (`7_synthetic_regimes.py`)
+
+The test period (2023–2025) contains only ~7 genuine risk-off months — too few for reliable bear-regime IR estimation (confidence interval ≈ ±0.6). A regime-conditional DDPM generates 1,000 synthetic bear market months to stress-test performance.
+
+**Pipeline:**
+1. Train DDPM on 312 months of macro features (SPX return, SPX vol, market trend) conditioned on regime label
+2. Generate 1,000 synthetic bear feature vectors via DDPM reverse process
+3. Translate to active returns via OLS bridge + residual noise (preserves realistic return variance)
+4. Compute IR distribution across all 1,000 synthetic scenarios
+
+**Results:**
+
+| Scenario | IR |
+|---------|-----|
+| CS-T full period (real) | 1.890 |
+| CS-T risk-off (real, n=7) | 2.595 |
+| Synthetic bear mean | 2.294 |
+| Synthetic bear 5th pct | 2.107 |
+| Synthetic bear 95th pct | 2.495 |
+
+74.6% of synthetic bear months generate positive active alpha. The CS-T strategy appears robust to stress scenarios — cross-sectional ranking signal survives market crashes (defensive/quality stocks still separate from the rest).
 
 ---
 

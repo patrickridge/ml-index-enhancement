@@ -80,6 +80,7 @@ PANEL_FILE   = DATA_DIR / "panel_monthly_enriched.parquet"
 FACTORS_FILE = DATA_DIR / "factor_selected_optimised.csv"
 SCORES_FILE  = DATA_DIR / "scores_cs_transformer.parquet"
 WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
+L1_IC_FILE   = DATA_DIR / "l1_rl_ic_full.csv"   # Layer 1 IC — produced by 5b_rl_factor_agent.py
 
 # ── Hyperparameters ────────────────────────────────────────────────────────────
 ALPHA_MIN   = 0.002
@@ -107,7 +108,7 @@ random.seed(SEED)
 if HAS_TORCH:
     torch.manual_seed(SEED)
 
-STATE_COLS = [
+BASE_STATE_COLS = [
     "signal_strength",    # mean abs z-score of scores
     "signal_dispersion",  # cross-sectional std of z-scores
     "bench_vol",          # rolling 3m annualised benchmark vol
@@ -115,6 +116,9 @@ STATE_COLS = [
     "regime",             # 0 = risk-on, 1 = risk-off
     "rolling_te",         # rolling 3m annualised tracking error
 ]
+# STATE_COLS is set in main() after checking whether L1 IC data is available.
+# If l1_rl_ic_full.csv exists, "l1_ic" is appended as a 7th state feature.
+STATE_COLS = BASE_STATE_COLS.copy()   # default — overridden in main() if L1 data found
 
 
 # =============================================================================
@@ -197,10 +201,15 @@ def build_factor_combo_scores(panel, factors_df):
 # BUILD EPISODE TABLE
 # =============================================================================
 
-def build_episodes(scores, weights, ref_alpha=0.01):
+def build_episodes(scores, weights, ref_alpha=0.01, l1_ic_df=None):
     """
     Build monthly state vectors for the RL environment.
     Each row = one month's state + raw scores/weights for simulation.
+
+    If l1_ic_df is provided (output of 5b_rl_factor_agent.py), the rolling
+    3-month mean of Layer 1's IC is appended as a 7th state feature ("l1_ic").
+    This lets Layer 2 know whether Layer 1's signal is currently reliable —
+    completing the L1→L2 end-to-end pipeline connection.
     """
     scores  = scores.copy()
     weights = weights.copy()
@@ -246,12 +255,20 @@ def build_episodes(scores, weights, ref_alpha=0.01):
     vol_med      = df["bench_vol"].expanding(min_periods=6).median()
     df["regime"] = (df["bench_vol"] > vol_med).astype(float).fillna(0.0)
 
+    # L1→L2 connection: merge Layer 1 IC if provided
+    if l1_ic_df is not None:
+        l1 = l1_ic_df[["l1_ic"]].copy()
+        l1.index = pd.to_datetime(l1.index)
+        # Rolling 3m mean so L2 sees recent L1 IC trend, not just last month
+        l1["l1_ic"] = l1["l1_ic"].rolling(3, min_periods=1).mean()
+        df = df.join(l1, how="left")
+        df["l1_ic"] = df["l1_ic"].fillna(0.0)
+
     for col in STATE_COLS:
         if col == "regime":
             continue
         mu, sg  = df[col].mean(), df[col].std() + 1e-8
         df[col] = (df[col] - mu) / sg
-        # Replace any residual NaN / inf after normalisation and clip to ±5σ
         df[col] = df[col].fillna(0.0).clip(-5.0, 5.0)
 
     return df
@@ -645,9 +662,23 @@ def main():
     print(f"  Built {len(scores_train):,} rows across "
           f"{scores_train['date'].nunique()} months")
 
+    # L1→L2 connection: load Layer 1 IC if available
+    global STATE_COLS
+    l1_ic_df = None
+    if L1_IC_FILE.exists():
+        l1_ic_df   = pd.read_csv(L1_IC_FILE, index_col=0, parse_dates=True)
+        STATE_COLS = BASE_STATE_COLS + ["l1_ic"]
+        print(f"\nL1→L2 connection: loaded {L1_IC_FILE.name} "
+              f"({len(l1_ic_df)} months). State dim: {len(STATE_COLS)}.")
+    else:
+        STATE_COLS = BASE_STATE_COLS.copy()
+        print(f"\nL1 IC file not found ({L1_IC_FILE}). "
+              "Running without L1 connection (6-dim state). "
+              "Run 5b_rl_factor_agent.py first to enable L1→L2 pipeline.")
+
     print("\nBuilding episode tables ...")
-    ep_train = build_episodes(scores_train, weights)
-    ep_test  = build_episodes(scores_test,  weights)
+    ep_train = build_episodes(scores_train, weights, l1_ic_df=l1_ic_df)
+    ep_test  = build_episodes(scores_test,  weights, l1_ic_df=l1_ic_df)
     print(f"  Train: {len(ep_train)} months  |  Test: {len(ep_test)} months")
     print(f"  State: {len(STATE_COLS)} features: {STATE_COLS}")
 

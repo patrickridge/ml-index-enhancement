@@ -65,15 +65,15 @@ MODEL_COLORS = {
 
 # Shared Plotly layout defaults
 _LAYOUT = dict(
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    font=dict(family="Arial, sans-serif", size=11, color="#2c2c2c"),
-    xaxis=dict(showgrid=True, gridcolor="#F2F2F2", linecolor="#CCCCCC",
-               linewidth=1, zeroline=False),
-    yaxis=dict(showgrid=True, gridcolor="#F2F2F2", linecolor="#CCCCCC",
-               linewidth=1, zeroline=False),
+    plot_bgcolor="#1A1D27",
+    paper_bgcolor="#1A1D27",
+    font=dict(family="Arial, sans-serif", size=11, color="#E8EDF2"),
+    xaxis=dict(showgrid=True, gridcolor="#2A2D3A", linecolor="#3A3D4A",
+               linewidth=1, zeroline=False, tickfont=dict(color="#B0B8C4")),
+    yaxis=dict(showgrid=True, gridcolor="#2A2D3A", linecolor="#3A3D4A",
+               linewidth=1, zeroline=False, tickfont=dict(color="#B0B8C4")),
     legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                bgcolor="rgba(0,0,0,0)", font=dict(size=10)),
+                bgcolor="rgba(0,0,0,0)", font=dict(size=10, color="#E8EDF2")),
     margin=dict(t=60, b=40, l=50, r=30),
 )
 
@@ -84,42 +84,42 @@ _CSS = """
 .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1200px; }
 
 /* Headings */
-h1 { font-size: 1.35rem !important; font-weight: 700; color: #12243a;
-     letter-spacing: -0.01em; border-bottom: 2px solid #1565C0;
+h1 { font-size: 1.35rem !important; font-weight: 700; color: #E8EDF2;
+     letter-spacing: -0.01em; border-bottom: 2px solid #4A9EE0;
      padding-bottom: 0.35rem; margin-bottom: 0.8rem; }
-h2 { font-size: 1.0rem !important; font-weight: 600; color: #1a2a3a;
-     border-bottom: 1px solid #e4e8ee; padding-bottom: 0.25rem; margin-top: 1rem; }
-h3 { font-size: 0.9rem !important; font-weight: 600; color: #2c3e50; }
-p  { font-size: 0.86rem; color: #555; line-height: 1.55; }
+h2 { font-size: 1.0rem !important; font-weight: 600; color: #D0D8E4;
+     border-bottom: 1px solid #2A2D3A; padding-bottom: 0.25rem; margin-top: 1rem; }
+h3 { font-size: 0.9rem !important; font-weight: 600; color: #C0C8D4; }
+p  { font-size: 0.86rem; color: #A8B4C0; line-height: 1.55; }
 
 /* Metric cards */
 [data-testid="metric-container"] {
-    background: #f9fafb;
-    border: 1px solid #dde3ea;
+    background: #1A1D27;
+    border: 1px solid #2A2D3A;
     border-radius: 5px;
     padding: 0.7rem 0.9rem;
 }
 [data-testid="metric-container"] label { font-size: 0.78rem !important;
-    color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
+    color: #8A96A8; text-transform: uppercase; letter-spacing: 0.04em; }
 [data-testid="metric-container"] [data-testid="stMetricValue"] {
-    font-size: 1.2rem !important; font-weight: 600; color: #12243a; }
+    font-size: 1.2rem !important; font-weight: 600; color: #E8EDF2; }
 
 /* Tabs */
-[data-baseweb="tab-list"] { border-bottom: 2px solid #dde3ea; gap: 0; }
+[data-baseweb="tab-list"] { border-bottom: 2px solid #2A2D3A; gap: 0; }
 [data-baseweb="tab"] { font-size: 0.83rem !important; font-weight: 500;
-    color: #5a6a7a; padding: 0.5rem 1rem; }
-[data-baseweb="tab"][aria-selected="true"] { color: #1565C0 !important;
-    border-bottom: 2px solid #1565C0; font-weight: 600; }
+    color: #8A96A8; padding: 0.5rem 1rem; }
+[data-baseweb="tab"][aria-selected="true"] { color: #4A9EE0 !important;
+    border-bottom: 2px solid #4A9EE0; font-weight: 600; }
 
 /* Sidebar */
-[data-testid="stSidebar"] { background: #f5f7fa; border-right: 1px solid #dde3ea; }
+[data-testid="stSidebar"] { background: #1A1D27; border-right: 1px solid #2A2D3A; }
 [data-testid="stSidebar"] .css-1d391kg { padding-top: 1rem; }
 section[data-testid="stSidebar"] h2 { font-size: 0.75rem !important;
-    text-transform: uppercase; letter-spacing: 0.06em; color: #8a96a3;
-    border-bottom: 1px solid #dde3ea; padding-bottom: 0.2rem; }
+    text-transform: uppercase; letter-spacing: 0.06em; color: #6A7A8A;
+    border-bottom: 1px solid #2A2D3A; padding-bottom: 0.2rem; }
 
-/* Captions / subtext */
-.stCaption, [data-testid="stCaptionContainer"] { color: #8a96a3 !important;
+/* Captions / subtext — bright enough to read on dark bg */
+.stCaption, [data-testid="stCaptionContainer"] { color: #9AAABB !important;
     font-size: 0.8rem; font-style: normal; }
 
 /* Info / warning boxes */
@@ -127,19 +127,19 @@ section[data-testid="stSidebar"] h2 { font-size: 0.75rem !important;
 
 /* Download button */
 [data-testid="stDownloadButton"] > button {
-    background: white; border: 1px solid #c5ced6; color: #2c3e50;
+    background: #1A1D27; border: 1px solid #3A4A5A; color: #C0C8D4;
     font-size: 0.83rem; font-weight: 500; padding: 0.35rem 0.9rem;
     border-radius: 4px; }
-[data-testid="stDownloadButton"] > button:hover { background: #f0f4f8; }
+[data-testid="stDownloadButton"] > button:hover { background: #2A2D3A; }
 
 /* Dividers */
-hr { border: none; border-top: 1px solid #e4e8ee; margin: 1rem 0; }
+hr { border: none; border-top: 1px solid #2A2D3A; margin: 1rem 0; }
 
 /* Dataframe */
-[data-testid="stDataFrame"] { border: 1px solid #dde3ea; border-radius: 4px; }
+[data-testid="stDataFrame"] { border: 1px solid #2A2D3A; border-radius: 4px; }
 
 /* Spinner */
-.stSpinner { color: #1565C0; }
+.stSpinner { color: #4A9EE0; }
 </style>
 """
 
@@ -748,7 +748,7 @@ with tab4:
         text_auto=".2f",
     )
     fig_hm.update_layout(
-        plot_bgcolor="white", paper_bgcolor="white",
+        plot_bgcolor="#1A1D27", paper_bgcolor="#1A1D27",
         font=dict(family="Arial, sans-serif", size=11),
         coloraxis_showscale=True,
         margin=dict(t=30, b=30, l=30, r=30),
@@ -878,23 +878,23 @@ with tab5:
 
     fig_mc.update_layout(
         height=620,
-        paper_bgcolor="white",
+        paper_bgcolor="#1A1D27",
         font=dict(family="Arial, sans-serif", size=10),
         scene=dict(
             xaxis=dict(
                 title=dict(text="Forward Horizon (months)", font=dict(size=10)),
                 tickfont=dict(size=8), gridcolor="#E0E0E0",
-                backgroundcolor="rgb(248,249,250)",
+                backgroundcolor="#1A1D27",
             ),
             yaxis=dict(
                 title=dict(text="Alpha Tilt (%)", font=dict(size=10)),
                 tickfont=dict(size=8), gridcolor="#E0E0E0",
-                backgroundcolor="rgb(248,249,250)",
+                backgroundcolor="#1A1D27",
             ),
             zaxis=dict(
                 title=dict(text="Annualised Vol (%)", font=dict(size=10)),
                 tickfont=dict(size=8), gridcolor="#E0E0E0",
-                backgroundcolor="rgb(248,249,250)",
+                backgroundcolor="#1A1D27",
             ),
             camera=dict(eye=dict(x=1.6, y=-1.9, z=1.1)),
             aspectratio=dict(x=2.0, y=1.0, z=0.85),
@@ -911,6 +911,106 @@ with tab5:
         ),
     )
     st.plotly_chart(fig_mc, use_container_width=True)
+
+    # ── Backtest Replay Animation ─────────────────────────────────────────────
+    st.divider()
+    st.markdown("## Backtest Replay — Vol Surface Through Time")
+    st.caption(
+        "Animates the stochastic vol surface using regime parameters derived from each "
+        "historical month's actual HMM state (risk-on / risk-off). Watch the surface "
+        "spike during COVID crash (2020) and rate-hike bear (2022), then flatten in "
+        "calm QE bull periods."
+    )
+
+    col_play1, col_play2, col_play3 = st.columns([1, 1, 2])
+    with col_play1:
+        play_speed = st.select_slider(
+            "Frame speed (sec)", options=[0.1, 0.2, 0.5, 1.0], value=0.2,
+            key="play_speed"
+        )
+    with col_play2:
+        replay_alpha = st.slider(
+            "Alpha tilt to track (%)", 0.5, 5.0, 2.0, step=0.5, key="replay_alpha"
+        ) / 100.0
+    with col_play3:
+        run_replay = st.button("▶  Play Backtest Replay", key="run_replay",
+                               use_container_width=True)
+
+    if run_replay:
+        import time as _time
+
+        # Build regime timeline from ALL_REGIMES definitions
+        replay_months = pd.date_range("2010-01-01", "2025-12-01", freq="MS")
+        def _regime_params(dt):
+            """Return (switch_prob, stress_mult) based on historical regime."""
+            yr = dt.year
+            if 2020 <= yr <= 2020 and dt.month <= 5:   # COVID crash
+                return 0.25, 3.0
+            elif yr == 2022:                             # rate-hike bear
+                return 0.20, 2.5
+            elif 2008 <= yr <= 2009:                     # GFC
+                return 0.22, 2.8
+            elif 2013 <= yr <= 2019:                     # QE bull
+                return 0.06, 1.4
+            else:                                        # default / recovery
+                return 0.12, 2.0
+
+        chart_slot  = st.empty()
+        status_slot = st.empty()
+
+        for dt in replay_months:
+            sw, sm   = _regime_params(dt)
+            alpha_arr_r, h_arr_r, Z_r = compute_mc_vol_surface(
+                _BASE_IR, _BASE_TE, _BENCH_VOL, _BASE_ALPHA,
+                n_alpha=18, max_horizon=24,
+                n_sims=400,       # fewer paths for speed
+                sw_prob=sw, st_mult=sm,
+                seed=int(dt.timestamp()) % 10000,
+            )
+            fig_r = go.Figure(data=[go.Surface(
+                x=h_arr_r, y=alpha_arr_r * 100, z=Z_r * 100,
+                colorscale=[
+                    [0.00, "#08306B"], [0.30, "#2171B5"],
+                    [0.55, "#6BAED6"], [0.75, "#FDAE6B"],
+                    [0.90, "#E6550D"], [1.00, "#7F2704"],
+                ],
+                cmin=14, cmax=36,   # fixed scale so surface moves, not colours
+                showscale=True,
+                colorbar=dict(
+                    title=dict(text="Vol (%)", side="right", font=dict(size=9)),
+                    thickness=12, len=0.6, tickformat=".0f",
+                ),
+            )])
+            fig_r.update_layout(
+                height=520,
+                paper_bgcolor="#1A1D27",
+                font=dict(family="Arial, sans-serif", size=9, color="#E8EDF2"),
+                scene=dict(
+                    xaxis=dict(title="Horizon (months)", backgroundcolor="#1A1D27",
+                               gridcolor="#2A2D3A", tickfont=dict(size=8)),
+                    yaxis=dict(title="Alpha (%)", backgroundcolor="#1A1D27",
+                               gridcolor="#2A2D3A", tickfont=dict(size=8)),
+                    zaxis=dict(title="Vol (%)", range=[14, 36],
+                               backgroundcolor="#1A1D27",
+                               gridcolor="#2A2D3A", tickfont=dict(size=8)),
+                    camera=dict(eye=dict(x=1.6, y=-1.9, z=1.1)),
+                    aspectratio=dict(x=2.0, y=1.0, z=0.85),
+                ),
+                margin=dict(l=0, r=0, t=40, b=0),
+                title=dict(
+                    text=(f"{dt.strftime('%b %Y')}  —  "
+                          f"switch {sw*100:.0f}%/mo  ×{sm:.1f} stress"),
+                    font=dict(size=11, color="#E8EDF2"), x=0.02,
+                ),
+            )
+            chart_slot.plotly_chart(fig_r, use_container_width=True)
+            status_slot.caption(
+                f"Month {dt.strftime('%Y-%m')}  |  "
+                f"Regime params: switch prob {sw*100:.0f}%/mo, stress ×{sm:.1f}"
+            )
+            _time.sleep(play_speed)
+
+        status_slot.caption("Replay complete.")
 
     st.divider()
 
@@ -986,24 +1086,24 @@ with tab5:
         )])
         fig_hist.update_layout(
             height=560,
-            paper_bgcolor="white",
+            paper_bgcolor="#1A1D27",
             font=dict(family="Arial, sans-serif", size=10),
             scene=dict(
                 xaxis=dict(
                     title="Month", tickmode="array",
                     tickvals=tick_idx_h, ticktext=tick_lbl_h,
                     tickfont=dict(size=8), gridcolor="#E0E0E0",
-                    backgroundcolor="rgb(248,249,250)",
+                    backgroundcolor="#1A1D27",
                 ),
                 yaxis=dict(
                     title="Cross-Sectional Percentile",
                     tickfont=dict(size=8), gridcolor="#E0E0E0",
-                    backgroundcolor="rgb(248,249,250)",
+                    backgroundcolor="#1A1D27",
                 ),
                 zaxis=dict(
                     title="Monthly Return",
                     tickfont=dict(size=8), gridcolor="#E0E0E0",
-                    backgroundcolor="rgb(248,249,250)",
+                    backgroundcolor="#1A1D27",
                 ),
                 camera=dict(eye=dict(x=1.4, y=-1.8, z=1.0)),
                 aspectratio=dict(x=2.2, y=1.0, z=0.9),

@@ -698,6 +698,15 @@ def main():
     ic_test.to_csv(DATA_DIR / "rl_factor_ic_test.csv")
     print(f"\nSaved → data/rl_factor_ic_test.csv")
 
+    # Full-period RL IC file for L1→L2 pipeline connection.
+    # 5a_rl_portfolio_agent.py loads this to add L1 IC as a state feature,
+    # so Layer 2 knows whether Layer 1's signal is currently reliable.
+    ic_full = (pd.concat([ic_train[["rl"]], ic_val[["rl"]], ic_test[["rl"]]])
+               .rename(columns={"rl": "l1_ic"})
+               .sort_index())
+    ic_full.to_csv(DATA_DIR / "l1_rl_ic_full.csv")
+    print(f"Saved → data/l1_rl_ic_full.csv  ({len(ic_full)} months, train+val+test combined)")
+
     # ── Plot ──────────────────────────────────────────────────────────────────
     plot_results(ic_train, ic_val, ic_test, reward_hist,
                  rl_weights_over_time, factor_names)
