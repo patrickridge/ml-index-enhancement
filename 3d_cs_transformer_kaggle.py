@@ -1,7 +1,7 @@
 """
-2c_cs_transformer_kaggle.py  — GPU-ready standalone version
+3d_cs_transformer_kaggle.py  — GPU-ready standalone version
 =============================================================
-Identical logic to 2c_cs_transformer.py but with NO dependency on config.py.
+Identical logic to 3c_cs_transformer.py but with NO dependency on config.py.
 All hyperparameters are defined as plain variables at the top — easy to tweak on Kaggle.
 
 ╔══════════════════════════════════════════════════════════════════════╗

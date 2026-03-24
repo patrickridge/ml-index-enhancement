@@ -104,26 +104,37 @@ Gradient-boosted decision trees — fast, interpretable via feature importance. 
 
 ## Portfolio Construction
 
-**Monthly rebalancing process:**
+Every month the portfolio is fully rebalanced using the following process:
 
-1. Run whichever model(s) to generate a score per stock
-2. Rank all ~490–500 active stocks by score
-3. Apply tilt to top and bottom 100 stocks:
+**Step 1 — Score every stock**
+The ML model scores all ~490–500 active S&P 500 stocks. Higher score = predicted to outperform next month.
 
-```python
-tilt = 0  for middle ~300 stocks  (held at SPX benchmark weight)
-tilt = +α for top 100 stocks      (overweighted vs benchmark)
-tilt = -α for bottom 100 stocks   (underweighted vs benchmark)
+**Step 2 — Rank and split into three groups**
+Stocks are sorted by score and split into:
+- **Top 100** — the 100 highest-scoring stocks (predicted best performers)
+- **Middle ~300** — held at their normal S&P 500 benchmark weight, no change
+- **Bottom 100** — the 100 lowest-scoring stocks (predicted worst performers)
 
-port_weight_i = (spx_weight_i + tilt_i).clip(min=0)
-port_weight_i = port_weight_i / sum(port_weights)   # renormalise to 1
+**Step 3 — Apply tilt**
+Each stock's portfolio weight is nudged away from its S&P 500 benchmark weight by a small amount α:
+
+```
+Top 100    →  weight = S&P500 weight + α   (overweighted vs index)
+Middle 300 →  weight = S&P500 weight       (unchanged)
+Bottom 100 →  weight = S&P500 weight − α   (underweighted vs index)
 ```
 
-Portfolio active return each month = portfolio return − S&P 500 return.
+Weights are clipped at 0 (no shorting) and renormalised to sum to 1.
 
-**Why top/bottom 100 (not all 500):** Middle-ranked stocks have noisy, near-zero signal. Applying a tilt to all 500 introduces noise. Only the extreme ends carry reliable signal.
+**Step 4 — Measure performance**
+Active return each month = our portfolio return − S&P 500 return.
+If we overweighted stocks that went up and underweighted stocks that went down, active return is positive.
 
-**Why long-only (no shorting):** Index enhancement stays close to the benchmark. Shorting would increase tracking error and introduce borrow costs. All weights clipped at 0.
+**Why top and bottom 100, not all 500?**
+Middle-ranked stocks have weak, near-zero signal. Tilting all 500 adds noise. Only the extreme ends of the ranking carry reliable predictive information.
+
+**Why long-only?**
+Index enhancement stays close to the benchmark. Shorting increases tracking error and introduces borrow costs. Weights are clipped at 0 so no stock is ever held short.
 
 ---
 

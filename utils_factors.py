@@ -720,8 +720,10 @@ def add_macro_factors(
 
     macro_reset = macro_daily.reset_index()
     macro_reset = macro_reset.sort_values("date")
+    macro_reset["date"] = pd.to_datetime(macro_reset["date"]).astype("datetime64[us]")
 
     panel_sorted = panel.sort_values("date")
+    panel_sorted["date"] = panel_sorted["date"].astype("datetime64[us]")
     result = pd.merge_asof(
         panel_sorted,
         macro_reset,

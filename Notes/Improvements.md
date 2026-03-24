@@ -29,3 +29,15 @@ All results assume zero slippage and zero commissions. Monthly turnover for the 
 
 ### 4. No Fundamental Data
 All 26 features are price-derived. Adding fundamental signals (P/E ratio, earnings growth, quality metrics) could improve predictive power, particularly for the long-short strategy.
+
+### 5. Regime Stability Filter Uses Full Panel (Minor Look-Ahead)
+In `2a_factor_analysis.py`, the regime stability check (which decides whether a factor survives into the final 43) is run on the full panel including the test period (2023–2025 AI bull regime). The IC calculation, quintile tests, and all model training are strictly train-only (≤ 2020), but the regime filter uses data it should not technically see.
+
+**Impact:** Factors that happen to have consistent IC in the 2023–2025 test period are slightly more likely to pass the stability filter. However, a factor must pass in ≥ 3 of 4 regimes — it cannot pass on AI bull data alone. The practical effect on results is small.
+
+**Why it exists:** The AI bull regime (2023–present) is one of four named regimes. Without using 2023+ data there would only be 3 regimes to test against, making the filter less meaningful.
+
+**Fix:** Use only regimes that fall entirely within the training period (pre-2021) for factor selection. Add a separate post-hoc check on test-period regime stability as a diagnostic only.
+
+### 6. 247 Missing Historical Tickers
+247 S&P 500 historical constituents could not be fetched from yfinance or Tiingo (mostly delisted/acquired companies without a clean exchange suffix). These are excluded from the universe, introducing mild survivorship bias. Wind platform does not appear to have these tickers either. Full resolution would require CRSP or Compustat access.
