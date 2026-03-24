@@ -184,7 +184,7 @@ CS-Transformer is the only model that generates consistent alpha regardless of m
 
 ### RL Agent Results
 
-**Layer 2 — Portfolio Tilt (5a_rl_portfolio_agent.py)**
+**Layer 2 — Portfolio Tilt (5b_rl_portfolio_agent.py)**
 
 | Metric | RL Agent | Fixed α=0.01 |
 |--------|---------|-------------|
@@ -197,7 +197,7 @@ CS-Transformer is the only model that generates consistent alpha regardless of m
 
 Agent learns higher alpha in risk-off (3.55%) vs risk-on (2.45%). CS-T signal is strongest in bear months — quality/defensive stocks separate most cleanly when the market is falling.
 
-**Layer 1 — Adaptive Factor Weighting (5b_rl_factor_agent.py)**
+**Layer 1 — Adaptive Factor Weighting (5a_rl_factor_agent.py)**
 
 | Method | Mean IC | ICIR | Hit Rate |
 |--------|---------|------|---------|
@@ -250,12 +250,12 @@ RL IC is 4× higher than next best. Static optimised weights underperform — ov
 
 | Layer | File | Objective | What it optimises |
 |-------|------|-----------|-------------------|
-| **Layer 1** | `5b_rl_factor_agent.py` | Maximise IC / ICIR | *What signal to generate* — which factors to trust each month |
-| **Layer 2** | `5a_rl_portfolio_agent.py` | Maximise portfolio Sharpe | *How aggressively to act* on that signal each month |
+| **Layer 1** | `5a_rl_factor_agent.py` | Maximise IC / ICIR | *What signal to generate* — which factors to trust each month |
+| **Layer 2** | `5b_rl_portfolio_agent.py` | Maximise portfolio Sharpe | *How aggressively to act* on that signal each month |
 
 No conflict: Layer 1 never sees portfolio vol. Layer 2 takes signal quality as given and adjusts tilt to maximise risk-adjusted total return. A stronger signal (high recent IC from L1) should cause L2 to tilt more aggressively, as more alpha per unit of tilt raises Sharpe.
 
-**Layer 2 — Portfolio Tilt (`5a_rl_portfolio_agent.py`):**
+**Layer 2 — Portfolio Tilt (`5b_rl_portfolio_agent.py`):**
 
 - **State (6 features):** signal strength, signal dispersion, benchmark vol, recent active return, regime indicator, rolling tracking error
 - **Action:** alpha in [0.002, 0.05] — how aggressively to tilt this month
@@ -264,7 +264,7 @@ No conflict: Layer 1 never sees portfolio vol. Layer 2 takes signal quality as g
 - **Training:** factor-combo scores on full panel 2010–2022 (12 years, ~103 months)
 - **Evaluation:** CS-Transformer scores on test period 2023–2025
 
-**Layer 1 — Adaptive Factor Weighting (`5b_rl_factor_agent.py`):**
+**Layer 1 — Adaptive Factor Weighting (`5a_rl_factor_agent.py`):**
 
 - **State (133-dim):** rolling 6m IC per factor (43) + rolling 12m IC per factor (43) + IC momentum (43) + macro (4)
 - **Action:** 43-dim weight vector — how much to trust each factor this month
@@ -336,5 +336,5 @@ Step 4 — Evaluation
   python 4d_benchmark_spx.py          # full comparison table
 
 Step 5 — Reinforcement Learning
-  python 5a_rl_portfolio_agent.py     # SAC agent — adaptive alpha (requires torch)
+  python 5b_rl_portfolio_agent.py     # SAC agent — adaptive alpha (requires torch)
 ```

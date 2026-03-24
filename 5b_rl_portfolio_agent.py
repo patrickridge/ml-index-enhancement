@@ -1,5 +1,5 @@
 """
-5a_rl_portfolio_agent.py — Reinforcement Learning Portfolio Tilt Agent
+5b_rl_portfolio_agent.py — Reinforcement Learning Portfolio Tilt Agent
 ======================================================================
 Trains a Soft Actor-Critic (SAC) agent to dynamically adapt the alpha
 (tilt strength) used in index enhancement each month.
@@ -22,7 +22,7 @@ Architecture:
   Policy : MLP(6 -> 64 -> 64 -> 1)  — NO memory
 
 Two-layer RL design — objectives are complementary, not conflicting:
-  Layer 1 (5b_rl_factor_agent.py) : maximises IC / ICIR of the combined
+  Layer 1 (5a_rl_factor_agent.py) : maximises IC / ICIR of the combined
     factor signal — optimises WHAT signal to generate.
   Layer 2 (this file)             : maximises portfolio Sharpe ratio —
     optimises HOW AGGRESSIVELY to act on that signal each month.
@@ -40,7 +40,7 @@ Training: builds factor-combo signal from panel_monthly_enriched.parquet
 Evaluation: uses CS-Transformer scores on test period 2023-2025.
 
 Run:
-  python 5a_rl_portfolio_agent.py
+  python 5b_rl_portfolio_agent.py
 
 Outputs:
   data/bt_ie_rl_agent.csv         — monthly backtest (port/bench/active ret)
@@ -80,7 +80,7 @@ PANEL_FILE   = DATA_DIR / "panel_monthly_enriched.parquet"
 FACTORS_FILE = DATA_DIR / "factor_selected_optimised.csv"
 SCORES_FILE  = DATA_DIR / "scores_cs_transformer.parquet"
 WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
-L1_IC_FILE   = DATA_DIR / "l1_rl_ic_full.csv"   # Layer 1 IC — produced by 5b_rl_factor_agent.py
+L1_IC_FILE   = DATA_DIR / "l1_rl_ic_full.csv"   # Layer 1 IC — produced by 5a_rl_factor_agent.py
 
 # ── Hyperparameters ────────────────────────────────────────────────────────────
 ALPHA_MIN   = 0.002
@@ -206,7 +206,7 @@ def build_episodes(scores, weights, ref_alpha=0.01, l1_ic_df=None):
     Build monthly state vectors for the RL environment.
     Each row = one month's state + raw scores/weights for simulation.
 
-    If l1_ic_df is provided (output of 5b_rl_factor_agent.py), the rolling
+    If l1_ic_df is provided (output of 5a_rl_factor_agent.py), the rolling
     3-month mean of Layer 1's IC is appended as a 7th state feature ("l1_ic").
     This lets Layer 2 know whether Layer 1's signal is currently reliable —
     completing the L1→L2 end-to-end pipeline connection.
@@ -631,7 +631,7 @@ def plot_results(rl_bt, fixed_bt):
 
 def main():
     print("=" * 65)
-    print("5a_rl_portfolio_agent.py — SAC Portfolio Tilt Agent")
+    print("5b_rl_portfolio_agent.py — SAC Portfolio Tilt Agent")
     print("No memory: MLP policy, each month independent (Markov)")
     print("=" * 65)
 
@@ -674,7 +674,7 @@ def main():
         STATE_COLS = BASE_STATE_COLS.copy()
         print(f"\nL1 IC file not found ({L1_IC_FILE}). "
               "Running without L1 connection (6-dim state). "
-              "Run 5b_rl_factor_agent.py first to enable L1→L2 pipeline.")
+              "Run 5a_rl_factor_agent.py first to enable L1→L2 pipeline.")
 
     print("\nBuilding episode tables ...")
     ep_train = build_episodes(scores_train, weights, l1_ic_df=l1_ic_df)

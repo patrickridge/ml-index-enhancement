@@ -916,101 +916,126 @@ with tab5:
     st.divider()
     st.markdown("## Backtest Replay — Vol Surface Through Time")
     st.caption(
-        "Animates the stochastic vol surface using regime parameters derived from each "
-        "historical month's actual HMM state (risk-on / risk-off). Watch the surface "
-        "spike during COVID crash (2020) and rate-hike bear (2022), then flatten in "
-        "calm QE bull periods."
+        "Precompute all 192 monthly frames once (~25s), then play them instantly. "
+        "Watch the surface spike during COVID crash (2020) and rate-hike bear (2022), "
+        "then flatten during QE bull (2013–2019). Fixed colour scale so the shape "
+        "changes are visible — not the colours."
     )
 
-    col_play1, col_play2, col_play3 = st.columns([1, 1, 2])
-    with col_play1:
+    import time as _time
+
+    REPLAY_MONTHS = pd.date_range("2010-01-01", "2025-12-01", freq="MS")
+
+    def _regime_params(dt):
+        yr, mo = dt.year, dt.month
+        if yr == 2008 or yr == 2009:             return 0.22, 2.8   # GFC
+        if yr == 2020 and mo <= 5:               return 0.25, 3.0   # COVID crash
+        if yr == 2020 and mo >= 6:               return 0.10, 1.6   # COVID recovery
+        if yr == 2022:                           return 0.20, 2.5   # rate-hike bear
+        if 2013 <= yr <= 2019:                   return 0.05, 1.3   # QE bull
+        return 0.12, 2.0                                            # default
+
+    # ── Controls ─────────────────────────────────────────────────────────────
+    col_a, col_b, col_c, col_d = st.columns([1, 1, 1, 1])
+    with col_a:
         play_speed = st.select_slider(
-            "Frame speed (sec)", options=[0.1, 0.2, 0.5, 1.0], value=0.2,
+            "Frame speed (sec)", options=[0.05, 0.1, 0.2, 0.4], value=0.1,
             key="play_speed"
         )
-    with col_play2:
-        replay_alpha = st.slider(
-            "Alpha tilt to track (%)", 0.5, 5.0, 2.0, step=0.5, key="replay_alpha"
-        ) / 100.0
-    with col_play3:
-        run_replay = st.button("▶  Play Backtest Replay", key="run_replay",
-                               use_container_width=True)
+    with col_b:
+        n_sims_replay = st.select_slider(
+            "MC paths per frame", options=[200, 400, 800], value=400,
+            key="n_sims_replay"
+        )
+    with col_c:
+        precompute_btn = st.button("⚙  Precompute Frames", key="precompute_btn",
+                                   use_container_width=True)
+    with col_d:
+        play_btn = st.button("▶  Play Animation", key="play_btn",
+                             use_container_width=True,
+                             disabled="replay_frames" not in st.session_state)
 
-    if run_replay:
-        import time as _time
-
-        # Build regime timeline from ALL_REGIMES definitions
-        replay_months = pd.date_range("2010-01-01", "2025-12-01", freq="MS")
-        def _regime_params(dt):
-            """Return (switch_prob, stress_mult) based on historical regime."""
-            yr = dt.year
-            if 2020 <= yr <= 2020 and dt.month <= 5:   # COVID crash
-                return 0.25, 3.0
-            elif yr == 2022:                             # rate-hike bear
-                return 0.20, 2.5
-            elif 2008 <= yr <= 2009:                     # GFC
-                return 0.22, 2.8
-            elif 2013 <= yr <= 2019:                     # QE bull
-                return 0.06, 1.4
-            else:                                        # default / recovery
-                return 0.12, 2.0
-
-        chart_slot  = st.empty()
-        status_slot = st.empty()
-
-        for dt in replay_months:
-            sw, sm   = _regime_params(dt)
-            alpha_arr_r, h_arr_r, Z_r = compute_mc_vol_surface(
+    # ── Precompute ────────────────────────────────────────────────────────────
+    if precompute_btn:
+        frames = []
+        prog   = st.progress(0.0, text="Precomputing frames…")
+        n      = len(REPLAY_MONTHS)
+        for i, dt in enumerate(REPLAY_MONTHS):
+            sw, sm = _regime_params(dt)
+            a_arr, h_arr, Z = compute_mc_vol_surface(
                 _BASE_IR, _BASE_TE, _BENCH_VOL, _BASE_ALPHA,
-                n_alpha=18, max_horizon=24,
-                n_sims=400,       # fewer paths for speed
+                n_alpha=16, max_horizon=24,
+                n_sims=n_sims_replay,
                 sw_prob=sw, st_mult=sm,
                 seed=int(dt.timestamp()) % 10000,
             )
+            frames.append({
+                "dt": dt, "sw": sw, "sm": sm,
+                "a":  a_arr, "h": h_arr, "Z": Z,
+            })
+            prog.progress((i + 1) / n,
+                          text=f"Frame {i+1}/{n}  —  {dt.strftime('%b %Y')}")
+        st.session_state["replay_frames"] = frames
+        prog.empty()
+        st.success(f"Done — {n} frames precomputed. Press ▶ Play Animation.")
+
+    # ── Play ──────────────────────────────────────────────────────────────────
+    if play_btn and "replay_frames" in st.session_state:
+        chart_slot  = st.empty()
+        status_slot = st.empty()
+
+        for f in st.session_state["replay_frames"]:
+            dt, sw, sm = f["dt"], f["sw"], f["sm"]
             fig_r = go.Figure(data=[go.Surface(
-                x=h_arr_r, y=alpha_arr_r * 100, z=Z_r * 100,
+                x=f["h"], y=f["a"] * 100, z=f["Z"] * 100,
                 colorscale=[
                     [0.00, "#08306B"], [0.30, "#2171B5"],
                     [0.55, "#6BAED6"], [0.75, "#FDAE6B"],
                     [0.90, "#E6550D"], [1.00, "#7F2704"],
                 ],
-                cmin=14, cmax=36,   # fixed scale so surface moves, not colours
+                cmin=14, cmax=36,
                 showscale=True,
                 colorbar=dict(
-                    title=dict(text="Vol (%)", side="right", font=dict(size=9)),
+                    title=dict(text="Vol (%)", side="right",
+                               font=dict(size=9, color="#E8EDF2")),
                     thickness=12, len=0.6, tickformat=".0f",
+                    tickfont=dict(color="#E8EDF2"),
                 ),
             )])
             fig_r.update_layout(
-                height=520,
+                height=540,
                 paper_bgcolor="#1A1D27",
                 font=dict(family="Arial, sans-serif", size=9, color="#E8EDF2"),
                 scene=dict(
-                    xaxis=dict(title="Horizon (months)", backgroundcolor="#1A1D27",
-                               gridcolor="#2A2D3A", tickfont=dict(size=8)),
-                    yaxis=dict(title="Alpha (%)", backgroundcolor="#1A1D27",
-                               gridcolor="#2A2D3A", tickfont=dict(size=8)),
+                    xaxis=dict(title="Horizon (months)",
+                               backgroundcolor="#1A1D27", gridcolor="#2A2D3A",
+                               tickfont=dict(size=8, color="#B0B8C4")),
+                    yaxis=dict(title="Alpha (%)",
+                               backgroundcolor="#1A1D27", gridcolor="#2A2D3A",
+                               tickfont=dict(size=8, color="#B0B8C4")),
                     zaxis=dict(title="Vol (%)", range=[14, 36],
-                               backgroundcolor="#1A1D27",
-                               gridcolor="#2A2D3A", tickfont=dict(size=8)),
+                               backgroundcolor="#1A1D27", gridcolor="#2A2D3A",
+                               tickfont=dict(size=8, color="#B0B8C4")),
                     camera=dict(eye=dict(x=1.6, y=-1.9, z=1.1)),
                     aspectratio=dict(x=2.0, y=1.0, z=0.85),
                 ),
-                margin=dict(l=0, r=0, t=40, b=0),
+                margin=dict(l=0, r=0, t=44, b=0),
                 title=dict(
-                    text=(f"{dt.strftime('%b %Y')}  —  "
-                          f"switch {sw*100:.0f}%/mo  ×{sm:.1f} stress"),
-                    font=dict(size=11, color="#E8EDF2"), x=0.02,
+                    text=(f"{dt.strftime('%b %Y')}  ·  "
+                          f"switch {sw*100:.0f}%/mo  ·  stress ×{sm:.1f}"),
+                    font=dict(size=12, color="#E8EDF2"), x=0.02,
                 ),
             )
             chart_slot.plotly_chart(fig_r, use_container_width=True)
             status_slot.caption(
-                f"Month {dt.strftime('%Y-%m')}  |  "
-                f"Regime params: switch prob {sw*100:.0f}%/mo, stress ×{sm:.1f}"
+                f"{dt.strftime('%Y-%m')}  |  switch prob {sw*100:.0f}%/mo  |  "
+                f"stress ×{sm:.1f}  |  "
+                + ("🔴 CRASH" if sm >= 2.8 else "🟠 BEAR" if sm >= 2.2
+                   else "🟡 RECOVERY" if sm >= 1.5 else "🟢 BULL")
             )
             _time.sleep(play_speed)
 
-        status_slot.caption("Replay complete.")
+        status_slot.caption("▶ Replay complete — press Play to watch again.")
 
     st.divider()
 

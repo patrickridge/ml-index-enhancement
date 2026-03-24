@@ -702,7 +702,7 @@ All scripts renamed to reflect actual execution order, grouped into 5 phases:
 | 2 (2a–2f) | `2a_factor_analysis.py` … `2f_factor_diagnostics.py` | Factor analysis |
 | 3 (3a–3d) | `3a_ft_transformer.py` … `3d_cs_transformer_kaggle.py` | Model training |
 | 4 (4a–4d) | `4a_factor_combo_baseline.py` … `4d_benchmark_spx.py` | Evaluation |
-| 5 (5a) | `5a_rl_portfolio_agent.py` | RL layer |
+| 5 (5a) | `5b_rl_portfolio_agent.py` | RL layer |
 
 README, STRATEGY.md, and DEVELOPMENT_LOG updated to use new names.
 
@@ -753,7 +753,7 @@ HMM 2-state regime breakdown with new CS-Transformer scores:
 
 **Updated finding:** CS-Transformer now stronger in risk-on (IR 2.227) than risk-off (IR 0.926) — likely due to the extended test period (39 vs 24 months) including more risk-on months. Still regime-stable. FT-Transformer and LGBM pattern unchanged.
 
-### 12.6 — RL Portfolio Agent (`5a_rl_portfolio_agent.py`) (24 Mar 2026)
+### 12.6 — RL Portfolio Agent (`5b_rl_portfolio_agent.py`) (24 Mar 2026)
 
 SAC (Soft Actor-Critic) agent replacing fixed-alpha portfolio tilt. No memory — MLP policy only, each month independent (Markov).
 
@@ -778,7 +778,7 @@ RL agent learns to adapt alpha by regime: avg alpha 3.15% in risk-off, 1.97% in 
 **Note:** RL IR (0.284) is lower than CS-T IE IR (1.874) because RL is evaluated against a sub-optimal fixed baseline (α=0.01 which gives IR=−0.04). RL adds value on top of the wrong baseline. Optimal path: use CS-T scores with RL-selected alpha — not yet evaluated.
 
 **Bugs fixed:**
-- `5a_rl_portfolio_agent.py`: NaN propagation in actor network — fixed by `np.nan_to_num(..., nan=0.0)` on state vectors
+- `5b_rl_portfolio_agent.py`: NaN propagation in actor network — fixed by `np.nan_to_num(..., nan=0.0)` on state vectors
 - `4d_benchmark_spx.py`: duplicate index labels crash — fixed by deduplicating series before `pd.concat()`
 
 ---
@@ -806,7 +806,7 @@ RL agent learns to adapt alpha by regime: avg alpha 3.15% in risk-off, 1.97% in 
 
 ## Phase 13 — RL Layer 1, Regime Dashboard, FT-Transformer Retrain (24 Mar 2026)
 
-### 13.1 — Layer 1 RL: Adaptive Factor Weighting (`5b_rl_factor_agent.py`)
+### 13.1 — Layer 1 RL: Adaptive Factor Weighting (`5a_rl_factor_agent.py`)
 
 More complex RL agent replacing fixed IC-optimised factor weights with a dynamic policy.
 

@@ -1,5 +1,5 @@
 """
-5b_rl_factor_agent.py — Layer 1 SAC: Adaptive Factor Weighting
+5a_rl_factor_agent.py — Layer 1 SAC: Adaptive Factor Weighting
 ===============================================================
 Replaces fixed IC-optimised factor weights with a dynamic RL policy that
 adapts which factors to trust each month based on recent IC history and
@@ -22,7 +22,7 @@ Val   : 2021-2022  (24 months)
 Test  : 2023+
 
 Usage:
-  python 5b_rl_factor_agent.py
+  python 5a_rl_factor_agent.py
 """
 
 import warnings, os, sys
@@ -580,7 +580,7 @@ def numpy_baseline(state_records, panel, factor_names, signs_vec,
 
 def main():
     print("=" * 65)
-    print("5b_rl_factor_agent.py — Layer 1 SAC: Adaptive Factor Weighting")
+    print("5a_rl_factor_agent.py — Layer 1 SAC: Adaptive Factor Weighting")
     print("=" * 65)
 
     # ── Load data ─────────────────────────────────────────────────────────────
@@ -699,7 +699,7 @@ def main():
     print(f"\nSaved → data/rl_factor_ic_test.csv")
 
     # Full-period RL IC file for L1→L2 pipeline connection.
-    # 5a_rl_portfolio_agent.py loads this to add L1 IC as a state feature,
+    # 5b_rl_portfolio_agent.py loads this to add L1 IC as a state feature,
     # so Layer 2 knows whether Layer 1's signal is currently reliable.
     ic_full = (pd.concat([ic_train[["rl"]], ic_val[["rl"]], ic_test[["rl"]]])
                .rename(columns={"rl": "l1_ic"})

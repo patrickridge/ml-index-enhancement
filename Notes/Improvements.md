@@ -46,7 +46,7 @@ In `2a_factor_analysis.py`, the regime stability check (which decides whether a 
 The `factor data.xlsx` export from Wind only covered December 2025 (1 month). All 43 current factors are price-derived. Adding fundamental signals (PE, PB, money flow, turnover rate) covering the full 2010–2025 history would likely improve IC meaningfully — fundamental factors tend to score higher ICIR than pure price signals. Blocked on collaborator providing full historical export.
 
 ### 8. RL Agent Trained on Factor-Combo Scores (Not CS-Transformer)
-The SAC agent (`5a_rl_portfolio_agent.py`) is trained on factor-combo scores (2010–2022) but evaluated using CS-Transformer scores (2023–2025). This creates a distribution mismatch — the agent learned alpha dynamics from a weaker signal source. Once more out-of-sample CS-Transformer test months accumulate, the agent should be retrained directly on CS-Transformer scores for a cleaner evaluation.
+The SAC agent (`5b_rl_portfolio_agent.py`) is trained on factor-combo scores (2010–2022) but evaluated using CS-Transformer scores (2023–2025). This creates a distribution mismatch — the agent learned alpha dynamics from a weaker signal source. Once more out-of-sample CS-Transformer test months accumulate, the agent should be retrained directly on CS-Transformer scores for a cleaner evaluation.
 
 ### 9. RL Test Period Too Short for Reliable IR
 The RL agent is evaluated on 24 test months (2023–2025). IR of 0.284 on 24 months has a wide confidence interval (~±0.4). Cannot reliably distinguish skill from luck at this sample size. As more test months accumulate, the estimate will stabilise.
