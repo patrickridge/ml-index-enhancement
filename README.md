@@ -61,6 +61,11 @@ python 4c_regime_engine.py --hmm       # HMM 2-state regime breakdown
 python 4d_benchmark_spx.py             # full comparison vs S&P 500
 ```
 
+### Phase 5 — Reinforcement Learning
+```bash
+python 5a_rl_portfolio_agent.py        # SAC agent — adaptive alpha tilt (requires torch)
+```
+
 ---
 
 ## Out-of-Sample Results (Test Period Jan 2023 – Oct 2025)
@@ -112,6 +117,7 @@ IR > 0.5 is top-quartile. IR > 0.9 is strong. CS-Transformer is also regime-stab
 | `4b_index_enhancement.py` | IE portfolio construction, alpha sweep |
 | `4c_regime_engine.py` | Per-regime IE performance breakdown (rule-based + HMM) |
 | `4d_benchmark_spx.py` | Compare all strategies vs S&P 500 |
+| `5a_rl_portfolio_agent.py` | SAC RL agent — learns adaptive alpha tilt (MLP, no memory) |
 | `config.py` | All shared parameters and hyperparameters |
 | `utils_factors.py` | 100+ factor computation functions (10 categories) |
 | `utils_rmt.py` | Random Matrix Theory covariance denoising |

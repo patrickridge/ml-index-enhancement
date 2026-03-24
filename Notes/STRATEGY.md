@@ -207,14 +207,21 @@ CS-Transformer is the only model that generates consistent alpha regardless of m
 4. Retrain CS-Transformer + FT-Transformer on Kaggle with expanded universe
 5. Re-run `4b_index_enhancement.py` + `4c_regime_engine.py`
 
-**Future (Reinforcement Learning):**
+**Reinforcement Learning — Layer 2 (implemented in `5a_rl_portfolio_agent.py`):**
 
-Once the transformer pipeline is stable, RL agents can replace the fixed tilt parameters:
+A SAC (Soft Actor-Critic) agent replaces the fixed alpha with a dynamic decision each month.
 
-- **Layer 1** — RL agent for factor weighting: adapts which factors to trust based on current regime and rolling IC history. Reward = next-month IC.
-- **Layer 2** — RL agent for portfolio tilt: decides how aggressively to tilt each month based on signal confidence, tracking error budget, recent drawdown, and turnover cost. Reward = active return − λ × tracking error penalty.
+- **State (6 features):** signal strength, signal dispersion, benchmark vol, recent active return, regime indicator, rolling tracking error
+- **Action:** alpha in [0.002, 0.05] — how aggressively to tilt this month
+- **Reward:** active return x 12 − penalty if tracking error exceeds 3% target
+- **Policy:** MLP only — NO memory, NO recurrence. Each month is fully independent (Markov). Hard constraint to prevent data leakage.
+- **Training:** factor-combo scores on full panel 2010–2022 (12 years, ~103 months)
+- **Evaluation:** CS-Transformer scores on test period 2023–2025
 
-Both agents use SAC (Soft Actor-Critic) — off-policy, sample-efficient, entropy regularisation prevents overfitting to specific regimes.
+**Future — Layer 1 (factor weighting RL):**
+- Adapts which factors to trust based on rolling IC history and regime
+- Reward = next-month IC
+- Requires stable factor IC history first — implement after data expansion
 
 ---
 
@@ -244,4 +251,7 @@ Step 4 — Evaluation
   python 4c_regime_engine.py          # regime breakdown (rule-based)
   python 4c_regime_engine.py --hmm    # HMM 2-state regime breakdown
   python 4d_benchmark_spx.py          # full comparison table
+
+Step 5 — Reinforcement Learning
+  python 5a_rl_portfolio_agent.py     # SAC agent — adaptive alpha (requires torch)
 ```
