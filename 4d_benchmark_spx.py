@@ -94,6 +94,8 @@ def load_strategy(filename: str, ret_col: str) -> pd.Series | None:
 
 def print_comparison(label: str, port: pd.Series, spx: pd.Series) -> dict:
     """Print and return stats dict for one strategy vs SPX."""
+    port     = port[~port.index.duplicated(keep="last")]
+    spx      = spx[~spx.index.duplicated(keep="last")]
     aligned  = pd.concat([port, spx], axis=1).dropna()
     p        = aligned.iloc[:, 0]
     b        = aligned.iloc[:, 1]

@@ -148,37 +148,51 @@ score_i = sum(optimised_weight_j × z-scored_factor_j)  for each stock i
 
 | Signal | IR |
 |--------|----|
-| Linear factor combo (no ML) | −0.046 |
-| LGBM | 0.384 |
-| FT-Transformer | 0.438 |
-| **CS-Transformer** | **0.960** |
+| Linear factor combo (no ML) | −0.047 |
+| LGBM | 0.377 |
+| FT-Transformer | 0.428 |
+| **CS-Transformer** | **1.874** |
 
-The linear combination underperforms the index. The transformer goes from −0.046 → 0.960 — it is learning genuine non-linear cross-sectional patterns, not just repackaging the factor exposures.
+The linear combination underperforms the index. The transformer goes from −0.047 → 1.874 — it is learning genuine non-linear cross-sectional patterns, not just repackaging the factor exposures.
 
 ---
 
-## Results (Out-of-Sample, Jan 2023 – Oct 2025)
+## Results (Out-of-Sample, Jan 2023 – Nov 2025)
 
 ### Index Enhancement Performance
 
 | Model | Ann. Alpha | Tracking Error | IR | Hit Rate |
 |-------|-----------|---------------|-----|----------|
-| CS-Transformer | ~2.2% | ~2.3% | **0.960** | ~67% |
-| FT-Transformer | ~0.9% | ~2.6% | 0.438 | — |
-| LGBM | ~0.5% | ~2.0% | 0.384 | — |
-| Factor-Combo (linear baseline) | — | — | −0.046 | — |
+| **CS-Transformer** | **4.16%** | **2.22%** | **1.874** | **75%** |
+| FT-Transformer | 1.06% | 2.47% | 0.428 | 46% |
+| LGBM | 0.61% | 1.61% | 0.377 | 67% |
+| Factor-Combo (linear baseline) | −0.2% | 3.5% | −0.047 | 50% |
 
-IR > 0.5 = good (top-quartile institutional fund managers typically hit ~0.3–0.5). IR > 0.9 is strong.
+IR > 0.5 = good (top-quartile institutional fund managers typically hit ~0.3–0.5). IR > 1.0 is excellent.
+
+*CS-Transformer retrained on 240 months (2010–2020). Previous run (132 months): IR = 0.960.*
 
 ### Regime Breakdown (HMM, 2-state: risk-on / risk-off)
 
-| Model | Risk-Off IR | Risk-On IR | Regime-Stable? |
-|-------|------------|-----------|----------------|
-| CS-Transformer | 1.019 | 0.931 | Yes |
-| FT-Transformer | 1.866 | 0.086 | No |
-| LGBM | 1.397 | 0.224 | No |
+| Model | Full IR | Risk-Off IR | Risk-On IR | Regime-Stable? |
+|-------|---------|------------|-----------|----------------|
+| **CS-Transformer** | **1.850** | 0.926 | **2.227** | **Yes** |
+| FT-Transformer | 0.438 | 1.866 | 0.086 | No |
+| LGBM | 0.384 | 1.397 | 0.224 | No |
 
 CS-Transformer is the only model that generates consistent alpha regardless of market regime. FT-Transformer and LGBM work primarily in risk-off (volatile/falling) markets.
+
+### RL Agent Results (5a_rl_portfolio_agent.py)
+
+SAC agent replacing fixed-alpha tilt — adapts aggressiveness monthly based on signal and regime:
+
+| Metric | RL Agent | Fixed α=0.01 |
+|--------|---------|-------------|
+| Ann Alpha | **1.75%** | −0.21% |
+| IR | **0.284** | −0.040 |
+| Hit Rate | 54.2% | 54.2% |
+
+RL agent learns higher alpha in risk-off months (avg 3.15%) vs risk-on (avg 1.97%).
 
 ---
 

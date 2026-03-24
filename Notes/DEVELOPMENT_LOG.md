@@ -690,6 +690,120 @@ Not implementing yet — waiting for fundamental data + complete universe.
 
 ---
 
+## Phase 12 — Retrain + RL Agent (24 Mar 2026)
+
+### 12.1 — Script Renaming (24 Mar 2026)
+
+All scripts renamed to reflect actual execution order, grouped into 5 phases:
+
+| Phase | Scripts | Purpose |
+|-------|---------|---------|
+| 1 (1a–1h) | `1a_price_parquet.py` … `1h_orthogonalize.py` | Data prep |
+| 2 (2a–2f) | `2a_factor_analysis.py` … `2f_factor_diagnostics.py` | Factor analysis |
+| 3 (3a–3d) | `3a_ft_transformer.py` … `3d_cs_transformer_kaggle.py` | Model training |
+| 4 (4a–4d) | `4a_factor_combo_baseline.py` … `4d_benchmark_spx.py` | Evaluation |
+| 5 (5a) | `5a_rl_portfolio_agent.py` | RL layer |
+
+README, STRATEGY.md, and DEVELOPMENT_LOG updated to use new names.
+
+### 12.2 — Wind Data Received (24 Mar 2026)
+
+Files received from collaborator:
+- `data.xlsx` — confirmed old price data, already in `prices.parquet` (no new tickers)
+- `factor data.xlsx` — fundamental data (money flow `mfd_buyamt_d`) but **only December 2025** (1 month). Full 2010–2025 history still needed.
+- `missing data.xlsx` — AABA.O already ingested in Phase 10
+
+**Status:** 247 "failed" tickers still missing — delisted US stocks without exchange suffix (e.g. `ABKFQ`, `ABMD`). Wind likely doesn't have these. Full resolution requires CRSP/Compustat.
+
+### 12.3 — CS-Transformer Retrained on Kaggle (24 Mar 2026)
+
+Retrained `3d_cs_transformer_kaggle.py` with expanded panel (697 tickers, 240 train months):
+
+| | Previous | Updated |
+|--|---------|---------|
+| Train months | 132 | 240 |
+| Test months | 35 | 39 |
+| Long-Only Top 100 Sharpe | — | 1.03 |
+| Long-Only Ann Return | — | 29.3% |
+
+Files saved: `scores_cs_transformer.parquet`, `bt_cs_transformer.csv`, `bt_cs_transformer_ls.csv`
+
+### 12.4 — IE Results Updated (24 Mar 2026)
+
+Full IE pipeline rerun with updated CS-Transformer scores (`4a` → `4d`):
+
+| Model | Ann α | TE | IR | Hit Rate |
+|-------|-------|-----|-----|----------|
+| **CS-Transformer** | **4.16%** | **2.22%** | **1.874** | 75.0% |
+| FT-Transformer | 1.06% | 2.47% | 0.428 | 45.8% |
+| LGBM | 0.61% | 1.61% | 0.377 | 66.7% |
+| Factor-Combo (linear) | −0.2% | 3.5% | −0.047 | 50.0% |
+
+**CS-Transformer IR improved from 0.960 → 1.874** — larger training set (240 vs 132 months) drove meaningful improvement. Factor-combo linear IR stable at −0.047 (confirms ML is adding genuine value, not just from more data).
+
+### 12.5 — Regime Breakdown Updated (24 Mar 2026)
+
+HMM 2-state regime breakdown with new CS-Transformer scores:
+
+| Model | Full IR | Risk-Off IR | Risk-On IR | Regime-Stable? |
+|-------|---------|------------|-----------|----------------|
+| CS-Transformer | **1.850** | 0.926 | **2.227** | Yes |
+| FT-Transformer | 0.438 | 1.866 | 0.086 | No |
+| LGBM | 0.384 | 1.397 | 0.224 | No |
+
+**Updated finding:** CS-Transformer now stronger in risk-on (IR 2.227) than risk-off (IR 0.926) — likely due to the extended test period (39 vs 24 months) including more risk-on months. Still regime-stable. FT-Transformer and LGBM pattern unchanged.
+
+### 12.6 — RL Portfolio Agent (`5a_rl_portfolio_agent.py`) (24 Mar 2026)
+
+SAC (Soft Actor-Critic) agent replacing fixed-alpha portfolio tilt. No memory — MLP policy only, each month independent (Markov).
+
+**Architecture:**
+- State (6 features): signal strength, signal dispersion, benchmark vol, recent active return, HMM regime indicator, rolling tracking error
+- Action: alpha ∈ [0.002, 0.05] — how aggressively to tilt this month
+- Reward: active return × 12 − penalty if TE > 3%
+- Training: factor-combo scores on 2010–2022 (103 months)
+- Evaluation: CS-Transformer scores on test period 2023–2025 (24 months)
+
+**Results:**
+
+| Metric | RL Agent | Fixed α=0.01 |
+|--------|---------|-------------|
+| Ann Alpha | **1.75%** | −0.21% |
+| Tracking Error | 6.16% | 5.28% |
+| IR | **0.284** | −0.040 |
+| Hit Rate | 54.2% | 54.2% |
+
+RL agent learns to adapt alpha by regime: avg alpha 3.15% in risk-off, 1.97% in risk-on. Fixed α=0.01 is suboptimal — RL improves IR from −0.040 → 0.284.
+
+**Note:** RL IR (0.284) is lower than CS-T IE IR (1.874) because RL is evaluated against a sub-optimal fixed baseline (α=0.01 which gives IR=−0.04). RL adds value on top of the wrong baseline. Optimal path: use CS-T scores with RL-selected alpha — not yet evaluated.
+
+**Bugs fixed:**
+- `5a_rl_portfolio_agent.py`: NaN propagation in actor network — fixed by `np.nan_to_num(..., nan=0.0)` on state vectors
+- `4d_benchmark_spx.py`: duplicate index labels crash — fixed by deduplicating series before `pd.concat()`
+
+---
+
+## Current Status (24 Mar 2026)
+
+**Completed:**
+- CS-Transformer retrained (240 months) — IR improved 0.960 → 1.874
+- Full IE pipeline rerun — all 4 scripts complete
+- RL agent working — adapts alpha by regime, IR 0.284 vs −0.040 fixed
+- Script renaming complete (phases 1–5)
+- Regime breakdown updated
+
+**Blocked on:**
+- Full fundamental data history (2010–2025) — only December 2025 received
+- 247 missing tickers — likely not available without CRSP/Compustat
+
+**Next steps once fundamental data arrives:**
+1. `python 1e_ingest_wind_xlsx.py` → `python 1f_rebuild_panel.py` → `python 1g_feature_engineering.py`
+2. `python 2e_ic_optimise.py` (with new fundamental factors)
+3. Retrain on Kaggle → `python 4b_index_enhancement.py` → `python 4c_regime_engine.py --hmm`
+4. Retrain FT-Transformer on Kaggle (`3b_ft_transformer_kaggle.py`) with 240-month dataset
+
+---
+
 ## Future Ideas (beyond current scope)
 
 ### Double-Layered Deep Reinforcement Learning (21 Mar 2026)
