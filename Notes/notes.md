@@ -40,45 +40,21 @@ Backtest — measure alpha, tracking error, Information Ratio vs S&P 500
 Automate the pipeline — monthly rebalancing loop using platform
 Integrate analyst picks (optional) — overlay sector team's picks on top
 
-# original model performance
+# Original Project Idea
 
-python "5 light gbm backtest.py"
-TRAIN: months=144 | ann= 77.52% | vol= 23.02% | sharpe= 2.55
-VALID: months= 36 | ann= 20.53% | vol= 21.17% | sharpe= 0.89
-TEST: months= 59 | ann= 12.07% | vol= 16.69% | sharpe= 0.69
-
-
-Key TEST stats:
-Top50 Long-only (LGBM + PCA-RP): ann= 22.52% | vol= 22.36% | sharpe= 1.01 | maxDD=-27.39%
-Top10 Long-only (LGBM + PCA-RP): ann= 27.87% | vol= 38.39% | sharpe= 0.73 | maxDD=-46.48%
-L/S Top10 - Bottom50 (EqualW): ann= 11.74% | vol= 34.00% | sharpe= 0.35 | maxDD=-50.02%
-L/S Top10 - Bottom10 (EqualW): ann=  7.33% | vol= 28.87% | sharpe= 0.25 | maxDD=-47.84%
-
-LGBM
-TRAIN: months=180 | ann= 36.83% | vol= 28.17% | sharpe=1.31
-VALID: months= 24 | ann= 16.44% | vol= 30.84% | sharpe=0.53
-TEST: months= 35 | ann= 33.95% | vol= 21.41% | sharpe=1.59
-
-Update Todos
- Analyse all results and explain clearly to user
- Fixing verbosity in config.py
- Fix diagnostic script: switch to enriched panel
- Create STRATEGY.md: simple explanation of everything
-
- # extra notes
-
-- could use yfinance daily hourly if don't need much data
-- vectorbt for backtest
-- hypothesis for testing before
-- read papers on similiar projects
-
- - make plan
- - pull more data
- - factors
- - LLM
-
-
- # original project idea
 Machine Learning for Financial Forecasting
 
 Build a Neural Network Model to predict asset returns using historical factors (e.g. momentum, value, volatility) and macroeconomic data. Train and test the model, calculate its cost, and compare it to other forecasting models (e.g. Random Forest, Ridge Regression).
+
+ # Rough Extra Notes
+
+- could use yfinance daily hourly if don't need much data
+- vectorbt for backtest
+- hypothesis befpre testing
+- read papers on similiar projects
+
+Abides - agent based interactive
+Discrete events simulation 
+Libraries for diffusion models to create synthetic data 
+Simulates different regimes 
+May be better than doing self 
