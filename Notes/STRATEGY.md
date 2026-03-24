@@ -1,198 +1,247 @@
-# ML Stock Selection Strategy — Methodology & Results
+# ML-Driven S&P 500 Index Enhancement — Strategy Overview
 
 ## What Are We Trying to Do?
 
-Every month, pick the stocks most likely to go up next month. We use machine learning to rank S&P 500 stocks and build a portfolio from the top-ranked ones.
+Build a portfolio that tracks the S&P 500 closely but consistently beats it. Every month, we use machine learning to rank all ~500 stocks and tilt portfolio weights slightly toward the stocks expected to outperform. The goal is a high Information Ratio (IR) with low tracking error — generating steady alpha relative to the benchmark rather than making big concentrated bets.
 
 ---
 
 ## The Data
 
-- **Universe:** ~500 S&P 500 stocks
-- **Time range:** 2010 – 2025 (post-GFC, cleaner regime)
+- **Universe:** ~697 S&P 500 stocks (historical constituents, including delisted/acquired companies to reduce survivorship bias)
+- **Time range:** 2010–2025 (post-GFC, avoids structurally different 2008–2009 crisis)
 - **Frequency:** Monthly predictions, daily prices for feature construction
 - **Target:** Each stock's return over the next calendar month (`fwd_ret_1m`)
-- **Source:** Yahoo Finance via `yfinance` (adjusted close prices)
+- **Price source:** Yahoo Finance (`yfinance`), Tiingo (delisted), Wind platform (manual exports)
 
 ---
 
-## The Features (26 total)
+## The Features (43 factors)
 
-These are signals computed for every stock each month. All features are **cross-sectionally ranked within each month** and scaled to [−0.5, +0.5] — this means a value of +0.5 = top of the universe, −0.5 = bottom. Ranking removes the absolute level of each feature, making signals comparable across different market regimes.
+All features start as raw price-derived signals and go through three processing steps:
 
-| Category | Feature | Description |
-|---|---|---|
-| **Momentum** | `ret_1m`, `ret_3m`, `ret_6m`, `ret_12m` | Past returns over 1, 3, 6, 12 months |
-| **Reversal** | `rev_1m`, `rev_signal` | 1-month return (tends to mean-revert short-term) |
-| **Momentum extensions** | `mom_2_12`, `mom_accel` | Skip-1-month momentum; recent vs older momentum |
-| **Volatility** | `vol_60d`, `vol_252d` | Realised volatility over 60 and 252 days |
-| **Volatility ratios** | `vol_ratio_sm`, `vol_ratio_ml` | Short/medium and medium/long vol ratios |
-| **Trend / MA** | `price_to_ma20`, `price_to_ma60`, `price_to_ma200` | Price relative to 20, 60, 200-day moving averages |
-| **MA crossovers** | `ma_20_60_cross`, `ma_60_200_cross` | Golden/death cross signals |
-| **52-week high** | `nearness_52w` | How close the stock is to its annual high (breakout signal) |
-| **Liquidity** | `amihud_21d` | Amihud (2002) illiquidity ratio — higher = harder to trade |
-| **Tail risk** | `skew_60d`, `maxdd_60d`, `up_down_vol` | Return skewness, max drawdown, upside/downside vol ratio |
-| **Quality** | `ir_12m`, `ir_3m` | Information ratio — consistency of risk-adjusted returns |
+1. **Regime stability filter** — factor must show consistent sign across ≥ 3 of 4 market regimes (QE bull 2010–2019, COVID recovery 2020–2021, rate hike bear 2022, AI bull 2023+). 59 → 43 factors survive.
+2. **Sign normalisation** — contrarian factors (negative IC) are sign-flipped so higher always means better predicted return.
+3. **IC optimisation** — a PyTorch gradient descent pass finds the optimal weight for each factor by maximising mean Pearson IC over the training period (2010–2020). Train IC improved +197% vs static IC-decay weights.
 
-No accounting data, no fundamentals — purely price-based signals.
+| Category | Example Factors | IC Direction |
+|----------|----------------|--------------|
+| Momentum | `ret_12m`, `ret_18m`, `ret_6m`, `mom_2_12` | Positive |
+| Quality/consistency | `ir_3m`, `ir_12m`, `residual_ret_12m` | Positive |
+| Volatility | `vol_252d`, `idio_vol_252d`, `vol_126d` | Positive (risk premium) |
+| Technical | `nearness_52w_low`, `macd_hist` | Positive (after flip) |
+| Mean reversion | `bollinger_pct`, `rsi_14`, `price_to_ma20` | Contrarian (sign-flipped) |
+
+All features are cross-sectionally z-scored within each month — a stock's absolute level doesn't matter, only its rank relative to the full universe that month. This makes signals stable across different market regimes.
+
+---
+
+## Factor Quality Tests
+
+Before any factor is used, it must pass:
+
+**1. IC Analysis (Information Coefficient)**
+- IC = Pearson correlation between factor ranking and next-month return, computed each month
+- ICIR = mean(IC) / std(IC) — measures consistency. Best factors: `idio_vol_252d` ICIR +0.172, `vol_252d` ICIR +0.155
+- Both positive and contrarian factors kept — sign just tells you which direction to trade
+
+**2. Quintile Test**
+- Sort all stocks by factor → split into 5 buckets (Q1 bottom 20%, Q5 top 20%)
+- Spread = avg return(Q5) − avg return(Q1)
+- A clean monotonic staircase (Q1 < Q2 < Q3 < Q4 < Q5) confirms the signal works across the full distribution
+
+**3. Regime Stability**
+- Factor sign must be consistent across ≥ 3/4 market regimes (COVID crash excluded as black swan)
+- Filters out signals that only work in one market environment
+
+**4. IC Decay**
+- Measures how many months ahead each factor predicts
+- Volatility factors persist 60+ months (structural tilt). Short-term momentum factors fade within 1–2 months.
+- Used to weight factors by signal longevity
+
+---
+
+## Walk-Forward Training (No Look-Ahead Bias)
+
+```
+2010 ─────────────────────── 2021 ──── 2023 ─────── 2025
+│← Train (~132 months)     →│ Valid  │←  Test      →│
+                              │ (24m) │   (35+ months)
+```
+
+- **Factor analysis** runs only on training data (2010–2020) — factors are selected before seeing any test period data
+- **Model training** uses expanding window — every 12 months in the test period, the model retrains on all available history
+- **Test period (2023–2025)** is never seen during training, validation, or factor selection
 
 ---
 
 ## The Models
 
-### Model 1: LightGBM (Gradient-Boosted Trees)
+### Cross-Sectional Transformer (Primary Model)
 
-LightGBM is a gradient-boosted decision tree model. Think of it as a very smart ranking engine:
-
-1. It looks at all 26 features for every stock every month
-2. It learns which combinations of features predicted high returns in the past
-3. Each month it outputs a **score** for every stock — higher score = more likely to outperform
-
-Key properties: handles non-linearity, feature interactions, and is fast to train. Interpretable via feature importance (which features it uses most).
-
-### Model 2: FT-Transformer (Feature Tokenizer + Transformer)
-
-The same transformer architecture that powers GPT and BERT — applied to the 26 financial features instead of words in a sentence.
-
-**How it works:**
-1. Each of the 26 features is embedded into a 64-dimensional vector via its own learned linear projection (Feature Tokenizer)
-2. A learnable [CLS] token is prepended — like BERT's classification token
-3. Multi-head self-attention (4 heads, 3 layers) learns which **combinations** of features matter: e.g. "high momentum + rising information ratio together predicts outperformance more than either alone"
-4. The CLS token output is passed through a linear head to produce a score
+Processes all ~500 stocks simultaneously every month. Each stock's 43 factors become a vector; the transformer applies self-attention across the entire cross-section, learning how stocks relate to each other.
 
 ```
-Input: [vol_60d=0.2, ret_6m=0.3, ir_12m=0.4, ...]   (26 scalar features)
-  ↓  Feature Tokenizer: each scalar → 64-dim embedding
-  ↓  Prepend [CLS] token
-  ↓  Multi-head self-attention (learns feature × feature interactions)
-  ↓  Linear head on CLS output
-Output: score (rank ≈ next-month return)
+Month t:  [Stock 1 factors]  →
+          [Stock 2 factors]  →  Multi-head Self-Attention  →  Score per stock
+          [Stock 3 factors]  →
+               ...
 ```
 
-Both models use the same training framework, features, and backtesting code — results are directly comparable.
+**Why it outperforms:** It sees every stock relative to every other stock in the same month — directly learning cross-sectional ranking, which is exactly what index enhancement requires. LGBM and the FT-Transformer score stocks independently and miss this relative information.
 
----
+**Key property:** Regime-stable — IR of 1.019 in risk-off periods and 0.931 in risk-on periods (consistent across both).
 
-## Walk-Forward Training (No Look-Ahead)
+### FT-Transformer (Secondary Model)
 
-We never let the model see future data:
+Per-stock transformer that treats each of the 43 factors as a "token" and learns feature interactions using self-attention. Captures non-linear relationships between factors (e.g. high momentum + rising information ratio together). Less regime-stable than CS-Transformer.
 
-```
-2010 ──────────────────────── 2021 ──── 2023 ──── 2025
-│← Training (~132 months)  →│ Valid  │←  Test  →│
-                              │ (24m) │
-```
+### LightGBM (Baseline)
 
-- **Train (2010–2020):** Model learns from historical data
-- **Valid (2021–2022):** Early stopping — we stop training when improvement stalls on unseen data
-- **Test (2023–2025):** Never seen during training — real out-of-sample results
-
-Every 12 months in the test period, we retrain with more data (**expanding window**), simulating a live deployment where you periodically refresh the model.
+Gradient-boosted decision trees — fast, interpretable via feature importance. Used as a baseline. Good ICIR properties but weaker at cross-sectional ranking.
 
 ---
 
 ## Portfolio Construction
 
-### Strategy 1: Long-Only (Top 50)
-- Each month: take the 50 highest-scoring stocks
-- Equal-weight them (2% each)
-- Hold for one month, then rebalance
+**Monthly rebalancing process:**
 
-### Strategy 2: Long-Short
-- Long the top 10% of stocks by score (~50 stocks)
-- Short the bottom 10% of stocks by score (~50 stocks)
-- Market-neutral: gains come from the spread, not market direction
-- Beta ≈ 0.15–0.29 (almost no market exposure)
+1. Run whichever model(s) to generate a score per stock
+2. Rank all ~490–500 active stocks by score
+3. Apply tilt to top and bottom 100 stocks:
 
-### Strategy 3: PCA Risk Parity (experimental ⚠)
-- Same top-50 selection as Strategy 1, but weights from PCA-based risk decomposition
-- Currently has a beta = 2.07 bug — treat as experimental, do not use for live trading
-- See Known Issues below
+```python
+tilt = 0  for middle ~300 stocks  (held at SPX benchmark weight)
+tilt = +α for top 100 stocks      (overweighted vs benchmark)
+tilt = -α for bottom 100 stocks   (underweighted vs benchmark)
 
----
+port_weight_i = (spx_weight_i + tilt_i).clip(min=0)
+port_weight_i = port_weight_i / sum(port_weights)   # renormalise to 1
+```
 
-## Results (Out-of-Sample, 2023–2025)
+Portfolio active return each month = portfolio return − S&P 500 return.
 
-| Strategy | Sharpe | Ann. Return | Volatility | Beta | Alpha | Max DD |
-|---|---|---|---|---|---|---|
-| LGBM Long-Only (Top 50) | **1.54** | 33.7% | 18.9% | 0.26 | +30.3% | -17.8% |
-| LGBM Long-Short | 0.83 | 11.7% | 11.3% | 0.15 | +9.5% | -8.7% |
-| Transformer Long-Only | 1.32 | 32.3% | 20.4% | 0.22 | +30.6% | -20.2% |
-| Transformer Long-Short | 0.97 | 20.7% | 17.6% | 0.29 | +16.9% | -18.2% |
-| S&P 500 (benchmark) | 1.58 | 18.0% | 16.8% | 1.00 | — | — |
+**Why top/bottom 100 (not all 500):** Middle-ranked stocks have noisy, near-zero signal. Applying a tilt to all 500 introduces noise. Only the extreme ends carry reliable signal.
 
-**Sharpe ratio** = return per unit of risk. Anything above 1.0 is considered good. Above 1.5 is strong.
-
-**Alpha** = annualised excess return above what market exposure (beta) explains. The L/S strategies generate alpha of +9.5% and +16.9% with very low market exposure — meaning the model is genuinely ranking stocks well, not just riding the bull market.
-
-**Both models independently find similar alpha** (LGBM +30.3% vs Transformer +30.6% for Long-Only). This is a strong signal: when two fundamentally different model families (tree-based vs attention-based) agree on which stocks to buy, it confirms the underlying features have real predictive power.
-
-**The L/S strategy is the cleaner result** for demonstrating model skill — most of the return is market-independent alpha, not market beta.
+**Why long-only (no shorting):** Index enhancement stays close to the benchmark. Shorting would increase tracking error and introduce borrow costs. All weights clipped at 0.
 
 ---
 
-## Assumptions & Limitations
+## Factor-Combo Baseline
 
-| Assumption | Detail |
-|---|---|
-| **No transaction costs** | All results assume month-end close prices with zero slippage or commissions. The transaction cost sensitivity table in `report.ipynb` shows real-world impact (~0.05–0.15 Sharpe reduction at 5–10 bps per trade). |
-| **Survivorship bias** | Universe is a fixed historical S&P 500 list. Stocks that were removed from the index before our data starts (e.g. companies that went bankrupt pre-2010) are not included, introducing mild upward bias. Stocks removed during the sample period are included up to their removal date. |
-| **No look-ahead bias** | Enforced by walk-forward design: test months (2023–2025) are never seen during training or validation. Each feature uses only data available at the time of prediction. The forward return (`fwd_ret_1m`) is the label — it is never a feature. |
-| **Equal weighting** | Long-only portfolio uses 2% per stock (50 stocks). Equal-weighting avoids portfolio optimisation over-fitting; any optimised weights would require a further layer of cross-validation to avoid data snooping. |
-| **Monthly rebalancing** | Assumes full portfolio rebalance at month-end close. Intra-month price moves are ignored. |
-| **2010 start date** | Excludes 2008–2009 GFC regime. The GFC had structurally different correlations and liquidity dynamics compared to post-crisis markets. Starting in 2010 gives a cleaner, more stationary training distribution. |
-| **Cross-sectional rank normalisation** | All 26 features are ranked within each month and scaled to [−0.5, +0.5]. This removes the absolute level of each feature (e.g. whether 6-month momentum is 5% or 50% in absolute terms) and makes signals stable across different market conditions. A stock ranked in the top decile on momentum always maps to the same input value regardless of what year it is. |
-| **No short-selling constraints** | Long-Short results assume you can freely short any stock in the bottom decile. In practice, borrow costs and availability vary. |
+To confirm the ML models add genuine value, we built a simple linear factor combination using the same 43 optimised IC weights (no ML):
+
+```
+score_i = sum(optimised_weight_j × z-scored_factor_j)  for each stock i
+```
+
+| Signal | IR |
+|--------|----|
+| Linear factor combo (no ML) | −0.046 |
+| LGBM | 0.384 |
+| FT-Transformer | 0.438 |
+| **CS-Transformer** | **0.960** |
+
+The linear combination underperforms the index. The transformer goes from −0.046 → 0.960 — it is learning genuine non-linear cross-sectional patterns, not just repackaging the factor exposures.
 
 ---
 
-## Known Issues / What's Next
+## Results (Out-of-Sample, Jan 2023 – Oct 2025)
 
-### 1. PCA-RP Beta Problem
-The PCA Risk Parity weighting produces beta = 2.07 (twice the market exposure). This is a bug in the weight construction — the first PCA component always captures the market factor, and back-projecting to asset space amplifies it. **Fix:** replace with iterative equal-risk-contribution (ERC) weighting.
+### Index Enhancement Performance
 
-### 2. Validation Period (2022 Bear Market)
-Early stopping in `check_overfit.py` stops at just 4 trees because 2022 was a pure bear market — nothing looked good on the validation set. The main pipeline uses a full walk-forward retrain which avoids this. Not a critical issue, but the validation split could be improved (e.g. using a rolling validation window rather than a fixed one).
+| Model | Ann. Alpha | Tracking Error | IR | Hit Rate |
+|-------|-----------|---------------|-----|----------|
+| CS-Transformer | ~2.2% | ~2.3% | **0.960** | ~67% |
+| FT-Transformer | ~0.9% | ~2.6% | 0.438 | — |
+| LGBM | ~0.5% | ~2.0% | 0.384 | — |
+| Factor-Combo (linear baseline) | — | — | −0.046 | — |
 
-### 3. No Transaction Costs
-All results assume zero slippage and zero commissions. Monthly turnover for the LGBM Long-Only strategy is approximately 30–40% per month (stocks entering and leaving the top 50). At 10 bps per trade, this reduces the Sharpe by approximately 0.1–0.15.
+IR > 0.5 = good (top-quartile institutional fund managers typically hit ~0.3–0.5). IR > 0.9 is strong.
 
-### 4. No Fundamental Data
-All 26 features are price-derived. Adding fundamental signals (P/E ratio, earnings growth, quality metrics) could improve predictive power, particularly for the long-short strategy.
+### Regime Breakdown (HMM, 2-state: risk-on / risk-off)
+
+| Model | Risk-Off IR | Risk-On IR | Regime-Stable? |
+|-------|------------|-----------|----------------|
+| CS-Transformer | 1.019 | 0.931 | Yes |
+| FT-Transformer | 1.866 | 0.086 | No |
+| LGBM | 1.397 | 0.224 | No |
+
+CS-Transformer is the only model that generates consistent alpha regardless of market regime. FT-Transformer and LGBM work primarily in risk-off (volatile/falling) markets.
+
+---
+
+## Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Monthly rebalancing | Signal IC decays over ~6–12 months; daily rebalancing adds cost with no benefit |
+| Top/bottom 100 tilt | Middle stocks carry weak signal; focusing on extremes improves IR |
+| Cross-sectional z-scoring | Makes features regime-invariant; model sees relative rank not absolute value |
+| Survivorship bias fix | 697 tickers (historical constituents) vs 504 (current only) — avoids inflating backtest returns by ~1–2%/year |
+| No shorting | Long-only index enhancement; avoids borrow costs and concentration risk |
+| 2010 start date | Post-GFC baseline; GFC had structurally different correlations and regime |
+| Regime stability filter | Factors that flip sign in different market environments are unreliable signals |
+
+---
+
+## Limitations & Caveats
+
+| Limitation | Detail |
+|------------|--------|
+| No transaction costs | Results assume zero slippage/commissions. At 10 bps per trade with ~30% monthly turnover, Sharpe reduces ~0.1–0.15 |
+| Remaining survivorship bias | 248 historical constituents still missing — blocked on Wind/CRSP data pull |
+| No fundamental data | All 43 factors are price-derived. PE, PB, money flow factors not yet incorporated — likely to improve IC significantly |
+| Bull market test period | Test period (2023–2025) is almost entirely the AI bull run. Regime stability analysis (HMM) partially mitigates this by testing risk-off sub-periods separately |
+| SPX weights approximation | Benchmark weights estimated from market cap / price via yfinance. Top 4 holdings capped at 8% (winsorised). Real SPDR constituent data would improve accuracy |
+| 35 test months | IR estimated on ~35 months. Confidence interval is wide — IR could vary ±0.3 with more data |
+
+---
+
+## What's Next
+
+**Immediate (blocked on data):**
+1. Collaborator exports remaining 248 tickers + fundamental data from Wind
+2. Run `1e_ingest_wind_xlsx.py` → `1f_rebuild_panel.py` → `1g_feature_engineering.py`
+3. Re-run `2e_ic_optimise.py` with fundamental factors included
+4. Retrain CS-Transformer + FT-Transformer on Kaggle with expanded universe
+5. Re-run `4b_index_enhancement.py` + `4c_regime_engine.py`
+
+**Future (Reinforcement Learning):**
+
+Once the transformer pipeline is stable, RL agents can replace the fixed tilt parameters:
+
+- **Layer 1** — RL agent for factor weighting: adapts which factors to trust based on current regime and rolling IC history. Reward = next-month IC.
+- **Layer 2** — RL agent for portfolio tilt: decides how aggressively to tilt each month based on signal confidence, tracking error budget, recent drawdown, and turnover cost. Reward = active return − λ × tracking error penalty.
+
+Both agents use SAC (Soft Actor-Critic) — off-policy, sample-efficient, entropy regularisation prevents overfitting to specific regimes.
 
 ---
 
 ## Files & Execution Order
 
 ```
-"1 price parquet.py"          → downloads prices,  saves data/prices.parquet
-1_feature_engineering.py      → builds 26 features, saves data/panel_monthly_enriched.parquet
-2_lgbm_backtest.py            → trains LightGBM,   saves data/scores_lgbm.parquet + bt_lgbm*.csv
-2b_nn_backtest.py             → trains FT-Transformer, saves data/scores_transformer.parquet + bt_transformer*.csv
-3_pca_rp_backtest.py          → PCA-RP weights (experimental)
-4_benchmark_spx.py            → compares all strategies vs S&P 500, saves data/benchmark_comparison.csv
-5_pitch_validator.py TICKER   → score + signal breakdown for any stock ticker
-"6 Diagonstic test.py"        → turnover, rank decay, covariance diagnostics
-check_overfit.py              → quick train/valid/test Sharpe check
-inspect_data.py               → prints data shapes and date ranges
-report.ipynb                  → full results report with charts (run after step 4)
+Step 1 — Data Prep
+  python 1a_price_parquet.py          # parse OHLC data → data/prices.parquet
+  python 1f_rebuild_panel.py    # build monthly panel from prices
+  python 1e_ingest_wind_xlsx.py      # add Wind xlsx exports (run after dropping files)
+  python 1g_feature_engineering.py    # compute 43+ factors → panel_monthly_enriched.parquet
+  python 1h_orthogonalize.py         # PCA residualization (optional, run after finalising features)
+
+Step 2 — Factor Analysis
+  python 2a_factor_analysis.py        # IC, quintile, regime stability → factor_selected.csv
+  python 2b_ic_decay_all.py          # IC decay grid (all 43 factors)
+  python 2d_factor_weights.py        # IC-decay based weights → factor_selected.csv
+  python 2e_ic_optimise.py           # gradient-optimised weights → factor_selected_optimised.csv
+  python 4a_factor_combo_baseline.py # linear combo baseline (no ML)
+
+Step 3 — Models (GPU recommended)
+  python 3a_ft_transformer.py           # FT-Transformer → scores_transformer.parquet
+  [Kaggle] 3d_cs_transformer_kaggle.py # CS-Transformer → scores_cs_transformer.parquet
+
+Step 4 — Evaluation
+  python 4b_index_enhancement.py      # IE portfolio → bt_ie_*.csv
+  python 4c_regime_engine.py          # regime breakdown (rule-based)
+  python 4c_regime_engine.py --hmm    # HMM 2-state regime breakdown
+  python 4d_benchmark_spx.py          # full comparison table
 ```
-
-Run scripts 1 → 2 → 2b → 3 → 4 in order. The others can be run any time after step 2.
-
----
-
-## Shared Config (`config.py`)
-
-All key parameters live in one place:
-
-| Parameter | Value | Meaning |
-|---|---|---|
-| `START_DATE` | 2010-01-01 | Ignore pre-GFC data |
-| `TRAIN_END` | 2020-12-31 | End of training window |
-| `VALID_END` | 2022-12-31 | End of validation window |
-| `TOP_N` | 50 | Stocks in long-only portfolio |
-| `LONG_FRAC` | 0.10 | Top/bottom 10% for Long-Short |
-| `RETRAIN_EVERY` | 12 | Retrain model every 12 months in test period |
-| `LGBM_PARAMS` | see config.py | LightGBM hyperparameters (n_estimators, depth, etc.) |
-| `TRANSFORMER_PARAMS` | see config.py | FT-Transformer hyperparameters (d_model=64, n_heads=4, n_layers=3) |

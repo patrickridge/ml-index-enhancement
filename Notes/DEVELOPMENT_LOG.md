@@ -9,13 +9,13 @@ Chronological record of all significant changes, decisions, and findings.
 **Goal:** Build ML models to rank S&P 500 stocks monthly and construct a portfolio that beats the index.
 
 ### What was built
-- `1_feature_engineering.py` — 80-feature monthly panel from raw OHLCV price data (504 tickers, 2006–2025)
-- `1b_orthogonalize.py` — PCA orthogonalization (reduces mean off-diagonal feature correlation 0.22 → 0.10)
+- `1g_feature_engineering.py` — 80-feature monthly panel from raw OHLCV price data (504 tickers, 2006–2025)
+- `1h_orthogonalize.py` — PCA orthogonalization (reduces mean off-diagonal feature correlation 0.22 → 0.10)
 - `2_lgbm_backtest.py` — LightGBM gradient boosted trees
-- `2b_nn_backtest.py` — FT-Transformer (attention-based neural net, GPU required)
-- `2c_cs_transformer.py` — Cross-Sectional Transformer (all 500 stocks seen simultaneously)
+- `3a_ft_transformer.py` — FT-Transformer (attention-based neural net, GPU required)
+- `3c_cs_transformer.py` — Cross-Sectional Transformer (all 500 stocks seen simultaneously)
 - `3_pca_rp_backtest.py` — PCA Risk Parity (experimental, abandoned — high beta)
-- `4_benchmark_spx.py` — comparison table vs S&P 500
+- `4d_benchmark_spx.py` — comparison table vs S&P 500
 
 ### Phase 1 Results (test period Jan 2023 – Nov 2025, 35 months)
 
@@ -43,7 +43,7 @@ All 3 main models beat the S&P 500 on Sharpe ratio.
 
 ### Scripts added
 - `1c_fetch_market_cap.py` — fetches monthly SPX constituent weights via yfinance (shares × close)
-- `6_index_enhancement.py` — runs IE portfolio construction, sweeps alpha values (0.005–0.05)
+- `4b_index_enhancement.py` — runs IE portfolio construction, sweeps alpha values (0.005–0.05)
 
 ### IE Results
 
@@ -62,7 +62,7 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 **Decision:** the methodology — do factor analysis before ML training.
 
 ### Scripts added
-- `5_factor_analysis.py` — IC analysis, IC decay (lags 0–6 months), quintile backtests
+- `2a_factor_analysis.py` — IC analysis, IC decay (lags 0–6 months), quintile backtests
 
 ### Key findings from factor analysis (72 features at the time)
 
@@ -81,7 +81,7 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 2. Add more technical indicators: MACD variants, more MA windows/crossovers
 
 ### Changes made (15 Mar)
-**`1_feature_engineering.py`:**
+**`1g_feature_engineering.py`:**
 - Added `"open", "high", "low", "close"` to `exclude_cols` in `sample_at_month_end()`
 
 **`utils_factors.py` Cat 4:**
@@ -95,7 +95,7 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 
 ## Phase 4 — Feature Deduplication (15 Mar 2026)
 
-**Trigger:** Ran `7_factor_diagnostics.py`. Fixed Part D bug (`N` vs `N_orth` shape mismatch).
+**Trigger:** Ran `2f_factor_diagnostics.py`. Fixed Part D bug (`N` vs `N_orth` shape mismatch).
 
 ### Diagnostics findings (72 features)
 - Mean off-diagonal correlation: **0.235** (high redundancy)
@@ -123,7 +123,7 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 ### Files changed
 - `utils_factors.py` — Cat 8: removed redundant cross-sectional relatives, kept `residual_ret_12m`
 - `utils_factors.py` — Cat 4: removed `rsi_21`
-- `1_feature_engineering.py` — drop `rev_1m` on load; removed `rev_signal` computation
+- `1g_feature_engineering.py` — drop `rev_1m` on load; removed `rev_signal` computation
 - `config.py` — expanded `MACRO_COLS` to include 5 SPX-level columns
 
 ### Result after cleanup
@@ -139,11 +139,11 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 **Finding:** Only 10 eigenvalues above the Marchenko-Pastur noise floor in 72 features. 62 eigenvalues are pure noise.
 
 **Options:**
-1. **Run `1b_orthogonalize.py`** — PCA residualization already built, reduces mean off-diag corr 0.235 → 0.100 (57.5% reduction). ML models then see decorrelated inputs.
+1. **Run `1h_orthogonalize.py`** — PCA residualization already built, reduces mean off-diag corr 0.235 → 0.100 (57.5% reduction). ML models then see decorrelated inputs.
 2. **RMT covariance denoising** — already in `utils_rmt.py`, used by CS Transformer. Could apply to LGBM feature set too.
 3. **Hard feature selection** — keep only factors with |ICIR| above threshold (currently best is 0.172, none above 0.3). Wait for the team's fundamental data — PE/ROE factors likely to score much higher.
 
-**Recommended:** Run `1b_orthogonalize.py` after the team's data arrives and feature set is finalised. Orthogonalizing now before new data = wasted computation.
+**Recommended:** Run `1h_orthogonalize.py` after the team's data arrives and feature set is finalised. Orthogonalizing now before new data = wasted computation.
 
 ---
 
@@ -151,7 +151,7 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 
 - **fundamental data** — PE ratio confirmed, others TBD
 - Once data arrives: rebuild panel → re-run factor analysis → re-train all 3 models → re-run index enhancement
-- Then: run `1b_orthogonalize.py` → retrain with orthogonalized features → compare IR
+- Then: run `1h_orthogonalize.py` → retrain with orthogonalized features → compare IR
 
 ---
 
@@ -159,7 +159,7 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 
 ### 5.1 — Extended IC Decay + Regime Stability
 
-**Changes to `5_factor_analysis.py`:**
+**Changes to `2a_factor_analysis.py`:**
 - Extended `MAX_IC_DECAY_LAGS` from 6 → 24 → 60 months (Requested 2–3 year window to see longer trends)
 - Added `factor_turnover()` — % stocks changing quintile month-to-month
 - Added `ras_permutation_test()` — 100 permutations, p < 0.05 = real signal
@@ -198,7 +198,7 @@ IR > 0.5 = good (top-quartile institutional fund managers hit ~0.5).
 
 ### 5.3 — All-factor IC Decay Grid (18 Mar 2026)
 
-Added `5b_ic_decay_all.py` — computes and plots IC decay for all 59 factors in a grid layout (blue = positive IC, red = contrarian). 60-month window.
+Added `2b_ic_decay_all.py` — computes and plots IC decay for all 59 factors in a grid layout (blue = positive IC, red = contrarian). 60-month window.
 
 **Key visual findings:**
 - `vol_252d`, `idio_vol_252d`, `vol_126d`, `beta_252d` — smooth persistent signal for 60 months (long-term factors)
@@ -245,7 +245,7 @@ Added `5b_ic_decay_all.py` — computes and plots IC decay for all 59 factors in
 - Regime stability → **full panel** (needs 2022 rate hike bear + 2023 AI bull regimes)
 - IC decay → **training data only, survivors only**
 
-**Code change in `5_factor_analysis.py`:**
+**Code change in `2a_factor_analysis.py`:**
 ```python
 TRAIN_START = "2010-01-01"
 TRAIN_END   = "2020-12-31"   # hold out 2021–2025 as test set
@@ -263,7 +263,7 @@ panel_train = panel[panel["date"] <= TRAIN_END]
 
 ### 5.7 — Factor Data from Quant Platform (18 Mar 2026)
 
-Shared from quant platform: `factor data.xlsx` from his quant platform (Wind/similar):
+Shared `factor data.xlsx`:
 - **33 unique factors**, 503 S&P 500 tickers
 - Factor categories: money flow (buy/sell amt, order count), valuation (PE TTM, PB, PS, PCF, EV/EBITDA, dividend yield, PE relative to history), risk (beta 20/60/120d, vol ratio, Treynor ratio, residual vol), technical (turnover 5/10/20/60d)
 - All marked **PIT (Point-In-Time)** — no lookahead bias ✓
@@ -280,7 +280,6 @@ mfd_buyamt_d, mfd_sellamt_d, tech_turnoverrate20/60
 
 ### 5.8 — Live Deployment Plan (18 Mar 2026)
 
-the team's Shenzhen firm gave him access to a quant platform for live strategy deployment. End-to-end pipeline to automate:
 1. Pull new factor data monthly from platform
 2. Run FT-Transformer + CS-Transformer → generate stock scores
 3. Compute portfolio weights: `w_i = w_SPX_i + α × z-score(ML_score_i)`
@@ -339,16 +338,16 @@ Train model incrementally, one improvement at a time:
 ### 6.5 — Project Structure Cleanup (19 Mar 2026)
 
 - Moved `DEVELOPMENT_LOG.md`, `STRATEGY.md`, `notes.md` → `Notes/`
-- Renamed `"1 price parquet.py"` → `1_price_parquet.py`, `"6 Diagonstic test.py"` → `6_diagnostic_test.py`
+- Renamed `"1 price parquet.py"` → `1a_price_parquet.py`, `"6 Diagonstic test.py"` → `6_diagnostic_test.py`
 - Deleted one-off scripts: `check_overfit.py`, `inspect_data.py`, `5_pitch_validator.py`, `report.ipynb`, `data.xlsx`
 - Moved `2_lgbm_backtest.py`, kaggle scripts, `3_pca_rp_backtest.py`, `6_diagnostic_test.py` → `archive/`
 - Moved all `*.png` figures → `figures/` at repo root
 - Restructured repo: moved all files from `Investsoc ML project/` subfolder to repo root
 - Added `.gitignore` (excludes `.claude/`, `*.parquet`, `*.csv`, `*.xlsx`, `__pycache__`)
 
-### 6.6 — 7_factor_diagnostics.py date fix (pending)
+### 6.6 — 2f_factor_diagnostics.py date fix (pending)
 
-`7_factor_diagnostics.py` uses full panel with no date cutoff. Should be filtered to 2010–2020 training period only to avoid test period leakage in correlation/RMT/VIF analysis. Low priority — diagnostics only, not used in training.
+`2f_factor_diagnostics.py` uses full panel with no date cutoff. Should be filtered to 2010–2020 training period only to avoid test period leakage in correlation/RMT/VIF analysis. Low priority — diagnostics only, not used in training.
 
 ---
 
@@ -358,7 +357,7 @@ Train model incrementally, one improvement at a time:
 
 ### 7.1 — FT-Transformer Kaggle Run (19 Mar 2026)
 
-Results from `2b_nn_backtest_kaggle.py` with updated TOP_N=100, LONG_FRAC=0.20:
+Results from `3b_ft_transformer_kaggle.py` with updated TOP_N=100, LONG_FRAC=0.20:
 
 | Strategy | Sharpe | Ann Ret | Max DD |
 |----------|--------|---------|--------|
@@ -370,14 +369,7 @@ Note: Sharpe dropped slightly vs Phase 1 (1.60 → 1.45) because TOP_N increased
 Trained in 10.7 min on Kaggle GPU T4.
 `scores_transformer.parquet` saved to `data/`.
 
-### 7.2 — Timers Added
-
-Added `Done in X.X min` timer to all scripts missing it:
-- `2_lgbm_backtest.py`
-- `2c_cs_transformer.py`
-- `3_pca_rp_backtest.py`
-
-### 7.3 — `6_index_enhancement.py` Sharpe Bug Fixed
+### 7.3 — `4b_index_enhancement.py` Sharpe Bug Fixed
 
 `ie_stats()` was missing `sharpe` key but it was referenced in the print table. Fixed by adding portfolio Sharpe computation to `ie_stats()`.
 
@@ -389,7 +381,7 @@ Added `Done in X.X min` timer to all scripts missing it:
 
 **Root cause:** yfinance `get_shares_full()` returns inconsistent/stale shares outstanding for some tickers — current shares applied to historical prices without adjusting for splits/buybacks creates relative weight distortion.
 
-**Impact:** `6_index_enhancement.py` will run but the benchmark return won't accurately reflect the true S&P 500. Active returns and IR figures will be directionally correct but numerically off.
+**Impact:** `4b_index_enhancement.py` will run but the benchmark return won't accurately reflect the true S&P 500. Active returns and IR figures will be directionally correct but numerically off.
 
 **Fix options (in priority order):**
 1. Use a proper data source for SPX constituent weights (the quant platform may have this)
@@ -400,20 +392,20 @@ Added `Done in X.X min` timer to all scripts missing it:
 
 ### 7.5 — New Scripts Added
 
-- `5c_ic_decay_daily.py` — daily IC decay (1–90 trading days) per factor. suggestion to confirm monthly rebalancing is optimal horizon.
+- `2c_ic_decay_daily.py` — daily IC decay (1–90 trading days) per factor. suggestion to confirm monthly rebalancing is optimal horizon.
 
 ### 7.6 — Ideas for Next Phase (19 Mar 2026)
 
 - **Barra-style factors** — size (mktcap), value (P/B), leverage (D/E), earnings yield. Can approximate from yfinance. the quant platform data will likely cover these.
 - **Smart money factors** — institutional ownership changes (13F), short interest, insider buying. Harder to get without a data vendor.
-- **Daily IC decay** — built as `5c_ic_decay_daily.py`. To send to the team once run.
+- **Daily IC decay** — built as `2c_ic_decay_daily.py`. To send to the team once run.
 - **Focus for now:** Complete backtesting framework first, then factor additions.
 
 ---
 
 ### 7.7 — Index Enhancement Results (19 Mar 2026)
 
-First full run of `6_index_enhancement.py` with all 3 model scores. Best α per model (target TE 1–5%):
+First full run of `4b_index_enhancement.py` with all 3 model scores. Best α per model (target TE 1–5%):
 
 | Model | Ann α | Tracking Error | IR | Sharpe | Max DD |
 |-------|-------|---------------|-----|--------|--------|
@@ -433,7 +425,7 @@ All at α=0.002. Larger tilts hurt — alpha drops quickly as α increases.
 
 ## Phase 8 — Factor Framework & Weight Fixes (19 Mar 2026)
 
-### 8.1 — `5d_factor_weights.py` (new script)
+### 8.1 — `2d_factor_weights.py` (new script)
 
 Combines all factor analysis outputs into a single clean table for model training.
 
@@ -456,7 +448,7 @@ Combines all factor analysis outputs into a single clean table for model trainin
 
 ### 8.3 — CS-Transformer Kaggle Script Confirmed Correct
 
-`2c_cs_transformer_kaggle.py` already had `TOP_N=100`, `BOTTOM_N=100`, `LONG_FRAC=0.20`. No changes needed.
+`3d_cs_transformer_kaggle.py` already had `TOP_N=100`, `BOTTOM_N=100`, `LONG_FRAC=0.20`. No changes needed.
 
 ---
 
@@ -467,7 +459,7 @@ Combines all factor analysis outputs into a single clean table for model trainin
 - Full IE pipeline working — CS-Transformer IR=0.776 best result
 - Factor framework complete: filtering → decay weighting → partial flags
 - SPX weights fix (market_cap/price + 8% winsorisation)
-- Daily IC decay script built (`5c_ic_decay_daily.py`)
+- Daily IC decay script built (`2c_ic_decay_daily.py`)
 
 **Blocked on:** full historical fundamental data (2010–2025)
 
@@ -479,7 +471,7 @@ Combines all factor analysis outputs into a single clean table for model trainin
 
 Survivorship bias: `prices.parquet` only had ~504 current S&P 500 members. Companies removed between 2010–2025 (acquired, bankrupt, delisted) were missing, inflating backtest returns by ~1–2%/year.
 
-### 9.2 — `1d_fetch_historical_constituents.py` (new script)
+### 9.2 — `1b_fetch_constituents.py` (new script)
 
 - Downloads full historical S&P 500 constituent list from GitHub (`fja05680/sp500`)
 - 826 unique tickers ever in S&P 500 during 2005–2025 scope
@@ -489,7 +481,7 @@ Survivorship bias: `prices.parquet` only had ~504 current S&P 500 members. Compa
 - Three lists saved: `tickers_existing.csv`, `tickers_new_fetched.csv`, `tickers_missing.csv`
 - Sent `tickers_missing.csv` (252 tickers) to the team for CRSP/Compustat pull
 
-### 9.3 — `1e_rebuild_base_panel.py` (new script)
+### 9.3 — `1f_rebuild_panel.py` (new script)
 
 `panel_monthly.parquet` was originally built from `data.xlsx` (deleted during cleanup). Rebuilt it directly from `prices.parquet`:
 - Computes daily returns → rolling vol (20d/60d/252d) → HL range
@@ -498,7 +490,7 @@ Survivorship bias: `prices.parquet` only had ~504 current S&P 500 members. Compa
 
 ### 9.4 — Feature Engineering Re-run
 
-Re-ran `1_feature_engineering.py` on expanded universe:
+Re-ran `1g_feature_engineering.py` on expanded universe:
 - **Before:** 502 tickers, 106,944 rows
 - **After:** 692 tickers, 147,517 rows
 - Same 79 features, same pipeline
@@ -508,7 +500,7 @@ Re-ran `1_feature_engineering.py` on expanded universe:
 - **SPX weights** still distorted (top 4 stocks at 12.66% each after winsorisation) — iterative winsorisation needed or proper data source
 - **252 missing tickers** — waiting on CRSP/Compustat pull
 - **Fundamental factors** — `data/fundamental.parquet` still missing, Cat 9 skipped. Biggest remaining gap for model improvement
-- **Factor analysis** — should re-run `5_factor_analysis.py` + `5d_factor_weights.py` on new 692-ticker universe
+- **Factor analysis** — should re-run `2a_factor_analysis.py` + `2d_factor_weights.py` on new 692-ticker universe
 
 ---
 
@@ -516,13 +508,13 @@ Re-ran `1_feature_engineering.py` on expanded universe:
 
 **Completed today:**
 - Survivorship bias partially fixed (504 → 692 tickers)
-- Panel rebuilt from scratch (`1e_rebuild_base_panel.py`)
+- Panel rebuilt from scratch (`1f_rebuild_panel.py`)
 - Three ticker lists exported for the CRSP pull
 - New `panel_monthly_enriched.parquet` ready for Kaggle upload
 
 **Next steps:**
 1. Upload new panel to Kaggle → retrain both models
-2. Re-run `6_index_enhancement.py` with updated scores
+2. Re-run `4b_index_enhancement.py` with updated scores
 3. Waiting on: 252 missing tickers (CRSP) + fundamental factors
 4. When data arrives: rebuild panel again → re-run everything
 
@@ -530,7 +522,7 @@ Re-ran `1_feature_engineering.py` on expanded universe:
 
 ## Phase 10 — Missing Ticker Recovery (21 Mar 2026)
 
-### 10.1 — `1f_fetch_missing_tickers.py` (new script)
+### 10.1 — `1d_fetch_missing_tickers.py` (new script)
 
 Secondary yfinance attempt + Stooq fallback for 252 failed tickers.
 
@@ -546,12 +538,12 @@ Tiingo API (free tier: 500 requests/hour) specifically has delisted/acquired sto
 - **First run:** Recovered ~33 tickers but save failed (exit code 1) — data lost. Root cause: timezone-aware dates causing type mismatch with `pa.Table.from_pandas()`.
 - **Second run:** Immediately hit hourly rate limit (429 error) — had used 496/500 calls across first two runs.
 - **Third run (this session):** Rate limit still active — 50 tickers tried, all returned "not available". Rate limit reset needed.
-- **Script:** `1g_fetch_tiingo.py` — includes rate limit detection, 65s auto-retry, fixed timezone stripping (`dt.tz_localize(None)`)
+- **Script:** `(removed)` — includes rate limit detection, 65s auto-retry, fixed timezone stripping (`dt.tz_localize(None)`)
 - **Key fix:** `df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None).dt.normalize()` before saving
 
 **Status:** Tiingo hourly limit reset needed before retry. Some tickers not available on Tiingo (especially older/obscure ones).
 
-### 10.3 — Wind XLSX Ingestion (`1h_ingest_wind_xlsx.py`)
+### 10.3 — Wind XLSX Ingestion (`1e_ingest_wind_xlsx.py`)
 
 Exported from Wind: `missing data.xlsx` from his Wind platform — OHLCV for AABA.O (Yahoo/Altaba).
 
@@ -561,13 +553,13 @@ Exported from Wind: `missing data.xlsx` from his Wind platform — OHLCV for AAB
 - Row 7–8: bilingual column headers
 - Row 9+: data — Date, Open, High, Low, Close (no volume)
 
-**Script `1h_ingest_wind_xlsx.py`:**
+**Script `1e_ingest_wind_xlsx.py`:**
 - Scans `data/wind_exports/` folder for all xlsx files (drop files here)
 - Also picks up any xlsx in `data/` (handles ad-hoc Export)
 - Extracts ticker from metadata rows automatically
 - Strips Wind formula cells, handles NaN open prices
 - Merges into `prices.parquet`, updates ticker log (status: `ok_wind`)
-- Run: `python 1h_ingest_wind_xlsx.py` after adding new xlsx files
+- Run: `python 1e_ingest_wind_xlsx.py` after adding new xlsx files
 
 **Result:** AABA.O added (2010–2025, 3,886 rows). `prices.parquet`: **696 → 697 tickers**
 
@@ -575,9 +567,9 @@ Exported from Wind: `missing data.xlsx` from his Wind platform — OHLCV for AAB
 
 1. Export missing tickers from Wind (one or multiple files)
 2. Place xlsx files in `data/wind_exports/`
-3. Run `python 1h_ingest_wind_xlsx.py`
-4. Run `python 1e_rebuild_base_panel.py`
-5. Run `python 1_feature_engineering.py`
+3. Run `python 1e_ingest_wind_xlsx.py`
+4. Run `python 1f_rebuild_panel.py`
+5. Run `python 1g_feature_engineering.py`
 6. Upload to Kaggle, retrain models
 
 ### 10.5 — Current Universe Status (21 Mar 2026)
@@ -596,35 +588,35 @@ Exported from Wind: `missing data.xlsx` from his Wind platform — OHLCV for AAB
 ## Current Status (21 Mar 2026)
 
 **Completed today:**
-- `1f_fetch_missing_tickers.py` — 4 extra tickers via yfinance fix
-- `1g_fetch_tiingo.py` — Tiingo fetcher with rate limit handling and timezone fix
-- `1h_ingest_wind_xlsx.py` — Wind xlsx ingestion pipeline
+- `1d_fetch_missing_tickers.py` — 4 extra tickers via yfinance fix
+- `(removed)` — Tiingo fetcher with rate limit handling and timezone fix
+- `1e_ingest_wind_xlsx.py` — Wind xlsx ingestion pipeline
 - AABA.O added from Wind export
 
 **Blocked on:**
-- Tiingo hourly rate limit (reset needed, then retry `1g_fetch_tiingo.py`)
+- Tiingo hourly rate limit (reset needed, then retry `(removed)`)
 - Wind exports for remaining 248 tickers (drop in `data/wind_exports/`)
 - full historical fundamental data (2010–2025)
 
 **Next steps once data available:**
-1. Run `1h_ingest_wind_xlsx.py` (after Export Wind data)
-2. Run `1g_fetch_tiingo.py` (after rate limit resets)
-3. Run `1e_rebuild_base_panel.py`
-4. Run `1_feature_engineering.py`
+1. Run `1e_ingest_wind_xlsx.py` (after Export Wind data)
+2. Run `(removed)` (after rate limit resets)
+3. Run `1f_rebuild_panel.py`
+4. Run `1g_feature_engineering.py`
 5. Upload to Kaggle → retrain FT-Transformer + CS-Transformer
-6. Re-run `6_index_enhancement.py` with updated scores
+6. Re-run `4b_index_enhancement.py` with updated scores
 
 ---
 
 ## Phase 11 — Advanced Framework (23 Mar 2026)
 
-### 11.1 — Regime Backtesting Engine (`8_regime_engine.py`)
+### 11.1 — Regime Backtesting Engine (`4c_regime_engine.py`)
 
 Breaks IE backtest performance out by market regime.
 
 **Two modes:**
-- `python 8_regime_engine.py` — rule-based (4 hardcoded regimes)
-- `python 8_regime_engine.py --hmm` — 2-state HMM on SPX returns + VIX (risk-on / risk-off)
+- `python 4c_regime_engine.py` — rule-based (4 hardcoded regimes)
+- `python 4c_regime_engine.py --hmm` — 2-state HMM on SPX returns + VIX (risk-on / risk-off)
 
 **HMM results (test period Jan 2023–Oct 2025, 24 months: 17 risk-on, 7 risk-off):**
 
@@ -638,7 +630,7 @@ Breaks IE backtest performance out by market regime.
 
 **Outputs:** `data/ie_regime_breakdown.csv`, `figures/ie_regime_breakdown.png`
 
-### 11.2 — Differentiable IC Optimisation (`5e_ic_optimise.py`)
+### 11.2 — Differentiable IC Optimisation (`2e_ic_optimise.py`)
 
 Replaces static IC-decay factor weights with gradient-optimised weights.
 
@@ -654,7 +646,7 @@ Replaces static IC-decay factor weights with gradient-optimised weights.
 
 **Outputs:** `data/factor_selected_optimised.csv`, `figures/factor_weights_optimised.png`
 
-### 11.3 — Factor-Combo Baseline (`6b_factor_combo_baseline.py`)
+### 11.3 — Factor-Combo Baseline (`4a_factor_combo_baseline.py`)
 
 Linear weighted factor combination (no ML) as IE signal — quantifies what the transformer adds.
 
@@ -691,10 +683,10 @@ Not implementing yet — waiting for fundamental data + complete universe.
 - Full historical fundamental data (PE, PB, money flow 2010–2025)
 
 **Next steps once data arrives:**
-1. `python 1h_ingest_wind_xlsx.py`
-2. `python 1e_rebuild_base_panel.py` + `python 1_feature_engineering.py`
-3. `python 5e_ic_optimise.py` on expanded feature set
-4. Retrain on Kaggle → `python 6_index_enhancement.py` + `python 8_regime_engine.py`
+1. `python 1e_ingest_wind_xlsx.py`
+2. `python 1f_rebuild_panel.py` + `python 1g_feature_engineering.py`
+3. `python 2e_ic_optimise.py` on expanded feature set
+4. Retrain on Kaggle → `python 4b_index_enhancement.py` + `python 4c_regime_engine.py`
 
 ---
 
