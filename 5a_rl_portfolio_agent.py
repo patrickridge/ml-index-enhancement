@@ -231,9 +231,16 @@ def build_episodes(scores, weights, ref_alpha=0.01):
 
     df = pd.DataFrame(rows).set_index("date").sort_index()
 
-    df["bench_vol"]         = df["bench_ret"].rolling(3, min_periods=1).std() * np.sqrt(12)
-    df["rolling_te"]        = df["active_ret_ref"].rolling(3, min_periods=1).std() * np.sqrt(12)
-    df["recent_active_ret"] = df["active_ret_ref"].rolling(3, min_periods=1).mean()
+    # rolling(3, min_periods=2) avoids std=NaN on single-observation windows
+    df["bench_vol"]         = (df["bench_ret"]
+                               .rolling(3, min_periods=2).std()
+                               .fillna(df["bench_ret"].expanding().std())
+                               .fillna(0.0)) * np.sqrt(12)
+    df["rolling_te"]        = (df["active_ret_ref"]
+                               .rolling(3, min_periods=2).std()
+                               .fillna(df["active_ret_ref"].expanding().std())
+                               .fillna(0.0)) * np.sqrt(12)
+    df["recent_active_ret"] = df["active_ret_ref"].rolling(3, min_periods=1).mean().fillna(0.0)
 
     vol_med      = df["bench_vol"].expanding(min_periods=6).median()
     df["regime"] = (df["bench_vol"] > vol_med).astype(float).fillna(0.0)
@@ -241,8 +248,10 @@ def build_episodes(scores, weights, ref_alpha=0.01):
     for col in STATE_COLS:
         if col == "regime":
             continue
-        mu, sg    = df[col].mean(), df[col].std() + 1e-8
-        df[col]   = (df[col] - mu) / sg
+        mu, sg  = df[col].mean(), df[col].std() + 1e-8
+        df[col] = (df[col] - mu) / sg
+        # Replace any residual NaN / inf after normalisation and clip to ±5σ
+        df[col] = df[col].fillna(0.0).clip(-5.0, 5.0)
 
     return df
 
@@ -451,7 +460,10 @@ def train(agent, episodes):
         ep_rewards = []
 
         for i, (dt, row) in enumerate(train_rows):
-            state = np.nan_to_num(row[STATE_COLS].values.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+            state = np.clip(
+                np.nan_to_num(row[STATE_COLS].values.astype(np.float32),
+                              nan=0.0, posinf=0.0, neginf=0.0),
+                -5.0, 5.0)
             alpha = agent.select_action(state)
 
             result = simulate_month(row["_scores"], row["_weights"], alpha=alpha)
@@ -497,7 +509,10 @@ def evaluate(agent, episodes, fixed_alpha=0.01):
         if str(dt.date()) < TEST_START:
             continue
 
-        state = np.nan_to_num(row[STATE_COLS].values.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+        state = np.clip(
+            np.nan_to_num(row[STATE_COLS].values.astype(np.float32),
+                          nan=0.0, posinf=0.0, neginf=0.0),
+            -5.0, 5.0)
 
         if agent is not None:
             alpha_rl = agent.select_action(state, deterministic=True)

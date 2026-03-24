@@ -780,22 +780,32 @@ with tab5:
                    "Run 1g_feature_engineering.py first.")
     else:
         # Controls
+        # fwd_ret_1m is raw (not normalised) → meaningful 3-D surface.
+        # Factor scores are rank-normalised to [−0.5, +0.5] → always a nearly flat
+        # linear ramp. For those, the 2-D percentile time-series chart below is the
+        # useful view — it shows HOW each percentile band evolved over time.
+        RAW_FACTORS    = {"fwd_ret_1m"}   # not rank-normalised
+        RANKED_FACTORS = {"vol_252d", "idio_vol_252d", "vol_126d", "ret_12m", "beta_252d"}
+
         col_feat, col_pct, col_yr = st.columns([2, 2, 2])
         with col_feat:
             vol_factor = st.selectbox(
                 "Factor:",
-                [
-                    "fwd_ret_1m",      # actual monthly returns — NOT normalised, best for regimes
-                    "vol_252d",        # cross-sectional rank score (flat by construction)
-                    "idio_vol_252d",
-                    "vol_126d",
-                    "ret_12m",
-                    "beta_252d",
-                ],
+                ["fwd_ret_1m", "vol_252d", "idio_vol_252d", "vol_126d", "ret_12m", "beta_252d"],
                 index=0,
                 key="vol_factor",
-                help="fwd_ret_1m (actual returns) produces the most visually meaningful surface. "
-                     "Factor scores are rank-normalised to [−0.5, +0.5] and produce a nearly flat surface.",
+                help="fwd_ret_1m shows actual monthly stock returns — the 3-D surface is most "
+                     "meaningful here (regime spikes visible). Factor scores (vol_252d etc.) are "
+                     "rank-normalised to [−0.5, +0.5]; their surface is flat by construction — "
+                     "use the Percentile Time Series chart below for those.",
+            )
+        is_ranked = vol_factor in RANKED_FACTORS
+        if is_ranked:
+            st.info(
+                f"**{vol_factor}** is cross-sectionally rank-normalised to [−0.5, +0.5]. "
+                "The 3-D surface will appear nearly flat — this is expected. "
+                "The **Percentile Time Series** chart below is the useful view for factor scores: "
+                "it shows how the top/bottom percentile bands evolved over time."
             )
         with col_pct:
             pct_step = st.select_slider(
