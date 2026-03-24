@@ -90,7 +90,7 @@ Month t:  [Stock 1 factors]  →
 
 **Why it outperforms:** It sees every stock relative to every other stock in the same month — directly learning cross-sectional ranking, which is exactly what index enhancement requires. LGBM and the FT-Transformer score stocks independently and miss this relative information.
 
-**Key property:** Regime-stable — IR of 1.019 in risk-off periods and 0.931 in risk-on periods (consistent across both).
+**Key property:** Regime-stable — IR of 0.926 in risk-off periods and 2.227 in risk-on periods (consistent across both). Full period IR 1.850.
 
 ### FT-Transformer (Secondary Model)
 

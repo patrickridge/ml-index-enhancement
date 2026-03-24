@@ -27,8 +27,7 @@ All hyperparameters are defined as plain variables at the top — easy to tweak 
 ║     Copy these into your local data/ folder.                         ║
 ╚══════════════════════════════════════════════════════════════════════╝
 
-Expected GPU time:  ~5–10 min on Kaggle T4
-Expected CPU time:  ~45–90 min (not recommended)
+Expected GPU time:  49 minutes
 """
 
 import os
