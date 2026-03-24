@@ -63,14 +63,16 @@ python 4d_benchmark_spx.py             # full comparison vs S&P 500
 
 ### Phase 5 — Reinforcement Learning
 ```bash
-python 5b_rl_portfolio_agent.py        # SAC agent — adaptive alpha tilt (requires torch)
+python 5a_rl_factor_agent.py           # Layer 1 SAC — adaptive factor weighting (requires torch)
+python 5b_rl_portfolio_agent.py        # Layer 2 SAC — adaptive alpha tilt (run after 5a, requires torch)
+python 5c_walk_forward.py              # Walk-forward backtest — no-leakage RL validation (requires torch)
 ```
 
 ---
 
-## Out-of-Sample Results (Test Period Jan 2023 – Oct 2025)
+## Out-of-Sample Results
 
-### Index Enhancement
+### Index Enhancement (Test Period Jan 2023 – Nov 2025)
 
 | Model | Ann. Alpha | Tracking Error | IR | Hit Rate |
 |-------|-----------|---------------|-----|----------|
@@ -80,6 +82,28 @@ python 5b_rl_portfolio_agent.py        # SAC agent — adaptive alpha tilt (requ
 | Linear Factor Combo (baseline) | — | — | −0.046 | — |
 
 IR > 0.5 is top-quartile. IR > 0.9 is strong. CS-Transformer is also regime-stable (IR 1.02 risk-off, 0.93 risk-on).
+
+### RL Walk-Forward Backtest (95 out-of-sample months, 2014–2025)
+
+Fully expanding-window validation — factor weights, state normalisation, and RL policy all trained on past data only. No test-period information used anywhere in the pipeline.
+
+| | RL Agent (SAC) | Fixed α=1% |
+|---|---|---|
+| **Ann. Alpha** | **7.19%** | 1.87% |
+| **Tracking Error** | 8.18% | 6.77% |
+| **Info Ratio** | **0.879** | 0.276 |
+| **Hit Rate** | 50.5% | 48.4% |
+| **Max Active DD** | **−6.04%** | −10.50% |
+
+RL beats fixed alpha in 4/5 folds. Max drawdown cut nearly in half — the agent scales back tilt in high-volatility regimes and sizes up when factor IC is high.
+
+| Fold | RL IR | Fixed IR |
+|------|-------|----------|
+| 2014–2015 | −0.755 | −1.659 ✓ |
+| 2016–2017 | 1.771 | 1.778 |
+| 2018–2019 | 0.042 | −0.073 ✓ |
+| 2020–2021 | 1.125 | 0.751 ✓ |
+| 2022–2025 | 1.188 | 0.380 ✓ |
 
 ### Data Splits
 
@@ -117,7 +141,9 @@ IR > 0.5 is top-quartile. IR > 0.9 is strong. CS-Transformer is also regime-stab
 | `4b_index_enhancement.py` | IE portfolio construction, alpha sweep |
 | `4c_regime_engine.py` | Per-regime IE performance breakdown (rule-based + HMM) |
 | `4d_benchmark_spx.py` | Compare all strategies vs S&P 500 |
-| `5b_rl_portfolio_agent.py` | SAC RL agent — learns adaptive alpha tilt (MLP, no memory) |
+| `5a_rl_factor_agent.py` | Layer 1 SAC — adaptive factor IC weighting across 43 factors |
+| `5b_rl_portfolio_agent.py` | Layer 2 SAC — adaptive alpha tilt using L1 IC as state feature |
+| `5c_walk_forward.py` | Walk-forward RL backtest — 5 folds, no data leakage, 95 OOS months |
 | `config.py` | All shared parameters and hyperparameters |
 | `utils_factors.py` | 100+ factor computation functions (10 categories) |
 | `utils_rmt.py` | Random Matrix Theory covariance denoising |
@@ -137,7 +163,11 @@ IR > 0.5 is top-quartile. IR > 0.9 is strong. CS-Transformer is also regime-stab
 | `data/bt_ie_transformer.csv` | FT-Transformer IE backtest monthly returns |
 | `data/bt_ie_lgbm.csv` | LGBM IE backtest monthly returns |
 | `data/ie_regime_breakdown.csv` | Per-regime IR breakdown (all models) |
+| `data/bt_wf_rl.csv` | Walk-forward RL monthly returns (95 OOS months) |
+| `data/wf_fold_summary.csv` | Per-fold IR, alpha, TE summary |
+| `data/l1_rl_ic_full.csv` | Layer 1 RL IC series (used as L2 state feature) |
 | `figures/ie_regime_breakdown.png` | Bar chart: IR by regime per model |
+| `figures/wf_rl_comparison.png` | Walk-forward cumulative alpha: RL vs fixed |
 | `figures/factor_ic_summary_positive.png` | Top 10 positive-IC factors |
 | `figures/factor_weights_optimised.png` | Optimised factor weight distribution |
 

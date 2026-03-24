@@ -294,12 +294,13 @@ if show_gfc_note:
     )
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Regime Breakdown",
     "Bootstrap Analysis",
     "Monte Carlo Projection",
     "Statistics",
     "Volatility Surface",
+    "Walk-Forward RL",
 ])
 
 
@@ -1178,11 +1179,166 @@ with tab5:
         st.plotly_chart(fig_ts, use_container_width=True)
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 6 — Walk-Forward RL Backtest
+# ═════════════════════════════════════════════════════════════════════════════
+with tab6:
+    st.markdown("## Walk-Forward RL Backtest — No Data Leakage")
+    st.markdown(
+        "The L2 SAC agent is re-trained from scratch on each fold using only "
+        "past data. Factor IC weights, state normalisation, and the RL policy "
+        "are all computed on the training window only — nothing from the test "
+        "period leaks in. Results below are fully out-of-sample across 95 months."
+    )
+
+    WF_FILE   = DATA_DIR / "bt_wf_rl.csv"
+    FOLD_FILE = DATA_DIR / "wf_fold_summary.csv"
+
+    if not WF_FILE.exists() or not FOLD_FILE.exists():
+        st.warning(
+            "Walk-forward data not found. Run `python 5c_walk_forward.py` first."
+        )
+    else:
+        wf   = pd.read_csv(WF_FILE,   parse_dates=["date"]).sort_values("date")
+        fold = pd.read_csv(FOLD_FILE)
+
+        # ── Headline metrics ─────────────────────────────────────────────────
+        rl_alpha_ann = wf["active_ret"].mean() * 12
+        rl_te        = wf["active_ret"].std() * (12 ** 0.5)
+        rl_ir        = rl_alpha_ann / rl_te if rl_te > 0 else 0.0
+
+        # Fixed alpha benchmark (alpha_used constant at 1%)
+        fixed_alpha = 0.01
+        # approximate fixed active return using same bench returns and fixed alpha
+        fixed_active = wf["active_ret"] * (fixed_alpha / wf["alpha_used"].replace(0, np.nan))
+        fixed_active = fixed_active.dropna()
+        fixed_alpha_ann = fixed_active.mean() * 12
+        fixed_te        = fixed_active.std() * (12 ** 0.5)
+        fixed_ir        = fixed_alpha_ann / fixed_te if fixed_te > 0 else 0.0
+
+        n_wins = int((fold["rl_ir"] > fold["fixed_ir"]).sum())
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("RL Info Ratio",     f"{rl_ir:.3f}",
+                  f"vs Fixed {fixed_ir:.3f}")
+        c2.metric("RL Ann Alpha",      f"{rl_alpha_ann*100:.2f}%",
+                  f"vs Fixed {fixed_alpha_ann*100:.2f}%")
+        c3.metric("RL Tracking Error", f"{rl_te*100:.2f}%")
+        c4.metric("Folds RL Wins",     f"{n_wins}/5",
+                  "out-of-sample folds")
+
+        st.markdown("---")
+
+        # ── Cumulative active return chart ───────────────────────────────────
+        st.markdown("### Cumulative Out-of-Sample Active Return")
+
+        wf = wf.sort_values("date").copy()
+        wf["cum_rl"]    = (1 + wf["active_ret"]).cumprod() - 1
+        # rebuild fixed active return series aligned to wf index
+        wf["fixed_ar"]  = wf["active_ret"] * (fixed_alpha / wf["alpha_used"].replace(0, np.nan))
+        wf["cum_fixed"] = (1 + wf["fixed_ar"].fillna(0)).cumprod() - 1
+
+        fig_cum = go.Figure()
+
+        # Shade fold boundaries
+        fold_starts = wf.groupby("fold")["date"].min().reset_index()
+        fold_colors = ["#1A2A3A", "#1A3A2A", "#2A1A3A", "#3A2A1A", "#1A3A3A"]
+        for i, row in fold_starts.iterrows():
+            end_dt = wf[wf["fold"] == row["fold"]]["date"].max()
+            fig_cum.add_vrect(
+                x0=row["date"], x1=end_dt,
+                fillcolor=fold_colors[i % len(fold_colors)],
+                opacity=0.25, layer="below", line_width=0,
+                annotation_text=row["fold"],
+                annotation_position="top left",
+                annotation_font=dict(size=8, color="#9AAABB"),
+            )
+
+        fig_cum.add_trace(go.Scatter(
+            x=wf["date"], y=wf["cum_rl"] * 100,
+            mode="lines", name="RL Agent",
+            line=dict(color="#4A9EE0", width=2.2),
+        ))
+        fig_cum.add_trace(go.Scatter(
+            x=wf["date"], y=wf["cum_fixed"] * 100,
+            mode="lines", name="Fixed α=1%",
+            line=dict(color="#E07A4A", width=1.8, dash="dot"),
+        ))
+        fig_cum.add_hline(y=0, line_color="#555", line_width=0.8)
+
+        _l = dict(**_LAYOUT)
+        fig_cum.update_layout(
+            **_l,
+            height=380,
+            yaxis_title="Cumulative Active Return (%)",
+            xaxis_title="Date",
+            title=dict(text="Walk-Forward Cumulative Alpha (95 out-of-sample months)",
+                       font=dict(size=12), x=0),
+        )
+        st.plotly_chart(fig_cum, use_container_width=True)
+
+        # ── Per-fold IR bar chart ─────────────────────────────────────────────
+        st.markdown("### Per-Fold Information Ratio")
+
+        bar_colors_rl    = ["#4A9EE0"] * len(fold)
+        bar_colors_fixed = ["#E07A4A"] * len(fold)
+
+        fig_fold = go.Figure()
+        fig_fold.add_trace(go.Bar(
+            name="RL Agent",
+            x=fold["label"],
+            y=fold["rl_ir"],
+            marker_color=bar_colors_rl,
+            text=[f"{v:.2f}" for v in fold["rl_ir"]],
+            textposition="outside",
+            textfont=dict(size=9, color="#E8EDF2"),
+        ))
+        fig_fold.add_trace(go.Bar(
+            name="Fixed α=1%",
+            x=fold["label"],
+            y=fold["fixed_ir"],
+            marker_color=bar_colors_fixed,
+            text=[f"{v:.2f}" for v in fold["fixed_ir"]],
+            textposition="outside",
+            textfont=dict(size=9, color="#E8EDF2"),
+        ))
+        fig_fold.add_hline(y=0, line_color="#888", line_width=0.8)
+
+        _l2 = dict(**_LAYOUT)
+        fig_fold.update_layout(
+            **_l2,
+            height=360,
+            barmode="group",
+            bargap=0.25,
+            yaxis_title="Information Ratio",
+            title=dict(text="IR by Fold — RL Agent vs Fixed Alpha",
+                       font=dict(size=12), x=0),
+        )
+        st.plotly_chart(fig_fold, use_container_width=True)
+
+        # ── Fold summary table ────────────────────────────────────────────────
+        st.markdown("### Fold Summary")
+        disp = fold.copy()
+        disp.columns = ["Fold", "Months", "RL IR", "RL Alpha", "RL TE", "Fixed IR"]
+        disp["RL Alpha"] = (disp["RL Alpha"] * 100).map("{:.1f}%".format)
+        disp["RL TE"]    = (disp["RL TE"]    * 100).map("{:.1f}%".format)
+        disp["RL IR"]    = disp["RL IR"].map("{:.3f}".format)
+        disp["Fixed IR"] = disp["Fixed IR"].map("{:.3f}".format)
+        disp["Beats?"]   = (fold["rl_ir"] > fold["fixed_ir"]).map({True: "✓", False: "✗"})
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+
+        st.markdown(
+            "_Factor IC weights, state normalisation, and RL policy are all "
+            "computed on training data only. No test-period information is used "
+            "in any component of the pipeline._"
+        )
+
+
 # ── Footer ───────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.caption(
     "ML-Driven S&P 500 Index Enhancement  ·  "
     "CS-Transformer: IR 1.874, Ann α 4.16%, TE 2.22%  ·  "
-    "Out-of-sample test period: Jan 2023 – Nov 2025  ·  "
+    "Walk-Forward RL: IR 0.879, Ann α 7.19%, 4/5 folds  ·  "
     "Run: streamlit run 6_regime_dashboard.py"
 )
