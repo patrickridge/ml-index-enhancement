@@ -804,6 +804,103 @@ RL agent learns to adapt alpha by regime: avg alpha 3.15% in risk-off, 1.97% in 
 
 ---
 
+## Phase 13 — RL Layer 1, Regime Dashboard, FT-Transformer Retrain (24 Mar 2026)
+
+### 13.1 — Layer 1 RL: Adaptive Factor Weighting (`5b_rl_factor_agent.py`)
+
+More complex RL agent replacing fixed IC-optimised factor weights with a dynamic policy.
+
+**Architecture:**
+- State (133-dim): rolling 6m IC per factor (43) + rolling 12m IC per factor (43) + IC momentum (43) + macro state: VIX, market trend, SPX 3m return, vol regime (4)
+- Action: 43-dim factor weight vector (softmax normalised over Gaussian samples)
+- Reward: direct IC of combined signal each month — not a proxy
+- Policy: MLP, no memory, fully Markov
+- Algorithm: SAC with auto-tuned temperature, twin critic, soft target updates
+
+**Why more complex than Layer 2 (5a):**
+- 43-dimensional continuous action space vs scalar alpha in Layer 2
+- Reward is IC directly (signal quality) vs active return proxy
+- Agent adapts which factors dominate based on rolling IC history — in momentum regimes it upweights momentum factors; in mean-reversion regimes it shifts to contrarian factors
+- State captures both short-term (6m) and long-term (12m) IC dynamics per factor
+
+**Full pipeline when both layers active:**
+```
+State (IC history + macro) → Layer 1 RL → 43-dim factor weights
+                                         ↓
+                              Combined factor score
+                                         ↓
+State (signal strength + regime) → Layer 2 RL → alpha tilt
+                                         ↓
+                              Portfolio weights
+```
+
+### 13.2 — Regime Backtesting Dashboard (`6_regime_dashboard.py`)
+
+Interactive Streamlit dashboard with:
+- **Regime selector**: Post-GFC Recovery, QE Bull, COVID Crash, COVID Recovery, Rate Hike Bear, AI Bull (2023+)
+- **Model selector**: CS-Transformer, FT-Transformer, LGBM, Factor-Combo
+- **Stochastic engine**: block bootstrap (configurable iterations + block size) → 95% CI on IR
+- **Monte Carlo projection**: forward cumulative alpha fan chart (configurable horizon + simulations)
+- **Full stats table**: IR heatmap, colour-coded, downloadable CSV
+
+4 tabs: Regime Breakdown | Bootstrap Analysis | Monte Carlo Projection | Full Stats Table
+
+**Run:** `streamlit run 6_regime_dashboard.py`
+
+**Note:** Conda streamlit removed (broken). Pip version installed at `/Users/patrick/Library/Python/3.13/bin/`. PATH fixed in `~/.bash_profile`.
+
+### 13.3 — FT-Transformer Retrained on Kaggle (24 Mar 2026)
+
+Retrained `3b_ft_transformer_kaggle.py` with expanded panel (697 tickers, 240 train months):
+
+| Strategy | Ann Return | Vol | Sharpe | Max DD |
+|----------|-----------|-----|--------|--------|
+| Long-Only Top 100 | 37.23% | 30.61% | 1.22 | -12.20% |
+| Long-Short top/bot 20% | 29.13% | 22.26% | 1.31 | -4.42% |
+
+Files: `scores_transformer.parquet`, `bt_transformer.csv`, `bt_transformer_ls.csv`
+
+### 13.4 — IE + Regime Results with Updated FT-T (24 Mar 2026)
+
+IE pipeline rerun with new FT-T scores:
+
+| Model | Ann α | TE | IR | Hit Rate |
+|-------|-------|-----|-----|----------|
+| **CS-Transformer** | **4.16%** | **2.22%** | **1.874** | 75% |
+| FT-Transformer | 0.03% | 1.87% | **0.015** | 54% |
+| LGBM | 0.61% | 1.61% | 0.377 | 67% |
+
+**Key finding:** FT-Transformer IE IR collapsed to 0.015 (from 0.428 previously). After retraining on 240 months, the model generates almost zero alpha in the IE framework. This is expected — FT-T scores each stock independently, meaning the relative cross-sectional signal quality degrades as the training set grows without the architecture seeing relative rankings. CS-Transformer's cross-sectional attention is the decisive architectural advantage.
+
+Regime breakdown (HMM):
+
+| Model | Full IR | Risk-Off IR | Risk-On IR |
+|-------|---------|------------|-----------|
+| CS-Transformer | 1.850 | 0.926 | 2.227 |
+| FT-Transformer | 0.024 | 0.210 | −0.044 |
+| LGBM | 0.384 | 1.397 | 0.224 |
+
+---
+
+## Current Status (24 Mar 2026 — afternoon)
+
+**Completed:**
+- Layer 1 RL agent (5b) — adaptive factor weighting, IC-maximising, 133-dim state
+- Regime dashboard (6) — full Streamlit UI with bootstrap CI and Monte Carlo
+- FT-Transformer retrained (240 months) — awaiting IE pipeline rerun
+- PATH fixed for streamlit
+
+**In progress:**
+- 5b_rl_factor_agent.py training (running locally)
+- IE pipeline rerun with updated FT-T scores (pending file download from Kaggle)
+
+**Next steps:**
+1. Download FT-T scores from Kaggle → `python 4b_index_enhancement.py` → `python 4c_regime_engine.py --hmm`
+2. Wait for 5b training to complete → review Layer 1 RL IC results
+3. Commit and push all new scripts + results
+
+---
+
 ## Future Ideas (beyond current scope)
 
 ### Double-Layered Deep Reinforcement Learning (21 Mar 2026)

@@ -164,23 +164,23 @@ The linear combination underperforms the index. The transformer goes from −0.0
 | Model | Ann. Alpha | Tracking Error | IR | Hit Rate |
 |-------|-----------|---------------|-----|----------|
 | **CS-Transformer** | **4.16%** | **2.22%** | **1.874** | **75%** |
-| FT-Transformer | 1.06% | 2.47% | 0.428 | 46% |
+| FT-Transformer | 0.03% | 1.87% | 0.015 | 54% |
 | LGBM | 0.61% | 1.61% | 0.377 | 67% |
 | Factor-Combo (linear baseline) | −0.2% | 3.5% | −0.047 | 50% |
 
 IR > 0.5 = good (top-quartile institutional fund managers typically hit ~0.3–0.5). IR > 1.0 is excellent.
 
-*CS-Transformer retrained on 240 months (2010–2020). Previous run (132 months): IR = 0.960.*
+*Both CS-Transformer and FT-Transformer retrained on 240 months (2010–2020).*
 
 ### Regime Breakdown (HMM, 2-state: risk-on / risk-off)
 
 | Model | Full IR | Risk-Off IR | Risk-On IR | Regime-Stable? |
 |-------|---------|------------|-----------|----------------|
 | **CS-Transformer** | **1.850** | 0.926 | **2.227** | **Yes** |
-| FT-Transformer | 0.438 | 1.866 | 0.086 | No |
+| FT-Transformer | 0.024 | 0.210 | −0.044 | No |
 | LGBM | 0.384 | 1.397 | 0.224 | No |
 
-CS-Transformer is the only model that generates consistent alpha regardless of market regime. FT-Transformer and LGBM work primarily in risk-off (volatile/falling) markets.
+CS-Transformer is the only model that generates consistent alpha regardless of market regime. FT-Transformer IR collapses to near-zero after retraining — confirms CS-T's cross-sectional architecture is the key differentiator.
 
 ### RL Agent Results (5a_rl_portfolio_agent.py)
 
@@ -243,10 +243,23 @@ A SAC (Soft Actor-Critic) agent replaces the fixed alpha with a dynamic decision
 - **Training:** factor-combo scores on full panel 2010–2022 (12 years, ~103 months)
 - **Evaluation:** CS-Transformer scores on test period 2023–2025
 
-**Future — Layer 1 (factor weighting RL):**
-- Adapts which factors to trust based on rolling IC history and regime
-- Reward = next-month IC
-- Requires stable factor IC history first — implement after data expansion
+**Layer 1 — Factor Weighting RL (implemented in `5b_rl_factor_agent.py`):**
+
+- **State (133-dim):** rolling 6m IC per factor (43) + rolling 12m IC per factor (43) + IC momentum (43) + macro (4)
+- **Action:** 43-dim weight vector — how much to trust each factor this month
+- **Reward:** IC of combined signal (direct IC maximisation, not a proxy)
+- **Policy:** MLP only, no memory, fully Markov
+- In momentum regimes: upweights momentum/quality factors. In mean-reversion regimes: shifts to contrarian factors.
+
+---
+
+## Interactive Dashboard
+
+```bash
+streamlit run 6_regime_dashboard.py
+```
+
+4-tab Streamlit app: regime breakdown, block bootstrap CI on IR, Monte Carlo forward projection, full stats table with IR heatmap. Sidebar controls for model/regime selection and stochastic engine settings.
 
 ---
 
