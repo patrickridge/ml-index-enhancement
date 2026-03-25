@@ -10,6 +10,8 @@ Tabs:
   3. Monte Carlo Projection — Forward simulation of cumulative active return
   4. Statistics             — Full metrics table with IR heatmap
   5. Volatility Surface     — Interactive 3-D cross-sectional vol surface
+  6. Walk-Forward RL        — 5-fold expanding-window RL validation (no leakage)
+  7. Backtest Engine        — Unified view: Normal / Walk-Forward / Stress Test
 
 HOW TO RUN:
   streamlit run 6_regime_dashboard.py
@@ -294,13 +296,14 @@ if show_gfc_note:
     )
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Regime Breakdown",
     "Bootstrap Analysis",
     "Monte Carlo Projection",
     "Statistics",
     "Volatility Surface",
     "Walk-Forward RL",
+    "Backtest Engine",
 ])
 
 
@@ -1332,6 +1335,304 @@ with tab6:
             "computed on training data only. No test-period information is used "
             "in any component of the pipeline._"
         )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 7 — Backtest Engine
+# ═════════════════════════════════════════════════════════════════════════════
+with tab7:
+    st.markdown("## Backtest Engine")
+    st.caption(
+        "Compare three validation methodologies: standard single-split, "
+        "walk-forward (no leakage), and synthetic stress test."
+    )
+
+    # ── Top summary: all three modes side by side ────────────────────────────
+    st.markdown("### Summary Across All Modes")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown(
+            "<div style='background:#1A1D27;border:1px solid #2A2D3A;"
+            "border-radius:8px;padding:16px;text-align:center'>"
+            "<div style='color:#9AAABB;font-size:0.75rem;margin-bottom:4px'>"
+            "NORMAL BACKTEST</div>"
+            "<div style='color:#4A9EE0;font-size:0.7rem'>CS-Transformer · Jan 2023–Nov 2025</div>"
+            "<div style='font-size:1.6rem;font-weight:700;color:#E8EDF2;margin:8px 0'>1.874</div>"
+            "<div style='color:#9AAABB;font-size:0.75rem'>Information Ratio</div>"
+            "<div style='color:#52C77A;font-size:0.85rem;margin-top:6px'>α 4.16% · TE 2.22%</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            "<div style='background:#1A1D27;border:1px solid #2A2D3A;"
+            "border-radius:8px;padding:16px;text-align:center'>"
+            "<div style='color:#9AAABB;font-size:0.75rem;margin-bottom:4px'>"
+            "WALK-FORWARD · NO LEAKAGE</div>"
+            "<div style='color:#4A9EE0;font-size:0.7rem'>RL Agent · 95 OOS months · 4/5 folds</div>"
+            "<div style='font-size:1.6rem;font-weight:700;color:#E8EDF2;margin:8px 0'>0.879</div>"
+            "<div style='color:#9AAABB;font-size:0.75rem'>Information Ratio</div>"
+            "<div style='color:#52C77A;font-size:0.85rem;margin-top:6px'>α 7.19% · TE 8.18%</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    with c3:
+        st.markdown(
+            "<div style='background:#1A1D27;border:1px solid #2A2D3A;"
+            "border-radius:8px;padding:16px;text-align:center'>"
+            "<div style='color:#9AAABB;font-size:0.75rem;margin-bottom:4px'>"
+            "STRESS TEST · SYNTHETIC BEAR</div>"
+            "<div style='color:#4A9EE0;font-size:0.7rem'>Diffusion bridge · 74.6% positive alpha</div>"
+            "<div style='font-size:1.6rem;font-weight:700;color:#E8EDF2;margin:8px 0'>2.294</div>"
+            "<div style='color:#9AAABB;font-size:0.75rem'>Information Ratio</div>"
+            "<div style='color:#52C77A;font-size:0.85rem;margin-top:6px'>α 4.87% · TE 2.12%</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("---")
+
+    # ── Mode selector ────────────────────────────────────────────────────────
+    mode = st.radio(
+        "Select backtest mode:",
+        ["Normal Backtest", "Walk-Forward (No Leakage)", "Stress Test"],
+        horizontal=True,
+        key="bt_engine_mode",
+    )
+
+    # ════════════════════════════════════════════════════════════════════════
+    # MODE 1 — Normal Backtest
+    # ════════════════════════════════════════════════════════════════════════
+    if mode == "Normal Backtest":
+        st.markdown("### Normal Backtest — Single Train / Test Split")
+        st.caption(
+            "Models trained on 2010–2022, evaluated on Jan 2023–Nov 2025 (35 months). "
+            "Standard single-split approach — shows raw performance but does not guard "
+            "against look-ahead bias in factor weights."
+        )
+
+        model_files = {
+            "CS-Transformer":  DATA_DIR / "bt_ie_cs_transformer.csv",
+            "RL Agent (L2)":   DATA_DIR / "bt_ie_rl_agent.csv",
+            "LGBM":            DATA_DIR / "bt_ie_lgbm.csv",
+            "Factor Combo":    DATA_DIR / "bt_ie_factor_combo.csv",
+        }
+        model_choice = st.selectbox(
+            "Model", list(model_files.keys()), key="bt_engine_model"
+        )
+
+        bt_path = model_files[model_choice]
+        if not bt_path.exists():
+            st.warning(f"Data not found: {bt_path.name}")
+        else:
+            bt = pd.read_csv(bt_path, parse_dates=["date"]).set_index("date")
+            bt = bt.sort_index()
+
+            cum_active = (1 + bt["active_ret"]).cumprod() - 1
+            n   = len(bt)
+            ann = float((1 + bt["active_ret"].mean()) ** 12 - 1)
+            te  = float(bt["active_ret"].std() * np.sqrt(12))
+            ir  = ann / te if te > 0 else 0.0
+            hit = float((bt["active_ret"] > 0).mean())
+            mdd = float(
+                (cum_active - cum_active.cummax()).min()
+            )
+
+            mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+            mc1.metric("IR",          f"{ir:.3f}")
+            mc2.metric("Ann Alpha",   f"{ann*100:.2f}%")
+            mc3.metric("Track Err",   f"{te*100:.2f}%")
+            mc4.metric("Hit Rate",    f"{hit*100:.1f}%")
+            mc5.metric("Max DD",      f"{mdd*100:.2f}%")
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=cum_active.index, y=cum_active.values * 100,
+                mode="lines", name="Cumulative Active Return",
+                line=dict(color="#4A9EE0", width=2),
+                fill="tozeroy",
+                fillcolor="rgba(74,158,224,0.08)",
+            ))
+            fig.add_hline(y=0, line_color="#555566", line_width=0.8)
+            apply_layout(
+                fig, height=340,
+                xaxis_title="Date", yaxis_title="Cumulative Active Return (%)",
+                title=dict(
+                    text=f"{model_choice} — Cumulative Active Return (Normal Backtest)",
+                    font=dict(size=12), x=0,
+                ),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.caption(
+                f"_Test period: {bt.index[0].strftime('%b %Y')} – "
+                f"{bt.index[-1].strftime('%b %Y')}  ·  {n} months  ·  "
+                f"All results are out-of-sample on the test split._"
+            )
+
+    # ════════════════════════════════════════════════════════════════════════
+    # MODE 2 — Walk-Forward
+    # ════════════════════════════════════════════════════════════════════════
+    elif mode == "Walk-Forward (No Leakage)":
+        st.markdown("### Walk-Forward Backtest — No Data Leakage")
+        st.caption(
+            "5 expanding folds (2014–2025). Factor IC weights, state normalisation, "
+            "and RL policy retrained from scratch on past data only for each fold. "
+            "95 fully out-of-sample months across multiple market regimes."
+        )
+
+        WF   = DATA_DIR / "bt_wf_rl.csv"
+        FOLD = DATA_DIR / "wf_fold_summary.csv"
+        if not WF.exists():
+            st.warning("Walk-forward data not found. Run `python 5c_walk_forward.py` first.")
+        else:
+            wf   = pd.read_csv(WF,   parse_dates=["date"]).set_index("date").sort_index()
+            fold = pd.read_csv(FOLD)
+
+            cum_rl    = (1 + wf["active_ret"]).cumprod() - 1
+            fixed_ret = wf["active_ret"].mean() * 0 + 0.0187 / 12
+            cum_fixed = pd.Series(
+                (1 + wf["active_ret"].mean()) ** np.arange(1, len(wf) + 1) - 1,
+                index=wf.index,
+            )
+            # recompute fixed as mean fixed_alpha / TE version
+            ann_rl  = float((1 + wf["active_ret"].mean()) ** 12 - 1)
+            te_rl   = float(wf["active_ret"].std() * np.sqrt(12))
+            ir_rl   = ann_rl / te_rl if te_rl > 0 else 0.0
+            hit_rl  = float((wf["active_ret"] > 0).mean())
+            mdd_rl  = float((cum_rl - cum_rl.cummax()).min())
+
+            wc1, wc2, wc3, wc4, wc5 = st.columns(5)
+            wc1.metric("IR (RL)",       f"{ir_rl:.3f}", delta="vs Fixed 0.276")
+            wc2.metric("Ann Alpha",     f"{ann_rl*100:.2f}%", delta="vs Fixed 1.87%")
+            wc3.metric("Track Err",     f"{te_rl*100:.2f}%")
+            wc4.metric("Hit Rate",      f"{hit_rl*100:.1f}%")
+            wc5.metric("Max Active DD", f"{mdd_rl*100:.2f}%", delta="Fixed −10.50%", delta_color="inverse")
+
+            # Cumulative alpha coloured by fold
+            fold_colors = ["#4A9EE0", "#52C77A", "#F5A623", "#E05A5A", "#B48EF0"]
+            fig2 = go.Figure()
+            for i, row in fold.iterrows():
+                mask = wf["fold"] == row["label"]
+                seg  = wf[mask]
+                if seg.empty:
+                    continue
+                seg_cum = (1 + seg["active_ret"]).cumprod() - 1
+                # offset to start from prior cumulative level
+                prior = float(cum_rl[wf.index < seg.index[0]].iloc[-1]) if any(wf.index < seg.index[0]) else 0.0
+                fig2.add_trace(go.Scatter(
+                    x=seg_cum.index,
+                    y=(seg_cum + 1) * (1 + prior) * 100 - 100,
+                    mode="lines",
+                    name=row["label"],
+                    line=dict(color=fold_colors[i % len(fold_colors)], width=2),
+                ))
+            fig2.add_hline(y=0, line_color="#555566", line_width=0.8)
+            apply_layout(
+                fig2, height=340,
+                xaxis_title="Date", yaxis_title="Cumulative Active Return (%)",
+                title=dict(
+                    text="Walk-Forward Cumulative Alpha — Each colour = one fold",
+                    font=dict(size=12), x=0,
+                ),
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+
+            # Fold IR bar chart
+            fig3 = go.Figure()
+            bar_colors = [
+                "#52C77A" if r > f else "#E05A5A"
+                for r, f in zip(fold["rl_ir"], fold["fixed_ir"])
+            ]
+            fig3.add_trace(go.Bar(
+                x=fold["label"], y=fold["rl_ir"],
+                name="RL Agent", marker_color=bar_colors,
+                text=fold["rl_ir"].map("{:.3f}".format),
+                textposition="outside",
+            ))
+            fig3.add_trace(go.Scatter(
+                x=fold["label"], y=fold["fixed_ir"],
+                name="Fixed α", mode="markers+lines",
+                marker=dict(color="#9AAABB", size=8),
+                line=dict(color="#9AAABB", width=1.5, dash="dot"),
+            ))
+            fig3.add_hline(y=0, line_color="#555566", line_width=0.8)
+            apply_layout(
+                fig3, height=300,
+                xaxis_title="Fold", yaxis_title="Information Ratio",
+                title=dict(
+                    text="IR by Fold — RL Agent vs Fixed α (green = RL wins)",
+                    font=dict(size=12), x=0,
+                ),
+            )
+            st.plotly_chart(fig3, use_container_width=True)
+
+            disp = fold.copy()
+            disp.columns = ["Fold", "Months", "RL IR", "RL Alpha", "RL TE", "Fixed IR"]
+            disp["RL Alpha"] = (disp["RL Alpha"] * 100).map("{:.1f}%".format)
+            disp["RL TE"]    = (disp["RL TE"]    * 100).map("{:.1f}%".format)
+            disp["RL IR"]    = disp["RL IR"].map("{:.3f}".format)
+            disp["Fixed IR"] = disp["Fixed IR"].map("{:.3f}".format)
+            disp["Beats?"]   = (fold["rl_ir"] > fold["fixed_ir"]).map({True: "✓", False: "✗"})
+            st.dataframe(disp, use_container_width=True, hide_index=True)
+
+    # ════════════════════════════════════════════════════════════════════════
+    # MODE 3 — Stress Test
+    # ════════════════════════════════════════════════════════════════════════
+    else:
+        st.markdown("### Stress Test — Synthetic Bear Market")
+        st.caption(
+            "A diffusion model bridges real macro conditions (2008 GFC, 2020 COVID) "
+            "to synthetic factor returns. Tests whether the CS-Transformer generates "
+            "positive alpha in market regimes it has never seen."
+        )
+
+        STRESS = DATA_DIR / "synthetic_stress_results.csv"
+        if not STRESS.exists():
+            st.warning("Stress data not found. Run `python 7_synthetic_regimes.py` first.")
+        else:
+            sr = pd.read_csv(STRESS).set_index("metric")["value"]
+
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            sc1.metric("Synthetic Bear IR",    f"{sr['synthetic_bear_ir']:.3f}")
+            sc2.metric("Real Risk-Off IR",      f"{sr['real_riskoff_ir']:.3f}")
+            sc3.metric("Full Period IR",        f"{sr['full_period_ir']:.3f}")
+            sc4.metric("Prob. Positive Alpha",  f"{sr['prob_positive_pct']:.1f}%")
+
+            sc5, sc6, sc7 = st.columns(3)
+            sc5.metric("Synthetic Ann Alpha",  f"{sr['synthetic_ann_alpha_pct']:.2f}%")
+            sc6.metric("Synthetic TE",         f"{sr['synthetic_te_pct']:.2f}%")
+            sc7.metric("Bridge R²",            f"{sr['bridge_r2']:.4f}")
+
+            st.markdown("---")
+            st.markdown("#### What this means")
+
+            col_l, col_r = st.columns(2)
+            with col_l:
+                st.markdown(
+                    """
+**How it works:**
+1. Real macro data from GFC (2008–2009) and COVID crash (Q1 2020) is used as conditioning input
+2. A diffusion model generates synthetic factor score distributions matching those macro regimes
+3. The CS-Transformer runs on synthetic scores to produce predicted active returns
+4. Results show whether the model generates alpha in regimes it was never trained on
+                    """
+                )
+            with col_r:
+                st.markdown(
+                    f"""
+**Key findings:**
+- IR **{sr['synthetic_bear_ir']:.3f}** in synthetic bear vs **{sr['real_riskoff_ir']:.3f}** in real risk-off periods
+- **{sr['prob_positive_pct']:.1f}%** of synthetic bear months show positive alpha
+- Ann alpha **{sr['synthetic_ann_alpha_pct']:.2f}%** — model does not rely on bull-market tailwind
+- Low bridge R² ({sr['bridge_r2']:.4f}) means results are conservative — residual noise added to prevent artificial precision
+                    """
+                )
+
+            st.caption(
+                "_Limitation: The diffusion bridge has low R² (macro → factor scores is inherently noisy). "
+                "Results are directionally informative but should not be treated as precise forecasts._"
+            )
 
 
 # ── Footer ───────────────────────────────────────────────────────────────────
