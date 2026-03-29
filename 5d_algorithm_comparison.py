@@ -1,8 +1,8 @@
 """
-5d_algorithm_comparison.py — RL Algorithm Comparison: SAC vs PPO vs GRPO
-=========================================================================
+5d_algorithm_comparison.py — RL Algorithm Comparison: SAC vs PPO vs GRPO vs DAPO
+==================================================================================
 Runs the same 5-fold expanding-window walk-forward backtest as 5c but with
-three reinforcement learning algorithms side-by-side:
+four reinforcement learning algorithms side-by-side:
 
   SAC  (Soft Actor-Critic)
     Off-policy, replay buffer, twin Q-critics, auto-tuned entropy temperature.
@@ -22,6 +22,14 @@ three reinforcement learning algorithms side-by-side:
     simulation overhead per step.
     KL penalty (β=0.01) against a frozen reference policy prevents collapse.
 
+  DAPO (Dynamic Sampling Policy Optimisation)
+    Extends GRPO with three innovations from ByteDance/Seed (2025):
+    1. Clip-higher: asymmetric clipping (ε_low=0.20, ε_high=0.28) — policy can
+       move aggressively toward good alphas but is protected from large bad steps.
+    2. Dynamic G: high-variance (hard) market states get G_MAX=8 candidate alphas;
+       easy states use G_MIN=2. Focuses compute where it matters most.
+    3. No KL penalty: clip-higher alone provides sufficient regularisation.
+
 WHY COMPARE?
   SAC:  off-policy replay buffer → efficient reuse of 100-140 monthly obs.
         Twin critics reduce Q overestimation. Entropy prevents alpha collapse.
@@ -29,8 +37,9 @@ WHY COMPARE?
         With only ~100 training months, barely converges. Shows the cost of
         on-policy constraint at small sample sizes.
   GRPO: no critic → no value-estimation bias or variance from bootstrapping.
-        Simple — just relative ranking within a group. Interesting to see
-        whether eliminating critic error compensates for lower sample efficiency.
+        Simple — just relative ranking within a group.
+  DAPO: GRPO + smarter sampling + asymmetric clipping. Best at limiting downside
+        in volatile/uncertain market regimes.
 
 Run:
   python 5d_algorithm_comparison.py
@@ -107,10 +116,20 @@ PPO_ENT_COEF  = 0.01
 PPO_K_UPDATES = 4
 
 # GRPO
-GRPO_EPOCHS = 400
-GRPO_LR     = 3e-4
-GRPO_G      = 4      # candidate alphas sampled per state
-GRPO_KL_BETA = 0.01     # KL penalty weight — keeps policy close to reference
+GRPO_EPOCHS  = 400
+GRPO_LR      = 3e-4
+GRPO_G       = 4      # candidate alphas sampled per state
+GRPO_KL_BETA = 0.01   # KL penalty weight — keeps policy close to reference
+
+# DAPO (ByteDance/Seed 2025)
+DAPO_EPOCHS     = 400
+DAPO_LR         = 3e-4
+DAPO_EPS_LOW    = 0.20   # clip lower bound (negative advantage)
+DAPO_EPS_HIGH   = 0.28   # clip upper bound (positive advantage) — asymmetric
+DAPO_G_INIT     = 2      # initial candidates to estimate reward variance
+DAPO_G_MIN      = 2      # minimum group size (easy states)
+DAPO_G_MAX      = 8      # maximum group size (hard/volatile states)
+DAPO_VAR_THRESH = 0.05   # reward variance threshold for dynamic sampling
 
 STATE_COLS = [
     "signal_strength",
@@ -641,6 +660,114 @@ class GRPOAgent:
 
 
 # =============================================================================
+# DAPO AGENT (ByteDance/Seed 2025)
+# =============================================================================
+
+class DAPOAgent:
+    """
+    DAPO: Dynamic Sampling Policy Optimisation.
+
+    Three improvements over GRPO:
+    1. Clip-higher: asymmetric clipping eps_low=0.20 / eps_high=0.28
+    2. Dynamic G: sample more candidates for high-variance (hard) states
+    3. No KL penalty: clip-higher provides sufficient regularisation
+    """
+    name = "DAPO"
+
+    def __init__(self, state_dim):
+        self.actor     = GaussianActor(state_dim)
+        self.actor_opt = optim.Adam(self.actor.parameters(), lr=DAPO_LR)
+
+    def select_action(self, state, deterministic=False):
+        s = torch.nan_to_num(torch.FloatTensor(state).unsqueeze(0), nan=0.0)
+        with torch.no_grad():
+            if deterministic:
+                mean, _ = self.actor(s)
+                y = torch.tanh(mean)
+                a = ALPHA_MIN + (y + 1.0) / 2.0 * (ALPHA_MAX - ALPHA_MIN)
+            else:
+                a, _, _ = self.actor.sample(s)
+        return float(a.squeeze())
+
+    def _sample_group(self, s, row, n_samples):
+        alphas, log_probs, rewards = [], [], []
+        for _ in range(n_samples):
+            alpha_t, log_p, _ = self.actor.sample(s)
+            a   = float(alpha_t.squeeze())
+            res = simulate_month(row["_scores"], row["_weights"], alpha=a)
+            if res is None:
+                continue
+            alphas.append(a)
+            log_probs.append(log_p)
+            rewards.append(compute_reward(res["active_ret"]))
+        return alphas, log_probs, rewards
+
+    def train(self, train_rows, verbose=False):
+        avg_r = 0.0
+        for epoch in range(DAPO_EPOCHS):
+            ep_rewards = []
+            for dt, row in train_rows:
+                state = _safe_state(row)
+                s     = torch.nan_to_num(torch.FloatTensor(state).unsqueeze(0), nan=0.0)
+
+                # Phase 1: initial sample to estimate state difficulty
+                alphas, log_probs, rewards = self._sample_group(s, row, DAPO_G_INIT)
+
+                if len(rewards) >= 2:
+                    r_var = float(np.var(rewards))
+                    if r_var > DAPO_VAR_THRESH and len(rewards) < DAPO_G_MAX:
+                        extra = DAPO_G_MAX - len(rewards)
+                        a2, lp2, r2 = self._sample_group(s, row, extra)
+                        alphas    += a2
+                        log_probs += lp2
+                        rewards   += r2
+
+                if len(rewards) < 2:
+                    continue
+
+                ep_rewards.extend(rewards)
+
+                r_arr = np.array(rewards, dtype=np.float32)
+                adv   = torch.FloatTensor(
+                    (r_arr - r_arr.mean()) / (r_arr.std() + 1e-8))
+
+                log_probs_old = torch.cat(log_probs, dim=0).squeeze(-1).detach()
+                alphas_t      = torch.FloatTensor(alphas).unsqueeze(-1)
+
+                mean_c, std_c = self.actor(s.expand(len(alphas), -1))
+                y_t = ((alphas_t - ALPHA_MIN) / (ALPHA_MAX - ALPHA_MIN) * 2.0 - 1.0
+                       ).clamp(-0.9999, 0.9999)
+                x_t = torch.atanh(y_t)
+                dist = torch.distributions.Normal(mean_c, std_c)
+                log_probs_new = (dist.log_prob(x_t)
+                                 - torch.log(1.0 - y_t.pow(2) + 1e-6)).squeeze(-1)
+
+                ratio = (log_probs_new - log_probs_old).exp()
+
+                # Asymmetric clip: positive advantage → higher upper bound
+                pos_mask  = adv > 0
+                clip_high = torch.where(pos_mask,
+                                        torch.full_like(ratio, 1.0 + DAPO_EPS_HIGH),
+                                        torch.full_like(ratio, 1.0 + DAPO_EPS_LOW))
+                clip_low  = torch.full_like(ratio, 1.0 - DAPO_EPS_LOW)
+                ratio_clipped = torch.max(torch.min(ratio, clip_high), clip_low)
+
+                obj  = torch.min(ratio * adv, ratio_clipped * adv)
+                loss = -obj.mean()
+
+                self.actor_opt.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
+                self.actor_opt.step()
+
+            avg_r = float(np.mean(ep_rewards)) if ep_rewards else 0.0
+            if verbose and epoch % 100 == 0:
+                print(f"    [DAPO] Epoch {epoch:4d}  avg_r={avg_r:+.4f}  "
+                      f"(eps_low={DAPO_EPS_LOW}, eps_high={DAPO_EPS_HIGH})")
+        return avg_r
+
+
+# =============================================================================
 # RULE-BASED FALLBACK (no PyTorch)
 # =============================================================================
 
@@ -699,13 +826,13 @@ def ie_stats(bt):
 # =============================================================================
 
 COLORS = {"SAC": "#4A9EE0", "PPO": "#FF9800", "GRPO": "#66BB6A",
-          "Fixed": "#AAAAAA", "Rule": "#CC88CC"}
+          "DAPO": "#FF6B9D", "Fixed": "#AAAAAA", "Rule": "#CC88CC"}
 
 def plot_comparison(all_bt, fold_summary, algo_names):
     fig, axes = plt.subplots(2, 1, figsize=(13, 10))
     fig.suptitle(
         "RL Algorithm Comparison — Walk-Forward Out-of-Sample\n"
-        "SAC (off-policy) vs PPO (on-policy) vs GRPO (no critic)",
+        "SAC vs PPO vs GRPO vs DAPO vs Fixed Alpha",
         fontsize=13, fontweight="bold")
 
     # Cumulative active return
@@ -743,7 +870,7 @@ def plot_comparison(all_bt, fold_summary, algo_names):
     ax.set_xticks(x)
     ax.set_xticklabels(lbls, fontsize=9)
     ax.set_ylabel("Information Ratio")
-    ax.set_title("Per-Fold IR: SAC vs PPO vs GRPO vs Fixed Alpha")
+    ax.set_title("Per-Fold IR: SAC vs PPO vs GRPO vs DAPO vs Fixed Alpha")
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3, axis="y")
 
@@ -760,7 +887,7 @@ def plot_comparison(all_bt, fold_summary, algo_names):
 
 def main():
     print("=" * 70)
-    print("5d_algorithm_comparison.py — SAC vs PPO vs GRPO")
+    print("5d_algorithm_comparison.py — SAC vs PPO vs GRPO vs DAPO")
     print("Walk-Forward Backtest  |  5 Expanding Folds  |  No Data Leakage")
     print("=" * 70)
 
@@ -785,7 +912,7 @@ def main():
     print(f"  Factors: {len(factor_names)}")
 
     # ── Agent classes to compare ──────────────────────────────────────────────
-    AgentClasses = ([SACAgent, PPOAgent, GRPOAgent] if HAS_TORCH
+    AgentClasses = ([SACAgent, PPOAgent, GRPOAgent, DAPOAgent] if HAS_TORCH
                     else [RuleBasedAgent])
     algo_names   = [cls.name for cls in AgentClasses]
     print(f"  Algorithms: {', '.join(algo_names)}")
@@ -950,8 +1077,10 @@ def main():
     print("        underperform SAC at this sample size.")
     print("  GRPO: No critic. Group-relative reward replaces value baseline.")
     print("        Eliminates bootstrapping error. G=4 simulations per state.")
-    print("        Interesting middle ground — simpler than SAC, less biased")
-    print("        than PPO's value estimates.")
+    print("        KL penalty (β=0.01) anchors policy to prevent collapse.")
+    print("  DAPO: GRPO + asymmetric clip-higher (ε↓=0.20, ε↑=0.28) +")
+    print("        dynamic G (2–8 based on reward variance) + no KL penalty.")
+    print("        Best at limiting downside in volatile/uncertain regimes.")
     print("Done.")
 
 
