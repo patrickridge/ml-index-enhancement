@@ -56,3 +56,18 @@ Layer 1 (5b — factor weighting, objective: maximise IC/ICIR) and Layer 2 (5a �
 
 ### 11. FT-Transformer Dropped from IE
 After retraining on 240 months, FT-Transformer IE IR collapsed to 0.015. It is no longer useful for index enhancement. Only CS-Transformer and LGBM are viable IE models. An ensemble of CS-T + LGBM has not yet been evaluated and could improve IR further.
+
+### 12. DAPO vs GRPO — Unfair Candidate Count (G) Comparison ✓ Fixed
+~~In `5e_dapo_agent.py`, GRPO always samples `G=4` candidates per state, but DAPO samples `G_MIN=2` in easy states.~~
+
+**Fixed (29 Mar 2026):** Set `DAPO_G_MIN = DAPO_G_INIT = 4` to match GRPO. DAPO now uses 4 candidates in easy states and up to 8 in hard states. Rerun `5e_dapo_agent.py` to get updated numbers.
+
+### 13. DAPO Dynamic Sampling Variance Trigger is Statistically Unreliable ✓ Fixed
+~~The dynamic G decision was based on the variance of only `G_INIT=2` reward samples.~~
+
+**Fixed (29 Mar 2026):** `G_INIT` raised to 4 so the variance estimate uses ≥4 samples before deciding to extend to G_MAX=8. The trigger is now statistically meaningful.
+
+### 14. DAPO Performs Poorly During Regime Transitions — DAPOSwitch Added
+DAPO's clip-higher mechanism (no KL) is effective when market regime is stable but undershoots during regime transitions, where GRPO's KL penalty provides better anchoring.
+
+**Implemented (29 Mar 2026):** Added `DAPOSwitchAgent` to `5e_dapo_agent.py`. Detects regime transitions month-to-month using the existing `regime` column (0=risk-on, 1=risk-off). Routes to DAPO (clip-higher, no KL) in stable periods and GRPO (REINFORCE + KL) in transition months. Results pending rerun.

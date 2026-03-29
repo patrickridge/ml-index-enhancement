@@ -218,6 +218,16 @@ DAPO is the next evolution of GRPO with three improvements:
 2. **Dynamic sampling**: Hard market states (high reward variance) get up to 8 candidate alphas; easy states get 2
 3. **No KL penalty**: Clip-higher replaces the KL stability mechanism
 
+**Walk-Forward Results (same 5-fold structure):**
+
+| Algorithm | Avg IR | Fold IRs | Beats Fixed |
+|-----------|--------|----------|-------------|
+| **DAPO** | **0.580** | −1.121, 1.963, −0.188, 1.062, 1.181 | 4/5 |
+| GRPO | 0.562 | −1.262, 1.958, −0.302, 1.119, 1.297 | 4/5 |
+| Fixed α=1% | 0.235 | −1.659, 1.778, −0.073, 0.751, 0.380 | — |
+
+DAPO outperforms GRPO in the two stress folds (2014–15, 2018–19) via lower drawdown and tracking error. **Known caveat:** the current G design is not perfectly fair — see IMPROVEMENTS.md #12–13 for details and the planned ablation fix.
+
 **Layer 2 State Vector (9 features)**
 
 The SAC/GRPO/DAPO agents observe:
@@ -274,6 +284,11 @@ RL IC is 4× higher than next best. Static optimised weights underperform — ov
 3. Re-run `2e_ic_optimise.py` with fundamental factors included
 4. Retrain CS-Transformer + FT-Transformer on Kaggle with expanded universe
 5. Re-run `4b_index_enhancement.py` + `4c_regime_engine.py`
+
+**DAPO fix (algorithmic — can do now):**
+1. Fix unfair G comparison: set DAPO `G_MIN = G_MAX = 4` (same as GRPO `G=4`) in `5e_dapo_agent.py` → isolates clip-higher + no-KL as the only differences
+2. Increase `G_INIT` to ≥ 4 so the dynamic sampling variance estimate is statistically meaningful
+3. Run three-way ablation: GRPO (G=4, KL) vs DAPO-fixed (G=4, clip-higher, no KL) vs DAPO-dynamic (G=2–8, clip-higher, no KL)
 
 **Two-layer RL design — objectives are complementary, not conflicting:**
 

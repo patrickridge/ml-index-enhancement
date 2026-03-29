@@ -97,8 +97,8 @@ DAPO_EPOCHS        = 400
 DAPO_LR            = 3e-4
 DAPO_EPS_LOW       = 0.20    # clip lower bound (negative advantage)
 DAPO_EPS_HIGH      = 0.28    # clip upper bound (positive advantage) — asymmetric
-DAPO_G_INIT        = 2       # initial candidates to estimate reward variance
-DAPO_G_MIN         = 2       # minimum total group size
+DAPO_G_INIT        = 4       # initial candidates to estimate reward variance (≥4 for reliable var estimate)
+DAPO_G_MIN         = 4       # minimum total group size (matches GRPO_G=4 for fair comparison)
 DAPO_G_MAX         = 8       # maximum total group size (hard states)
 DAPO_VAR_THRESH    = 0.05    # reward variance threshold for dynamic sampling
 
@@ -392,9 +392,10 @@ class DAPOAgent:
     3. No KL penalty: clip-higher provides sufficient regularisation
 
     For each market state:
-      a) Sample G_INIT=2 candidate alphas → estimate reward variance
+      a) Sample G_INIT=4 candidate alphas → estimate reward variance
+         (G_INIT=4 matches GRPO_G for fair baseline comparison)
       b) If var(rewards) > VARIANCE_THRESH → extend to G_MAX=8 total samples
-         else keep G_MIN=2 (no extra simulation budget needed)
+         else keep G_MIN=4 (same budget as GRPO in easy states)
       c) Compute group-relative advantage A_i = (r_i - mean) / std
       d) Clip-higher policy gradient update
     """
@@ -502,6 +503,150 @@ class DAPOAgent:
 
 
 # =============================================================================
+# DAPO-SWITCH AGENT — regime-aware algorithm selection
+# =============================================================================
+
+class DAPOSwitchAgent:
+    """
+    Regime-switching policy: uses DAPO when the market regime is stable,
+    falls back to GRPO (with KL) when a regime transition is detected.
+
+    Motivation:
+      - DAPO's clip-higher lets the policy explore more aggressively when the
+        regime is established and the signal is predictable.
+      - At regime transitions (e.g. QE → rate hike), the right alpha is
+        unclear; GRPO's KL anchors the policy near its last known-good
+        behaviour and prevents wild swings.
+
+    Regime detection:
+      The 'regime' column (0=risk-on, 1=risk-off) is already in the state.
+      A transition is flagged when the current month's regime differs from the
+      previous month's. The first month of each epoch is treated as stable.
+
+    Update rules:
+      Stable  → DAPO: PPO clip-higher objective (no KL), G=G_MIN..G_MAX
+      Transition → GRPO: REINFORCE + KL penalty, G=GRPO_G
+    """
+    name = "DAPOSwitch"
+
+    def __init__(self, state_dim):
+        self.actor     = GaussianActor(state_dim)
+        self.actor_opt = optim.Adam(self.actor.parameters(), lr=DAPO_LR)
+        self.ref_actor = copy.deepcopy(self.actor)
+        for p in self.ref_actor.parameters():
+            p.requires_grad_(False)
+
+    def select_action(self, state, deterministic=False):
+        s = torch.nan_to_num(torch.FloatTensor(state).unsqueeze(0), nan=0.0)
+        with torch.no_grad():
+            if deterministic:
+                mean, _ = self.actor(s)
+                y = torch.tanh(mean)
+                a = ALPHA_MIN + (y + 1.0) / 2.0 * (ALPHA_MAX - ALPHA_MIN)
+            else:
+                a, _, _ = self.actor.sample(s)
+        return float(a.squeeze())
+
+    def _sample_group(self, s, row, n_samples):
+        alphas, log_probs, rewards = [], [], []
+        for _ in range(n_samples):
+            alpha_t, log_p, _ = self.actor.sample(s)
+            a   = float(alpha_t.squeeze())
+            res = simulate_month(row["_scores"], row["_weights"], alpha=a)
+            if res is None:
+                continue
+            alphas.append(a)
+            log_probs.append(log_p)
+            rewards.append(compute_reward(res["active_ret"]))
+        return alphas, log_probs, rewards
+
+    def _dapo_update(self, s, alphas, log_probs, rewards):
+        """Clip-higher PPO objective (no KL)."""
+        r_arr = np.array(rewards, dtype=np.float32)
+        adv   = torch.FloatTensor((r_arr - r_arr.mean()) / (r_arr.std() + 1e-8))
+
+        log_probs_old = torch.cat(log_probs, dim=0).squeeze(-1).detach()
+        alphas_t      = torch.FloatTensor(alphas).unsqueeze(-1)
+
+        mean_c, std_c = self.actor(s.expand(len(alphas), -1))
+        y_t = ((alphas_t - ALPHA_MIN) / (ALPHA_MAX - ALPHA_MIN) * 2.0 - 1.0
+               ).clamp(-0.9999, 0.9999)
+        x_t = torch.atanh(y_t)
+        dist = torch.distributions.Normal(mean_c, std_c)
+        log_probs_new = (dist.log_prob(x_t)
+                         - torch.log(1.0 - y_t.pow(2) + 1e-6)).squeeze(-1)
+
+        ratio = (log_probs_new - log_probs_old).exp()
+        pos_mask  = adv > 0
+        clip_high = torch.where(pos_mask,
+                                torch.full_like(ratio, 1.0 + DAPO_EPS_HIGH),
+                                torch.full_like(ratio, 1.0 + DAPO_EPS_LOW))
+        clip_low  = torch.full_like(ratio, 1.0 - DAPO_EPS_LOW)
+        ratio_clipped = torch.max(torch.min(ratio, clip_high), clip_low)
+        return -torch.min(ratio * adv, ratio_clipped * adv).mean()
+
+    def _grpo_update(self, s, log_probs, rewards):
+        """REINFORCE + KL penalty (GRPO-style, conservative for transitions)."""
+        r_arr = np.array(rewards, dtype=np.float32)
+        adv   = torch.FloatTensor((r_arr - r_arr.mean()) / (r_arr.std() + 1e-8))
+
+        lp    = torch.cat(log_probs, dim=0).squeeze(-1)
+        pg    = -(lp * adv).mean()
+
+        mu1, s1 = self.actor(s)
+        with torch.no_grad():
+            mu2, s2 = self.ref_actor(s)
+        kl   = (torch.log(s2 / (s1 + 1e-8))
+                + (s1.pow(2) + (mu1 - mu2).pow(2)) / (2 * s2.pow(2) + 1e-8)
+                - 0.5).mean()
+        return pg + GRPO_KL_BETA * kl
+
+    def train(self, train_rows, verbose=False):
+        avg_r = 0.0
+        for epoch in range(DAPO_EPOCHS):
+            ep_rewards  = []
+            prev_regime = None   # reset each epoch
+
+            for dt, row in train_rows:
+                state          = _safe_state(row)
+                current_regime = float(row["regime"])   # 0.0 or 1.0 (not z-scored)
+                is_transition  = (prev_regime is not None and
+                                  current_regime != prev_regime)
+                prev_regime    = current_regime
+
+                s = torch.nan_to_num(torch.FloatTensor(state).unsqueeze(0), nan=0.0)
+
+                if is_transition:
+                    # ── GRPO update: conservative, KL-anchored ────────────────
+                    _, log_probs, rewards = self._sample_group(s, row, GRPO_G)
+                    if len(rewards) < 2:
+                        continue
+                    loss = self._grpo_update(s, log_probs, rewards)
+                else:
+                    # ── DAPO update: clip-higher, dynamic G ───────────────────
+                    alphas, log_probs, rewards = self._sample_group(s, row, DAPO_G_INIT)
+                    if len(rewards) >= 2:
+                        r_var = float(np.var(rewards))
+                        if r_var > DAPO_VAR_THRESH and len(rewards) < DAPO_G_MAX:
+                            a2, lp2, r2 = self._sample_group(s, row, DAPO_G_MAX - len(rewards))
+                            alphas += a2; log_probs += lp2; rewards += r2
+                    if len(rewards) < 2:
+                        continue
+                    loss = self._dapo_update(s, alphas, log_probs, rewards)
+
+                ep_rewards.extend(rewards)
+                self.actor_opt.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
+                self.actor_opt.step()
+
+            avg_r = float(np.mean(ep_rewards)) if ep_rewards else 0.0
+            if verbose and epoch % 100 == 0:
+                print(f"    [DAPOSwitch] Epoch {epoch:4d}  avg_r={avg_r:+.4f}")
+        return avg_r
+
+
+# =============================================================================
 # RULE-BASED FALLBACK
 # =============================================================================
 
@@ -559,14 +704,14 @@ def ie_stats(bt):
 # PLOTTING
 # =============================================================================
 
-COLORS = {"DAPO": "#FF6B9D", "GRPO": "#66BB6A", "Fixed": "#AAAAAA"}
+COLORS = {"DAPO": "#FF6B9D", "GRPO": "#66BB6A", "DAPOSwitch": "#5B9BD5", "Fixed": "#AAAAAA"}
 
 
 def plot_comparison(all_bt, fold_summary, algo_names):
     fig, axes = plt.subplots(2, 1, figsize=(13, 10))
     fig.suptitle(
-        "DAPO vs GRPO — Walk-Forward Out-of-Sample\n"
-        "DAPO: clip-higher (ε↑=0.28) + dynamic sampling (G=2–8)",
+        "DAPO vs GRPO vs DAPOSwitch — Walk-Forward Out-of-Sample\n"
+        "DAPOSwitch: DAPO on stable regime, GRPO+KL on regime transitions",
         fontsize=13, fontweight="bold")
 
     ax = axes[0]
@@ -602,7 +747,7 @@ def plot_comparison(all_bt, fold_summary, algo_names):
     ax.set_xticks(x)
     ax.set_xticklabels(lbls, fontsize=9)
     ax.set_ylabel("Information Ratio")
-    ax.set_title("Per-Fold IR: DAPO vs GRPO vs Fixed Alpha")
+    ax.set_title("Per-Fold IR: DAPO vs GRPO vs DAPOSwitch vs Fixed Alpha")
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3, axis="y")
 
@@ -619,8 +764,9 @@ def plot_comparison(all_bt, fold_summary, algo_names):
 
 def main():
     print("=" * 70)
-    print("5e_dapo_agent.py — DAPO vs GRPO Walk-Forward Comparison")
-    print("DAPO: clip-higher (ε↑=0.28) + dynamic G (2–8) + no KL")
+    print("5e_dapo_agent.py — DAPO vs GRPO vs DAPOSwitch Walk-Forward Comparison")
+    print("DAPO: clip-higher (ε↑=0.28) + dynamic G (4–8) + no KL [G fixed for fair comparison]")
+    print("DAPOSwitch: DAPO on stable regime, GRPO+KL on regime transitions")
     print("=" * 70)
 
     if not HAS_TORCH:
@@ -641,7 +787,7 @@ def main():
     print(f"  Factors: {len(factor_names)}")
 
     state_dim  = len(STATE_COLS)
-    algo_names = ["DAPO", "GRPO"]
+    algo_names = ["DAPO", "GRPO", "DAPOSwitch"]
 
     all_bt        = {n: [] for n in algo_names + ["Fixed"]}
     fold_summary  = []
@@ -686,7 +832,7 @@ def main():
         fold_bt   = {}
         fold_rows = {"label": label, "n_months": len(ep_test)}
 
-        AgentClasses = [DAPOAgent, GRPOAgent] if HAS_TORCH else [RuleBasedAgent] * 2
+        AgentClasses = [DAPOAgent, GRPOAgent, DAPOSwitchAgent] if HAS_TORCH else [RuleBasedAgent] * 3
 
         for name, AgentCls in zip(algo_names, AgentClasses):
             print(f"\n  [{name}] Training {DAPO_EPOCHS} epochs ...")
