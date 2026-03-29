@@ -955,11 +955,92 @@ Test period IC results (2023+):
 - Regime dashboard live
 - All results updated
 
-**Next steps:**
-1. Commit and push all new scripts + results
-2. Connect Layer 1 → Layer 2 into full end-to-end RL pipeline
-3. Ensemble CS-T + LGBM scores (FT-T dropped from IE)
-4. Update presentation slides before Thursday
+---
+
+## Session 15 — Algorithm Expansion & DAPO (29 Mar 2026)
+
+### 15.1 — Algorithm Comparison Walk-Forward (5d_algorithm_comparison.py)
+
+Ran SAC vs PPO vs GRPO across same 5-fold walk-forward structure as 5c:
+
+| Algorithm | Type | Avg IR | Notes |
+|-----------|------|--------|-------|
+| GRPO | No critic, group ranking | **0.875** | DeepSeek-R1 method |
+| PPO | On-policy, clipped | 0.870 | Critic baseline |
+| SAC | Off-policy, replay buffer | 0.788 | Twin Q-critics |
+| Fixed α=1% | Baseline | 0.276 | No RL |
+
+PPO and GRPO outperformed SAC. Reason: `simulate_month` is deterministic — same alpha + same month = same reward every time. SAC's off-policy replay buffer advantage is reduced in a deterministic environment. GRPO's critic-free group ranking is the best fit for the small-data (~100 training months) regime.
+
+### 15.2 — DeepSeek-R1 Paper Review
+
+Read the DeepSeek-R1 (2025) paper. Key findings relevant to the project:
+- GRPO algorithm used in the paper is identical to what 5d already implements: `A_i = (r_i - mean(r)) / std(r)` with G=4 samples
+- Paper eliminates the value/critic model → reduces memory and bias. Matches our finding that GRPO > SAC/PPO.
+- KL penalty against frozen reference policy prevents policy collapse: `β × KL(π_current ‖ π_ref)`
+- DeepSeek-R1-Zero showed emergent self-reflection through pure RL reward — no labelled reasoning traces needed
+
+### 15.3 — KL Penalty Added to GRPO (5d_algorithm_comparison.py)
+
+Added KL divergence penalty to `GRPOAgent` as per DeepSeek-R1 design:
+- `GRPO_KL_BETA = 0.01`
+- `self.ref_actor` = frozen deep copy of actor at initialisation
+- Loss: `pg_loss + β × KL(N(μ₁,σ₁) ‖ N(μ₂,σ₂))`
+- KL Gaussian formula: `log(σ₂/σ₁) + (σ₁² + (μ₁-μ₂)²)/(2σ₂²) - 0.5`
+
+### 15.4 — Macro Features Added to RL State (5b_rl_portfolio_agent.py)
+
+Extended the L2 state vector from 6 to 9 features (10 with L1 IC):
+
+```python
+MACRO_STATE_COLS = ["vix_level", "yield_10y", "yield_spread_10y2y"]
+```
+
+All three were already in `panel_monthly_enriched.parquet` (Cat 10 macro factors, z-score normalised). Extracted as time-series (one value per month, same for all tickers) via `panel.groupby("date")[MACRO_STATE_COLS].first()`. Forward-filled and merged into episode table.
+
+**Impact:** Agent now knows whether VIX is elevated, what the 10Y yield is, and whether the yield curve is inverted — key regime signals for portfolio tilt sizing.
+
+### 15.5 — DAPO Implementation (5e_dapo_agent.py)
+
+Implemented DAPO (Dynamic Sampling Policy Optimisation, ByteDance 2025) as a walk-forward comparison vs GRPO.
+
+Three innovations over GRPO:
+1. **Clip-higher**: `ε_low=0.20` (negative advantage), `ε_high=0.28` (positive advantage). Allows faster learning toward rewarding alphas while capping downside.
+2. **Dynamic sampling**: Initial G_INIT=2 samples → if `var(rewards) > 0.05`, extend to G_MAX=8. Hard states get more simulation budget.
+3. **No KL penalty**: Clip-higher provides the stability that KL used to give. Intentional removal — one of DAPO's three key design choices.
+
+Implementation uses `torch.max(torch.min(ratio, clip_high), clip_low)` for element-wise asymmetric clipping with per-sample bounds.
+
+Outputs: `data/dapo_comparison.csv`, `figures/dapo_comparison.png`
+
+### 15.6 — Dashboard Tab 6 Algorithm Comparison Section
+
+Added algorithm comparison section to Tab 6 (Walk-Forward RL) in `6_regime_dashboard.py`:
+- Headline weighted-average IR for SAC, PPO, GRPO, Fixed
+- Per-fold IR grouped bar chart (4 algorithms side by side)
+- Fold detail table with "Best Algo" column
+- Caption explaining GRPO/DeepSeek-R1 connection
+
+### 15.7 — Missing Data Parser (1d2_parse_wind_prices.py)
+
+New script to parse Kieran's `Missing data.xlsx` (255 sheets, 181 valid tickers of 252):
+- Skips meta sheets: `工作表1`, `tickers_missing`, `ticker still missing`
+- Hardcoded exclusions: `AW` (CBOT commodity futures), `ABC` (Italian company)
+- Reads per-ticker OHLCV with `skiprows=6` (first 6 rows are Chinese/English headers)
+- Merges ~179 new historical S&P 500 constituent tickers into `prices.parquet`
+- Outputs: updated `prices.parquet`, `data/wind_parse_log.csv`
+
+Named `1d2` (not `1e`) to avoid clash with `1e_ingest_wind_xlsx.py` (Wind fundamentals).
+
+**Status:** Ready to run when `Missing data.xlsx` is placed at `/Users/patrick/Downloads/Missing data.xlsx`.
+
+### 15.8 — README Updated
+
+Updated README.md:
+- Added `1d2_parse_wind_prices.py`, `5d`, `5e` to pipeline run order
+- Fixed CS-T IR from stale 0.960 → 1.874
+- Added algorithm comparison results table
+- Updated file guide and output files
 
 ---
 

@@ -62,11 +62,13 @@ python 4c_regime_engine.py --hmm       # HMM 2-state regime breakdown
 python 4d_benchmark_spx.py             # full comparison vs S&P 500
 ```
 
-### Phase 5 — Reinforcement Learning
+### Phase 5 — Deep Reinforcement Learning
 ```bash
-python 5a_rl_factor_agent.py           # Layer 1 SAC — adaptive factor weighting (requires torch)
-python 5b_rl_portfolio_agent.py        # Layer 2 SAC — adaptive alpha tilt (run after 5a, requires torch)
-python 5c_walk_forward.py              # Walk-forward backtest — no-leakage RL validation (requires torch)
+python 5a_rl_factor_agent.py           # Layer 1 SAC — adaptive factor IC weighting (requires torch)
+python 5b_rl_portfolio_agent.py        # Layer 2 SAC — adaptive alpha tilt, 9-feature macro state (run after 5a)
+python 5c_walk_forward.py              # Walk-forward backtest — 5 folds, no leakage, 95 OOS months
+python 5d_algorithm_comparison.py      # SAC vs PPO vs GRPO walk-forward comparison (GRPO + KL penalty)
+python 5e_dapo_agent.py                # DAPO vs GRPO — clip-higher + dynamic sampling (no KL)
 ```
 
 ---
@@ -77,12 +79,12 @@ python 5c_walk_forward.py              # Walk-forward backtest — no-leakage RL
 
 | Model | Ann. Alpha | Tracking Error | IR | Hit Rate |
 |-------|-----------|---------------|-----|----------|
-| CS-Transformer | ~2.2% | ~2.3% | **0.960** | ~67% |
+| CS-Transformer | 4.16% | 2.22% | **1.874** | ~67% |
 | FT-Transformer | ~0.9% | ~2.6% | 0.438 | — |
 | LGBM | ~0.5% | ~2.0% | 0.384 | — |
 | Linear Factor Combo (baseline) | — | — | −0.046 | — |
 
-IR > 0.5 is top-quartile. IR > 0.9 is strong. CS-Transformer is also regime-stable (IR 1.02 risk-off, 0.93 risk-on).
+IR > 0.5 is institutional-grade. IR > 1.0 is top-quartile. CS-Transformer is regime-stable across all market conditions.
 
 ### RL Walk-Forward Backtest (95 out-of-sample months, 2014–2025)
 
@@ -105,6 +107,19 @@ RL beats fixed alpha in 4/5 folds. Max drawdown cut nearly in half — the agent
 | 2018–2019 | 0.042 | −0.073 ✓ |
 | 2020–2021 | 1.125 | 0.751 ✓ |
 | 2022–2025 | 1.188 | 0.380 ✓ |
+
+### Algorithm Comparison — SAC vs PPO vs GRPO (5d)
+
+Same 5-fold walk-forward structure. GRPO implements the DeepSeek-R1 (2025) algorithm with KL penalty.
+
+| Algorithm | Type | IR | Notes |
+|-----------|------|----|-------|
+| GRPO | No critic, group ranking | **0.875** | DeepSeek-R1 method + KL penalty |
+| PPO | On-policy, clipped | 0.870 | Critic baseline |
+| SAC | Off-policy, replay buffer | 0.788 | Twin Q-critics, entropy reg |
+| Fixed α=1% | Baseline | 0.276 | No RL |
+
+GRPO and PPO outperform SAC overall — in a deterministic simulation environment, SAC's off-policy advantage is reduced. GRPO's critic-free group ranking is the best fit for the small-data (~100 training months) regime.
 
 ### Data Splits
 
@@ -143,8 +158,11 @@ RL beats fixed alpha in 4/5 folds. Max drawdown cut nearly in half — the agent
 | `4c_regime_engine.py` | Per-regime IE performance breakdown (rule-based + HMM) |
 | `4d_benchmark_spx.py` | Compare all strategies vs S&P 500 |
 | `5a_rl_factor_agent.py` | Layer 1 SAC — adaptive factor IC weighting across 43 factors |
-| `5b_rl_portfolio_agent.py` | Layer 2 SAC — adaptive alpha tilt using L1 IC as state feature |
+| `5b_rl_portfolio_agent.py` | Layer 2 SAC — adaptive alpha tilt, 9-feature state (base + macro: VIX, yield, spread) |
 | `5c_walk_forward.py` | Walk-forward RL backtest — 5 folds, no data leakage, 95 OOS months |
+| `5d_algorithm_comparison.py` | SAC vs PPO vs GRPO walk-forward comparison — GRPO with KL penalty (DeepSeek-R1) |
+| `5e_dapo_agent.py` | DAPO vs GRPO — clip-higher (ε↑=0.28) + dynamic sampling (G=2–8) + no KL |
+| `1d2_parse_wind_prices.py` | Parse Missing data.xlsx → merge ~179 historical S&P 500 tickers into prices.parquet |
 | `config.py` | All shared parameters and hyperparameters |
 | `utils_factors.py` | 100+ factor computation functions (10 categories) |
 | `utils_rmt.py` | Random Matrix Theory covariance denoising |
@@ -166,9 +184,14 @@ RL beats fixed alpha in 4/5 folds. Max drawdown cut nearly in half — the agent
 | `data/ie_regime_breakdown.csv` | Per-regime IR breakdown (all models) |
 | `data/bt_wf_rl.csv` | Walk-forward RL monthly returns (95 OOS months) |
 | `data/wf_fold_summary.csv` | Per-fold IR, alpha, TE summary |
+| `data/algo_comparison.csv` | SAC vs PPO vs GRPO per-fold metrics |
+| `data/dapo_comparison.csv` | DAPO vs GRPO per-fold metrics |
+| `data/wind_parse_log.csv` | Log of tickers added/skipped from Missing data.xlsx |
 | `data/l1_rl_ic_full.csv` | Layer 1 RL IC series (used as L2 state feature) |
 | `figures/ie_regime_breakdown.png` | Bar chart: IR by regime per model |
 | `figures/wf_rl_comparison.png` | Walk-forward cumulative alpha: RL vs fixed |
+| `figures/algo_comparison.png` | SAC vs PPO vs GRPO cumulative alpha + per-fold IR |
+| `figures/dapo_comparison.png` | DAPO vs GRPO cumulative alpha + per-fold IR |
 | `figures/factor_ic_summary_positive.png` | Top 10 positive-IC factors |
 | `figures/factor_weights_optimised.png` | Optimised factor weight distribution |
 

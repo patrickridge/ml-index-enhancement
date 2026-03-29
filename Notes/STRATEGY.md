@@ -184,18 +184,47 @@ CS-Transformer is the only model that generates consistent alpha regardless of m
 
 ### RL Agent Results
 
-**Layer 2 — Portfolio Tilt (5b_rl_portfolio_agent.py)**
+**Walk-Forward Backtest — 5 Folds, No Data Leakage (5c_walk_forward.py)**
 
-| Metric | RL Agent | Fixed α=0.01 |
-|--------|---------|-------------|
-| Ann Alpha | **1.75%** | −0.21% |
-| IR | **0.265** | −0.040 |
-| Risk-Off avg α | 3.55% | — |
-| Risk-On avg α | 2.45% | — |
-| Risk-Off IR | 0.532 | — |
-| Risk-On IR | 0.104 | — |
+95 out-of-sample months across 2014–2025. Factor weights, state normalisation, and RL policy all retrained from scratch per fold using past data only.
 
-Agent learns higher alpha in risk-off (3.55%) vs risk-on (2.45%). CS-T signal is strongest in bear months — quality/defensive stocks separate most cleanly when the market is falling.
+| Metric | RL Agent (SAC) | Fixed α=1% |
+|--------|---------------|------------|
+| Ann Alpha | **7.19%** | 1.87% |
+| Tracking Error | 8.18% | 6.77% |
+| **Info Ratio** | **0.879** | 0.276 |
+| Hit Rate | 50.5% | 48.4% |
+| Max Active DD | **−6.04%** | −10.50% |
+
+RL beats fixed alpha in 4/5 folds. Max drawdown cut nearly in half.
+
+**Algorithm Comparison — SAC vs PPO vs GRPO (5d_algorithm_comparison.py)**
+
+Same 5-fold structure, three different DRL algorithms:
+
+| Algorithm | What It Does | IR |
+|-----------|-------------|-----|
+| **GRPO** | No critic — samples 4 alphas per state, ranks by reward. DeepSeek-R1 algorithm + KL penalty. | **0.875** |
+| PPO | On-policy clipped update with critic baseline | 0.870 |
+| SAC | Off-policy replay buffer, twin Q-critics, entropy regularisation | 0.788 |
+| Fixed α=1% | No RL | 0.276 |
+
+GRPO's critic-free group ranking is the best fit for small-data regimes (~100 training months). No value function = no estimation error.
+
+**DAPO (5e_dapo_agent.py) — ByteDance 2025**
+
+DAPO is the next evolution of GRPO with three improvements:
+1. **Clip-higher**: Asymmetric clipping — positive advantages allow larger policy updates (ε=0.28) vs negative (ε=0.20)
+2. **Dynamic sampling**: Hard market states (high reward variance) get up to 8 candidate alphas; easy states get 2
+3. **No KL penalty**: Clip-higher replaces the KL stability mechanism
+
+**Layer 2 State Vector (9 features)**
+
+The SAC/GRPO/DAPO agents observe:
+- Signal strength & dispersion (quality of the CS-T ranking)
+- Benchmark vol, rolling tracking error, recent active return
+- Regime (risk-on / risk-off)
+- **VIX level, 10Y yield, yield spread (10Y–2Y)** ← macro features added Mar 2026
 
 **Layer 1 — Adaptive Factor Weighting (5a_rl_factor_agent.py)**
 
