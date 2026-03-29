@@ -12,14 +12,15 @@ Each month's decision is fully self-contained (Markov).
 Policy is a plain MLP — no LSTM, no GRU, no hidden state.
 
 Architecture:
-  State  (6 features): signal strength, signal dispersion, benchmark vol,
-                        recent active return, regime, rolling tracking error
+  State  (9 features): signal strength, signal dispersion, benchmark vol,
+                        recent active return, regime, rolling tracking error,
+                        vix_level, yield_10y, yield_spread_10y2y
   Action : alpha in [0.002, 0.05]  (continuous — how much to tilt this month)
   Reward : Sharpe of active return = IR proxy
            active_ret × 12 − TE_penalty − bench_vol_penalty
            (total-portfolio Sharpe doesn't work: benchmark dominates
            numerator+denominator, agent gets no learning signal)
-  Policy : MLP(6 -> 64 -> 64 -> 1)  — NO memory
+  Policy : MLP(9 -> 64 -> 64 -> 1)  — NO memory
 
 Two-layer RL design — objectives are complementary, not conflicting:
   Layer 1 (5a_rl_factor_agent.py) : maximises IC / ICIR of the combined
@@ -116,8 +117,9 @@ BASE_STATE_COLS = [
     "regime",             # 0 = risk-on, 1 = risk-off
     "rolling_te",         # rolling 3m annualised tracking error
 ]
+MACRO_STATE_COLS = ["vix_level", "yield_10y", "yield_spread_10y2y"]
 # STATE_COLS is set in main() after checking whether L1 IC data is available.
-# If l1_rl_ic_full.csv exists, "l1_ic" is appended as a 7th state feature.
+# If l1_rl_ic_full.csv exists, "l1_ic" is appended as a 10th state feature.
 STATE_COLS = BASE_STATE_COLS.copy()   # default — overridden in main() if L1 data found
 
 
@@ -201,7 +203,7 @@ def build_factor_combo_scores(panel, factors_df):
 # BUILD EPISODE TABLE
 # =============================================================================
 
-def build_episodes(scores, weights, ref_alpha=0.01, l1_ic_df=None):
+def build_episodes(scores, weights, ref_alpha=0.01, l1_ic_df=None, macro_df=None):
     """
     Build monthly state vectors for the RL environment.
     Each row = one month's state + raw scores/weights for simulation.
@@ -254,6 +256,15 @@ def build_episodes(scores, weights, ref_alpha=0.01, l1_ic_df=None):
 
     vol_med      = df["bench_vol"].expanding(min_periods=6).median()
     df["regime"] = (df["bench_vol"] > vol_med).astype(float).fillna(0.0)
+
+    # Macro time-series features (vix, yield, spread)
+    if macro_df is not None:
+        mac = macro_df[MACRO_STATE_COLS].copy()
+        mac.index = pd.to_datetime(mac.index)
+        # Forward-fill so we always have a value for every month
+        mac = mac.reindex(df.index, method="ffill").fillna(0.0)
+        for col in MACRO_STATE_COLS:
+            df[col] = mac[col]
 
     # L1→L2 connection: merge Layer 1 IC if provided
     if l1_ic_df is not None:
@@ -654,6 +665,10 @@ def main():
           f"{scores_test['date'].max().date()}"
           f"  ({scores_test['date'].nunique()} months)")
 
+    # Extract macro time-series from panel (one value per month, same for all tickers)
+    macro_ts = panel.groupby("date")[MACRO_STATE_COLS].first()
+    macro_ts.index = pd.to_datetime(macro_ts.index)
+
     # Build factor-combo scores for training (2010-2022)
     print(f"\nBuilding training scores ({TRAIN_START[:4]}-{TRAIN_END[:4]}) ...")
     panel_train  = panel[(panel["date"] >= TRAIN_START) &
@@ -667,18 +682,18 @@ def main():
     l1_ic_df = None
     if L1_IC_FILE.exists():
         l1_ic_df   = pd.read_csv(L1_IC_FILE, index_col=0, parse_dates=True)
-        STATE_COLS = BASE_STATE_COLS + ["l1_ic"]
+        STATE_COLS = BASE_STATE_COLS + MACRO_STATE_COLS + ["l1_ic"]
         print(f"\nL1→L2 connection: loaded {L1_IC_FILE.name} "
               f"({len(l1_ic_df)} months). State dim: {len(STATE_COLS)}.")
     else:
-        STATE_COLS = BASE_STATE_COLS.copy()
+        STATE_COLS = BASE_STATE_COLS + MACRO_STATE_COLS
         print(f"\nL1 IC file not found ({L1_IC_FILE}). "
-              "Running without L1 connection (6-dim state). "
+              "Running without L1 connection (9-dim state). "
               "Run 5a_rl_factor_agent.py first to enable L1→L2 pipeline.")
 
     print("\nBuilding episode tables ...")
-    ep_train = build_episodes(scores_train, weights, l1_ic_df=l1_ic_df)
-    ep_test  = build_episodes(scores_test,  weights, l1_ic_df=l1_ic_df)
+    ep_train = build_episodes(scores_train, weights, l1_ic_df=l1_ic_df, macro_df=macro_ts)
+    ep_test  = build_episodes(scores_test,  weights, l1_ic_df=l1_ic_df, macro_df=macro_ts)
     print(f"  Train: {len(ep_train)} months  |  Test: {len(ep_test)} months")
     print(f"  State: {len(STATE_COLS)} features: {STATE_COLS}")
 

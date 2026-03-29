@@ -1,6 +1,6 @@
 # Investsoc ML Project
 
-ML-driven S&P 500 index enhancement pipeline. Three models (LightGBM, FT-Transformer, CS-Transformer) rank ~500 stocks monthly and tilt portfolio weights to beat the index with low tracking error.
+ML-driven S&P 500 index enhancement pipeline. Three models (LightGBM, FT-Transformer, CS-Transformer) rank ~500 stocks monthly and tilt portfolio weights to beat the index with low tracking error. A two-layer Deep Reinforcement Learning (DRL) system then adaptively controls portfolio tilt each month.
 
 See [Notes/STRATEGY.md](Notes/STRATEGY.md) for a full plain-English explanation of the methodology and results.
 See [Notes/DEVELOPMENT_LOG.md](Notes/DEVELOPMENT_LOG.md) for a chronological record of all changes and findings.
@@ -23,7 +23,8 @@ python 1a_price_parquet.py             # parse OHLC source → data/prices.parqu
 python 1b_fetch_constituents.py        # historical S&P 500 constituent list
 python 1c_fetch_market_cap.py          # monthly SPX weights via yfinance
 python 1d_fetch_missing_tickers.py     # recover delisted/missing tickers via yfinance
-python 1e_ingest_wind_xlsx.py          # ingest Wind xlsx exports (drop files in data/wind_exports/)
+python 1d2_parse_wind_prices.py        # parse Kieran's Missing data.xlsx → merge ~179 historical tickers
+python 1e_ingest_wind_xlsx.py          # ingest Wind fundamentals xlsx (PE, ROE etc → data/wind_exports/)
 python 1f_rebuild_panel.py             # build monthly panel from prices
 python 1g_feature_engineering.py       # compute 43+ factors → data/panel_monthly_enriched.parquet
 python 1h_orthogonalize.py             # PCA residualization (run after finalising feature set)

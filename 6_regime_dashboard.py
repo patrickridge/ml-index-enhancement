@@ -1336,6 +1336,96 @@ with tab6:
             "in any component of the pipeline._"
         )
 
+        st.markdown("---")
+        st.markdown("## Algorithm Comparison — SAC vs PPO vs GRPO")
+        st.markdown(
+            "Same 5-fold walk-forward framework comparing three RL algorithms. "
+            "All three agents use identical state features and simulation — only the "
+            "learning algorithm differs."
+        )
+
+        ALGO_FILE = DATA_DIR / "algo_comparison.csv"
+        if not ALGO_FILE.exists():
+            st.warning("Algorithm comparison data not found. Run `python 5d_algorithm_comparison.py` first.")
+        else:
+            ac = pd.read_csv(ALGO_FILE)
+
+            # ── Headline overall IR ───────────────────────────────────────────
+            # Compute weighted-average IR across folds (weighted by n_months)
+            def wavg_ir(col):
+                return float((ac[col] * ac["n_months"]).sum() / ac["n_months"].sum())
+
+            ac1, ac2, ac3, ac4 = st.columns(4)
+            ac1.metric("SAC  IR",   f"{wavg_ir('sac_ir'):.3f}",   "off-policy replay buffer")
+            ac2.metric("PPO  IR",   f"{wavg_ir('ppo_ir'):.3f}",   "on-policy clipped")
+            ac3.metric("GRPO IR",   f"{wavg_ir('grpo_ir'):.3f}",  "no critic + KL penalty")
+            ac4.metric("Fixed IR",  f"{wavg_ir('fixed_ir'):.3f}", "α = 1% baseline")
+
+            st.markdown("---")
+
+            # ── Per-fold IR bar chart ────────────────────────────────────────
+            ALGO_COLORS = {
+                "SAC":   "#4A9EE0",
+                "PPO":   "#F5A623",
+                "GRPO":  "#52C77A",
+                "Fixed": "#9AAABB",
+            }
+
+            fig_algo = go.Figure()
+            for algo, col, color in [
+                ("SAC",   "sac_ir",   ALGO_COLORS["SAC"]),
+                ("PPO",   "ppo_ir",   ALGO_COLORS["PPO"]),
+                ("GRPO",  "grpo_ir",  ALGO_COLORS["GRPO"]),
+                ("Fixed", "fixed_ir", ALGO_COLORS["Fixed"]),
+            ]:
+                fig_algo.add_trace(go.Bar(
+                    name=algo,
+                    x=ac["label"],
+                    y=ac[col],
+                    marker_color=color,
+                    opacity=0.88,
+                    text=ac[col].map("{:.2f}".format),
+                    textposition="outside",
+                    textfont=dict(size=8, color="#E8EDF2"),
+                ))
+
+            fig_algo.add_hline(y=0, line_color="#555566", line_width=0.8)
+            _la = dict(**_LAYOUT)
+            fig_algo.update_layout(
+                **_la,
+                height=380,
+                barmode="group",
+                bargap=0.18,
+                yaxis_title="Information Ratio",
+                title=dict(
+                    text="Per-Fold IR: SAC vs PPO vs GRPO vs Fixed α",
+                    font=dict(size=12), x=0,
+                ),
+            )
+            st.plotly_chart(fig_algo, use_container_width=True)
+
+            # ── Summary table ────────────────────────────────────────────────
+            st.markdown("### Detailed Metrics by Fold")
+            disp_ac = pd.DataFrame({
+                "Fold":        ac["label"],
+                "Months":      ac["n_months"],
+                "SAC IR":      ac["sac_ir"].map("{:.3f}".format),
+                "PPO IR":      ac["ppo_ir"].map("{:.3f}".format),
+                "GRPO IR":     ac["grpo_ir"].map("{:.3f}".format),
+                "Fixed IR":    ac["fixed_ir"].map("{:.3f}".format),
+                "Best Algo":   ac[["sac_ir","ppo_ir","grpo_ir"]].apply(
+                    lambda r: ["SAC","PPO","GRPO"][r.values.argmax()], axis=1
+                ),
+            })
+            st.dataframe(disp_ac, use_container_width=True, hide_index=True)
+
+            st.caption(
+                "_GRPO (Group Relative Policy Optimisation) is the same algorithm used in "
+                "DeepSeek-R1 (2025). It samples G=4 candidate alphas per market state and uses "
+                "within-group reward ranking as the advantage signal — no value function needed. "
+                "KL penalty β=0.01 against a frozen reference policy prevents collapse._"
+            )
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # TAB 7 — Backtest Engine
