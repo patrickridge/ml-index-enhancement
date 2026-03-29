@@ -218,15 +218,16 @@ DAPO is the next evolution of GRPO with three improvements:
 2. **Dynamic sampling**: Hard market states (high reward variance) get up to 8 candidate alphas; easy states get 2
 3. **No KL penalty**: Clip-higher replaces the KL stability mechanism
 
-**Walk-Forward Results (same 5-fold structure):**
+**Walk-Forward Results (fair comparison: G_MIN=4 for all, 29 Mar 2026):**
 
 | Algorithm | Avg IR | Fold IRs | Beats Fixed |
 |-----------|--------|----------|-------------|
-| **DAPO** | **0.580** | −1.121, 1.963, −0.188, 1.062, 1.181 | 4/5 |
-| GRPO | 0.562 | −1.262, 1.958, −0.302, 1.119, 1.297 | 4/5 |
+| **GRPO** | **0.629** | −1.168, 1.961, −0.173, 1.132, 1.394 | 4/5 |
+| DAPOSwitch | 0.566 | −1.191, 1.954, −0.176, 1.114, 1.128 | 4/5 |
+| DAPO | 0.525 | −1.222, 1.963, −0.238, 1.156, 0.965 | 4/5 |
 | Fixed α=1% | 0.235 | −1.659, 1.778, −0.073, 0.751, 0.380 | — |
 
-DAPO outperforms GRPO in the two stress folds (2014–15, 2018–19) via lower drawdown and tracking error. **Known caveat:** the current G design is not perfectly fair — see IMPROVEMENTS.md #12–13 for details and the planned ablation fix.
+**Key finding:** With a fair G comparison, GRPO (0.629) beats DAPO (0.525). The previous DAPO "edge" (0.580 vs 0.562) was an artifact of the asymmetric sampling budget — DAPO's G_MIN=2 in easy states was accidentally generating fewer noisy gradient updates, not genuine algorithmic superiority. DAPOSwitch (0.566) sits between the two, consistent with its hybrid design.
 
 **Layer 2 State Vector (9 features)**
 
