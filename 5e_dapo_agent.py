@@ -27,6 +27,11 @@ key innovations from the ByteDance/Seed 2025 paper:
 Walk-forward structure: identical 5-fold expanding window as 5c and 5d.
 Factor weights recomputed from training data only per fold.
 
+Regime detection: 2-state Gaussian HMM fitted on [bench_vol, bench_ret] from
+training data each fold. Risk-off state = higher-volatility state. Used by
+DAPOSwitchAgent to route between DAPO (stable regime) and GRPO+KL (transitions).
+Falls back to vol-threshold if hmmlearn is not installed.
+
 Run:
   python 5e_dapo_agent.py
 
@@ -191,6 +196,47 @@ def simulate_month(scores_month, weights_month, alpha, top_n=100, bottom_n=100):
 
 
 # =============================================================================
+# HMM REGIME DETECTION
+# =============================================================================
+
+def _fit_hmm(bench_vol_series, bench_ret_series):
+    """
+    Fit a 2-state Gaussian HMM on [bench_vol, bench_ret].
+    Risk-off state = higher volatility state.
+    Returns (model, risk_off_state_index) or (None, None) if hmmlearn unavailable.
+    """
+    try:
+        from hmmlearn.hmm import GaussianHMM
+    except ImportError:
+        return None, None
+    X = np.column_stack([bench_vol_series.fillna(0).values,
+                         bench_ret_series.fillna(0).values])
+    if len(X) < 12:
+        return None, None
+    try:
+        model = GaussianHMM(n_components=2, covariance_type="full",
+                            n_iter=200, random_state=42)
+        model.fit(X)
+        states = model.predict(X)
+        mean_vol = [X[states == s, 0].mean() for s in range(2)]
+        risk_off_state = int(np.argmax(mean_vol))   # higher vol → risk-off
+        return model, risk_off_state
+    except Exception:
+        return None, None
+
+
+def _hmm_predict(model, risk_off_state, df):
+    """Apply a trained HMM to df (must have bench_vol, bench_ret). Returns regime Series (0=risk-on, 1=risk-off)."""
+    X = np.column_stack([df["bench_vol"].fillna(0).values,
+                         df["bench_ret"].fillna(0).values])
+    try:
+        states = model.predict(X)
+        return pd.Series((states == risk_off_state).astype(float), index=df.index)
+    except Exception:
+        return pd.Series(0.0, index=df.index)
+
+
+# =============================================================================
 # EPISODE TABLE
 # =============================================================================
 
@@ -233,18 +279,33 @@ def build_episodes(scores, weights, ref_alpha=0.01, norm_params=None, fit_norm=F
     df["recent_active_ret"] = df["active_ret_ref"].rolling(3, min_periods=1).mean().fillna(0.0)
 
     if fit_norm:
-        vol_med = df["bench_vol"].expanding(min_periods=6).median()
-        df["regime"] = (df["bench_vol"] > vol_med).astype(float).fillna(0.0)
         norm_params = {}
         for col in [c for c in STATE_COLS if c != "regime"]:
             mu, sg = df[col].mean(), df[col].std() + 1e-8
             norm_params[col] = (mu, sg)
-        norm_params["_vol_median"] = float(
-            df["bench_vol"].expanding(min_periods=6).median().iloc[-1])
+        # HMM regime detection — fit on training fold, store model for test
+        hmm_model, risk_off_state = _fit_hmm(df["bench_vol"], df["bench_ret"])
+        norm_params["_hmm_model"]          = hmm_model
+        norm_params["_hmm_risk_off_state"] = risk_off_state if risk_off_state is not None else 1
+        if hmm_model is not None:
+            df["regime"] = _hmm_predict(hmm_model, norm_params["_hmm_risk_off_state"], df)
+            print("    [Regime] HMM fitted — risk-off months:",
+                  int(df["regime"].sum()), "/", len(df))
+        else:
+            # fallback: vol-threshold if hmmlearn not installed
+            vol_med = df["bench_vol"].expanding(min_periods=6).median()
+            df["regime"] = (df["bench_vol"] > vol_med).astype(float).fillna(0.0)
+            norm_params["_vol_median"] = float(vol_med.iloc[-1])
+            print("    [Regime] hmmlearn not available — using vol-threshold fallback")
     else:
-        vol_thresh = (norm_params.get("_vol_median", df["bench_vol"].median())
-                      if norm_params else df["bench_vol"].median())
-        df["regime"] = (df["bench_vol"] > vol_thresh).astype(float).fillna(0.0)
+        hmm_model      = norm_params.get("_hmm_model")      if norm_params else None
+        risk_off_state = norm_params.get("_hmm_risk_off_state", 1) if norm_params else 1
+        if hmm_model is not None:
+            df["regime"] = _hmm_predict(hmm_model, risk_off_state, df)
+        else:
+            vol_thresh = (norm_params.get("_vol_median", df["bench_vol"].median())
+                          if norm_params else df["bench_vol"].median())
+            df["regime"] = (df["bench_vol"] > vol_thresh).astype(float).fillna(0.0)
 
     if norm_params:
         for col in [c for c in STATE_COLS if c != "regime"]:

@@ -104,6 +104,15 @@ Gradient-boosted decision trees — fast, interpretable via feature importance. 
 
 ## Portfolio Construction
 
+### What the CS-Transformer is ranking
+
+The CS-Transformer predicts each stock's **next 1-month forward return** (`fwd_ret_1m`). It is trained with MSE loss against realised next-month returns, so the output score is a continuous prediction of relative performance over the coming calendar month. Higher score = predicted to outperform more over the next month.
+
+This means:
+- The signal is inherently **monthly frequency** — one prediction per stock per month-end
+- **Rebalancing frequency:** Monthly is optimal. The IC decay analysis shows factor signals persist for 1–3 months and decay toward zero beyond that. Rebalancing weekly would apply the same stale score four times per month, adding ~3× the transaction costs with zero additional signal. Biweekly or daily rebalancing would be strictly worse on a net-of-cost basis. Monthly rebalancing matches the signal refresh rate.
+- The signal ranks stocks **cross-sectionally** (relative to each other in that month), not in absolute return terms. A score of +0.8 means "predicted to be in the top decile this month", not "+0.8% return".
+
 Every month the portfolio is fully rebalanced using the following process:
 
 **Step 1 — Score every stock**
@@ -228,6 +237,8 @@ DAPO is the next evolution of GRPO with three improvements:
 | Fixed α=1% | 0.235 | −1.659, 1.778, −0.073, 0.751, 0.380 | — |
 
 **Key finding:** With a fair G comparison, GRPO (0.629) beats DAPO (0.525). The previous DAPO "edge" (0.580 vs 0.562) was an artifact of the asymmetric sampling budget — DAPO's G_MIN=2 in easy states was accidentally generating fewer noisy gradient updates, not genuine algorithmic superiority. DAPOSwitch (0.566) sits between the two, consistent with its hybrid design.
+
+**DAPOSwitch regime detection (upgraded 31 Mar 2026):** Now uses a 2-state Gaussian HMM fitted on `[bench_vol, bench_ret]` from each fold's training data. Risk-off state = higher-volatility state identified by HMM. Previously used a simple rolling vol-threshold (bench_vol > rolling median). The HMM is trained per fold with no look-ahead bias. Falls back to vol-threshold if `hmmlearn` is not installed.
 
 **Layer 2 State Vector (9 features)**
 

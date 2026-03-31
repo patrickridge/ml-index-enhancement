@@ -67,7 +67,9 @@ After retraining on 240 months, FT-Transformer IE IR collapsed to 0.015. It is n
 
 **Fixed (29 Mar 2026):** `G_INIT` raised to 4 so the variance estimate uses ≥4 samples before deciding to extend to G_MAX=8. The trigger is now statistically meaningful.
 
-### 14. DAPO Performs Poorly During Regime Transitions — DAPOSwitch Added
+### 14. DAPO Performs Poorly During Regime Transitions — DAPOSwitch Added ✓ Upgraded
 DAPO's clip-higher mechanism (no KL) is effective when market regime is stable but undershoots during regime transitions, where GRPO's KL penalty provides better anchoring.
 
-**Implemented (29 Mar 2026):** Added `DAPOSwitchAgent` to `5e_dapo_agent.py`. Detects regime transitions month-to-month using the existing `regime` column (0=risk-on, 1=risk-off). Routes to DAPO (clip-higher, no KL) in stable periods and GRPO (REINFORCE + KL) in transition months. Results pending rerun.
+**Implemented (29 Mar 2026):** Added `DAPOSwitchAgent` to `5e_dapo_agent.py`. Routes to DAPO (clip-higher, no KL) in stable regime periods and GRPO (REINFORCE + KL) in transition months.
+
+**Upgraded (31 Mar 2026):** Regime detection replaced with 2-state Gaussian HMM (GaussianHMM on `[bench_vol, bench_ret]` from training data). Previously used crude vol-threshold (bench_vol > rolling median). HMM is fit per fold from training data only — no look-ahead bias. Risk-off state identified as the higher-vol HMM state. Falls back to vol-threshold if `hmmlearn` not installed (`pip install hmmlearn`).
