@@ -1,35 +1,37 @@
 """
-5f_dynamic_portfolio_rl.py — Dynamic Portfolio RL with Expanded Action Space
-=============================================================================
-Extends 5e (GRPO/DAPO with scalar alpha) by giving the RL agent a richer,
-multi-dimensional action space so it can independently control:
+5f_dynamic_portfolio_rl.py — Dynamic Portfolio RL with Asymmetric Tilt
+=======================================================================
+Conservative extension of 5e: the agent independently controls the
+long and short tilt, but n_frac (bucket size) stays fixed at 0.20.
+
+Motivation: the 1D agent (5e) must set the same alpha for both longs and
+shorts. In practice, the optimal long and short tilts are not always equal:
+  - Bull regime: strong long alpha (exploit the top stocks), smaller short
+    alpha (hard to short in a rising market, higher underweight risk)
+  - Bear regime: reduce long alpha (protect against wrong calls), larger
+    short alpha (more conviction in avoiding the bottom stocks)
 
   Action dim 1 — alpha_long  ∈ [0.002, 0.05]
-    How aggressively to overweight the top stocks vs benchmark.
-    High = large bets on predicted best performers.
+    Overweight tilt applied to the top 20% of stocks (by ML score).
 
   Action dim 2 — alpha_short ∈ [0.002, 0.05]
-    How aggressively to underweight the bottom stocks vs benchmark.
-    Can differ from alpha_long — e.g. in a bull market the agent may
-    want high long tilt but conservative underweights.
+    Underweight tilt applied to the bottom 20% of stocks.
+    Learned independently of alpha_long.
 
-  Action dim 3 — n_frac ∈ [0.05, 0.30]
-    Fraction of the universe in each long/short bucket.
-    0.10 ≈ top/bottom 50 stocks (concentrated bets).
-    0.20 ≈ top/bottom 100 stocks (current default).
-    0.30 ≈ top/bottom 150 stocks (broader tilt).
+n_frac is intentionally kept fixed at 0.20 (top/bottom 100 stocks).
+Once asymmetric tilts are validated, n_frac can be added as action dim 3.
 
-The 1D agent (5e) is equivalent to this agent with alpha_long = alpha_short
-and n_frac = 0.20 — so this is a strict superset of the old action space.
+Algorithm: GRPO + KL (best from 5e) — critic-free group advantage.
+Regime: 2-state HMM on [bench_vol, bench_ret] per fold (same as 5e).
+Walk-forward: same 5-fold expanding window.
 
-Algorithm: GRPO (best performer from 5e) — critic-free group advantage.
-HMM regime detection: same as 5e (2-state GaussianHMM on bench_vol + bench_ret).
-
-Walk-forward: same 5-fold expanding window as 5c/5d/5e.
+Baseline comparisons:
+  - Fixed symmetric (alpha_long = alpha_short = 0.01)  ← 5e fixed
+  - 1D GRPO from 5e (alpha_long = alpha_short, learned)
 
 Outputs:
-  data/dynamic_portfolio_results.csv   — per-fold metrics for all variants
-  figures/dynamic_portfolio.png        — cumulative active return comparison
+  data/dynamic_portfolio_results.csv
+  figures/dynamic_portfolio.png
 
 Run:
   python 5f_dynamic_portfolio_rl.py
@@ -79,14 +81,13 @@ TRAIN_START_GLOBAL = "2010-01-01"
 # ── Action space bounds ────────────────────────────────────────────────────────
 ALPHA_L_MIN, ALPHA_L_MAX = 0.002, 0.050   # long tilt
 ALPHA_S_MIN, ALPHA_S_MAX = 0.002, 0.050   # short tilt
-N_FRAC_MIN,  N_FRAC_MAX  = 0.05,  0.30    # bucket fraction
 
-ACTION_DIM = 3   # (alpha_long, alpha_short, n_frac)
+ACTION_DIM   = 2      # (alpha_long, alpha_short) — n_frac fixed for now
+FIXED_N_FRAC = 0.20   # top/bottom 20% of universe (unchanged from 5e)
 
-# Fixed baseline: symmetric 1% tilt, top/bottom 20%
+# Fixed symmetric baseline (same as 5e fixed)
 FIXED_ALPHA_L = 0.010
 FIXED_ALPHA_S = 0.010
-FIXED_N_FRAC  = 0.20
 
 # ── GRPO hyperparameters ───────────────────────────────────────────────────────
 EPOCHS   = 400
@@ -316,13 +317,12 @@ if HAS_TORCH:
 
     class DynamicActor(nn.Module):
         """
-        Squashed Gaussian policy over 3D action space:
+        Squashed Gaussian policy over 2D action space:
           dim 0: alpha_long  ∈ [ALPHA_L_MIN, ALPHA_L_MAX]
           dim 1: alpha_short ∈ [ALPHA_S_MIN, ALPHA_S_MAX]
-          dim 2: n_frac      ∈ [N_FRAC_MIN,  N_FRAC_MAX]
 
-        Each dimension has its own range scaling — allows the network to learn
-        independent distributions over each action component.
+        n_frac is fixed at FIXED_N_FRAC — not learned yet.
+        Same architecture as 5e GaussianActor, just with 2D output.
         """
         def __init__(self, state_dim, hidden=HIDDEN):
             super().__init__()
@@ -333,9 +333,9 @@ if HAS_TORCH:
             self.mean_head    = nn.Linear(hidden, ACTION_DIM)
             self.log_std_head = nn.Linear(hidden, ACTION_DIM)
 
-            # action bounds as buffers for device-safe scaling
-            lo = torch.tensor([ALPHA_L_MIN, ALPHA_S_MIN, N_FRAC_MIN], dtype=torch.float32)
-            hi = torch.tensor([ALPHA_L_MAX, ALPHA_S_MAX, N_FRAC_MAX], dtype=torch.float32)
+            # action bounds as buffers
+            lo = torch.tensor([ALPHA_L_MIN, ALPHA_S_MIN], dtype=torch.float32)
+            hi = torch.tensor([ALPHA_L_MAX, ALPHA_S_MAX], dtype=torch.float32)
             self.register_buffer("act_lo", lo)
             self.register_buffer("act_hi", hi)
 
@@ -357,7 +357,7 @@ if HAS_TORCH:
             return action, log_p, mean
 
         def select_action(self, state_np, deterministic=False):
-            """Returns (alpha_long, alpha_short, n_frac) as numpy floats."""
+            """Returns (alpha_long, alpha_short) as numpy floats. n_frac is fixed."""
             s = torch.FloatTensor(state_np).unsqueeze(0)
             with torch.no_grad():
                 mean, std = self(s)
@@ -368,7 +368,7 @@ if HAS_TORCH:
                     y_t  = torch.tanh(dist.rsample())
                 action = self.act_lo + (y_t + 1.0) / 2.0 * (self.act_hi - self.act_lo)
             a = action.squeeze(0).cpu().numpy()
-            return float(a[0]), float(a[1]), float(a[2])
+            return float(a[0]), float(a[1])
 
 
 # =============================================================================
@@ -397,7 +397,7 @@ def train_grpo(actor, train_rows, ref_actor, verbose=True):
                 r = simulate_month(row["_scores"], row["_weights"],
                                    alpha_long=float(a[0]),
                                    alpha_short=float(a[1]),
-                                   n_frac=float(a[2]))
+                                   n_frac=FIXED_N_FRAC)
                 rewards.append(float(r["active_ret"]) * 12.0 if r else 0.0)
                 log_probs.append(log_p)
 
@@ -441,14 +441,14 @@ def evaluate(actor, ep_test):
 
         # Dynamic RL agent
         if HAS_TORCH:
-            al, as_, nf = actor.select_action(state, deterministic=True)
+            al, as_ = actor.select_action(state, deterministic=True)
         else:
-            al, as_, nf = FIXED_ALPHA_L, FIXED_ALPHA_S, FIXED_N_FRAC
+            al, as_ = FIXED_ALPHA_L, FIXED_ALPHA_S
         r_rl = simulate_month(row["_scores"], row["_weights"],
-                              alpha_long=al, alpha_short=as_, n_frac=nf)
+                              alpha_long=al, alpha_short=as_, n_frac=FIXED_N_FRAC)
         if r_rl:
             rl_rows.append({"date": dt, "alpha_long": al,
-                            "alpha_short": as_, "n_frac": nf, **r_rl})
+                            "alpha_short": as_, **r_rl})
 
         # Fixed symmetric baseline
         r_fx = simulate_month(row["_scores"], row["_weights"],
@@ -641,12 +641,13 @@ def main():
 
         # Print mean action choices from RL agent (diagnostic)
         if not rl_bt.empty and "alpha_long" in rl_bt.columns:
+            asym = (rl_bt["alpha_long"] - rl_bt["alpha_short"]).mean()
             print(f"    RL avg alpha_long:  {rl_bt['alpha_long'].mean()*100:.2f}%  "
                   f"(range {rl_bt['alpha_long'].min()*100:.2f}–{rl_bt['alpha_long'].max()*100:.2f}%)")
             print(f"    RL avg alpha_short: {rl_bt['alpha_short'].mean()*100:.2f}%  "
                   f"(range {rl_bt['alpha_short'].min()*100:.2f}–{rl_bt['alpha_short'].max()*100:.2f}%)")
-            print(f"    RL avg n_frac:      {rl_bt['n_frac'].mean()*100:.1f}%  "
-                  f"(range {rl_bt['n_frac'].min()*100:.1f}–{rl_bt['n_frac'].max()*100:.1f}%)")
+            print(f"    Avg asymmetry (long−short): {asym*100:+.2f}%  "
+                  f"({'long-biased' if asym > 0 else 'short-biased'})")
 
     if not fold_summary:
         print("\nNo folds completed.")
