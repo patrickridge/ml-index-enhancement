@@ -59,6 +59,34 @@ Before any factor is used, it must pass:
 - Volatility factors persist 60+ months (structural tilt). Short-term momentum factors fade within 1–2 months.
 - Used to weight factors by signal longevity
 
+**5. Factor Redundancy Diagnostics** (`2f_factor_diagnostics.py`) — *most important for factor quality*
+
+This is the core analysis that ensures our 43 factors are providing independent signals, not just measuring the same thing multiple ways. Three tests:
+
+**A. Spearman IC Correlation Matrix** → `data/diag_ic_corr_matrix.csv` + `figures/diag_ic_corr_heatmap.png`
+- Computes pairwise Spearman rank correlations between all 43 factors across the full panel
+- **Why Spearman not Pearson?** Spearman measures rank correlation — more robust to outliers and non-linear relationships between factors
+- **What we're checking:** factors with |corr| > 0.50 are measuring similar things. If `vol_252d` and `vol_126d` are 0.90 correlated, adding both doesn't improve the signal — it just double-counts the same information and adds noise to weight estimation
+- **Action:** pairs flagged in `data/diag_redundant_pairs.csv` → candidates for removal or orthogonalization
+
+**B. Random Matrix Theory (RMT) Eigenvalue Analysis** → `data/diag_rmt_eigenvalues.csv` + `figures/diag_rmt_corr_heatmap.png`
+- Fits the Marchenko-Pastur distribution to the factor correlation matrix's eigenvalue spectrum
+- **What RMT tells us:** in a pure noise matrix (N random variables, T observations), the eigenvalues fall within the Marchenko-Pastur bounds [λ−, λ+]. Eigenvalues *above* λ+ carry genuine signal; everything below is noise that should be removed
+- **Why this matters:** if only 5/43 eigenvalues are above the noise floor, our 43 factors are really only giving us 5 independent dimensions of information. The other 38 are collinear combinations
+- **Output:** `n_signal` = number of genuinely informative eigenvalue components. The RMT-denoised heatmap shows the correlation structure after removing the noise subspace
+- `utils_rmt.py` implements `marchenko_pastur_upper()` and `rmt_denoise()` for this
+
+**C. Variance Inflation Factor (VIF)** → `data/diag_vif.csv`
+- VIF_i = 1 / (1 − R²_i) where R²_i = how well you can predict factor i using all other 42 factors
+- **VIF > 10** → that factor is almost entirely explained by other factors — near-zero independent contribution
+- **VIF = 1** → perfectly independent of all other factors
+- This is the most direct measure of multicollinearity: if `vol_252d` can be predicted with 99% accuracy from the other 42 factors, it adds nothing to the model
+
+**What we do with these results:**
+- Factors flagged in both IC corr AND VIF are strong candidates for removal or replacement
+- If two factors are highly correlated but both have good IC individually, we run `1b_orthogonalize.py` (PCA residualization) to keep the independent part of each
+- Part D of `2f_factor_diagnostics.py` then measures how much orthogonalization reduced the mean off-diagonal correlation
+
 ---
 
 ## Walk-Forward Training (No Look-Ahead Bias)
