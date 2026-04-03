@@ -152,10 +152,11 @@ def build_scores(panel_slice, factor_names, signed_w):
         sg = np.nanstd(X,  axis=0) + 1e-8
         Xz = np.where(np.isnan(X), 0.0, (X - mu) / sg)
         sc = Xz @ sw
-        for i, (_, row) in enumerate(grp.iterrows()):
-            rows.append({"date": dt, "ticker": row["ticker"],
-                         "score": float(sc[i]),
-                         "fwd_ret_1m": row.get("fwd_ret_1m", np.nan)})
+        tickers = grp["ticker"].tolist()
+        fwds    = grp["fwd_ret_1m"].tolist() if "fwd_ret_1m" in grp.columns else [np.nan] * len(grp)
+        for i in range(len(grp)):
+            rows.append({"date": dt, "ticker": tickers[i],
+                         "score": float(sc[i]), "fwd_ret_1m": fwds[i]})
     return pd.DataFrame(rows)
 
 
@@ -163,36 +164,39 @@ def build_scores(panel_slice, factor_names, signed_w):
 # PORTFOLIO SIMULATION — 3D action
 # =============================================================================
 
-def simulate_month(scores_month, weights_month, alpha_long, alpha_short, n_frac):
-    """
-    Simulate one month with independent long/short tilts and variable bucket size.
-
-    alpha_long  — tilt applied to top n_frac stocks (overweight)
-    alpha_short — tilt applied to bottom n_frac stocks (underweight)
-    n_frac      — fraction of universe in each bucket (e.g. 0.20 = top/bottom 100)
-    """
+def _prep_month(scores_month, weights_month):
+    """Merge + sort once. Returns numpy arrays for fast simulation."""
     df = scores_month.merge(
         weights_month[["ticker", "spx_weight"]], on="ticker", how="inner"
     ).dropna(subset=["score", "spx_weight", "fwd_ret_1m"])
     if len(df) < 50:
         return None
     df = df.sort_values("score", ascending=False).reset_index(drop=True)
-    n     = len(df)
-    n_bkt = max(10, int(np.floor(n * n_frac)))  # at least 10 stocks per bucket
+    return {"spx_w": df["spx_weight"].values.astype(np.float64),
+            "fwd_ret": df["fwd_ret_1m"].values.astype(np.float64),
+            "n": len(df)}
 
-    tilt = pd.Series(0.0, index=df.index)
-    tilt.iloc[:n_bkt]      = +alpha_long
-    tilt.iloc[n - n_bkt:]  = -alpha_short
 
-    raw_w = (df["spx_weight"] + tilt).clip(lower=0.0)
+def simulate_month(scores_month, weights_month, alpha_long, alpha_short, n_frac):
+    return simulate_month_fast(_prep_month(scores_month, weights_month),
+                               alpha_long, alpha_short, n_frac)
+
+
+def simulate_month_fast(prep, alpha_long, alpha_short, n_frac):
+    if prep is None:
+        return None
+    spx_w, fwd_ret, n = prep["spx_w"], prep["fwd_ret"], prep["n"]
+    n_bkt = max(10, int(np.floor(n * n_frac)))
+    tilt  = np.zeros(n, dtype=np.float64)
+    tilt[:n_bkt]     = +alpha_long
+    tilt[n - n_bkt:] = -alpha_short
+    raw_w = np.clip(spx_w + tilt, 0.0, None)
     total = raw_w.sum()
     if total < 1e-8:
         return None
-    port_w    = raw_w / total
-    port_ret  = (port_w           * df["fwd_ret_1m"]).sum()
-    bench_ret = (df["spx_weight"] * df["fwd_ret_1m"]).sum()
-    return {"port_ret": port_ret, "bench_ret": bench_ret,
-            "active_ret": port_ret - bench_ret}
+    port_w = raw_w / total
+    return {"port_ret": float(port_w @ fwd_ret), "bench_ret": float(spx_w @ fwd_ret),
+            "active_ret": float(port_w @ fwd_ret) - float(spx_w @ fwd_ret)}
 
 
 # =============================================================================
@@ -241,9 +245,15 @@ def build_episodes(scores, weights, ref_alpha_l=0.01, ref_alpha_s=0.01,
     scores["date"]  = pd.to_datetime(scores["date"])
     weights["date"] = pd.to_datetime(weights["date"])
 
+    # Build (year, month) → weight rows lookup so we match even when panel
+    # dates differ from weight month-end dates by a day or two.
+    weights["_ym"] = weights["date"].dt.year * 100 + weights["date"].dt.month
+    weights_by_ym  = {ym: grp for ym, grp in weights.groupby("_ym")}
+
     rows = []
     for dt, sc_m in scores.groupby("date"):
-        w_m = weights[weights["date"] == dt][["ticker", "spx_weight"]].copy()
+        ym  = dt.year * 100 + dt.month
+        w_m = weights_by_ym.get(ym, pd.DataFrame())[["ticker", "spx_weight"]].copy()
         if len(sc_m) < 50:
             continue
         s_vals = sc_m["score"].values
@@ -436,7 +446,8 @@ def train_grpo(actor, train_rows, ref_actor, verbose=True):
 
 def evaluate(actor, ep_test):
     rl_rows, fixed_rows = [], []
-    for dt, row in ep_test.iterrows():
+    for dt in ep_test.index:
+        row = ep_test.loc[dt]
         state = _safe_state(row)
 
         # Dynamic RL agent
@@ -597,7 +608,7 @@ def main():
             print("  Skipping — empty episodes.")
             continue
 
-        train_rows = list(ep_train.iterrows())
+        train_rows = [(dt, ep_train.loc[dt]) for dt in ep_train.index]
         print(f"  Train: {len(train_rows)} months  |  Test: {len(ep_test)} months")
 
         # ── Train ─────────────────────────────────────────────────────────────

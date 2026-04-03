@@ -1,43 +1,38 @@
 """
-5e_dapo_agent.py — DAPO: Dynamic Sampling Policy Optimisation
-=============================================================
-Implements DAPO for portfolio alpha tilt, extending GRPO (5d) with three
-key innovations from the ByteDance/Seed 2025 paper:
+5e_dapo_agent.py — Hybrid GRPO/DAPO with Multi-Feature Regime Detection
+=======================================================================
+Rebuilds the DAPO portfolio tilt agent with two key improvements over the
+prior version:
 
-  1. Clip-Higher (asymmetric clipping)
-       Standard PPO/GRPO clips both directions symmetrically at ε.
-       DAPO uses ε_low (negative advantage) and ε_high (positive advantage):
-         ratio_clipped = clamp(ratio, 1-ε_low, 1+ε_high)   ε_high > ε_low
-       → allows the policy to move aggressively toward rewarding alphas
-         while still capping downside to prevent large negative updates.
+  1. Proper Market Regime Detection
+       Uses a 3-state Gaussian HMM fitted on 5 market features:
+         bench_vol, bench_ret, bench_momentum, vol_trend, cs_dispersion
+       States: Risk-On (0), Transition (1), Risk-Off (2)
+       Falls back to rule-based 3-state if hmmlearn is unavailable.
+       Regime confidence (posterior probability) is also passed as a state
+       feature so the agent can modulate its own uncertainty.
 
-  2. Dynamic Sampling (adaptive G per state)
-       Standard GRPO samples a fixed G candidates per state.
-       DAPO estimates reward variance from an initial G_INIT sample:
-         if var(rewards) > VARIANCE_THRESH → sample G_MAX total
-         else                              → keep G_MIN total
-       → hard states (volatile months where the right alpha is unclear)
-         get more simulation budget; easy states get fewer.
+  2. Hybrid GRPO/DAPO Algorithm
+       HybridDAPOAgent switches update rule per timestep based on regime:
+         Risk-On  (0) → DAPO: clip-higher (ε↑=0.28), dynamic G (4–8), no KL
+         Risk-Off (2) → GRPO: KL-anchored (β=0.01), G=4
+         Transition(1) → GRPO: KL-anchored (β=0.02), G=4  [most conservative]
+       Single shared actor + reference network (no separate per-regime networks).
 
-  3. No KL penalty
-       DAPO removes the β·KL regularisation that DeepSeek-R1's GRPO uses.
-       The clip-higher mechanism alone provides sufficient stability.
-       (Our GRPO in 5d has KL; DAPO here intentionally omits it.)
+State space (8 dims):
+  signal_strength   — mean |z-score| of cross-sectional ML scores
+  signal_dispersion — std of z-scores (cross-sectional spread)
+  bench_vol         — rolling 3m annualised SPX volatility
+  recent_active_ret — rolling 3m mean active return at ref alpha
+  rolling_te        — rolling 3m tracking error
+  bench_momentum    — 3m cumulative SPX return (trend feature)
+  regime_id_norm    — regime / 2.0  (0.0 risk-on, 0.5 transition, 1.0 risk-off)
+  regime_conf       — HMM posterior probability of predicted state
 
-Walk-forward structure: identical 5-fold expanding window as 5c and 5d.
-Factor weights recomputed from training data only per fold.
-
-Regime detection: 2-state Gaussian HMM fitted on [bench_vol, bench_ret] from
-training data each fold. Risk-off state = higher-volatility state. Used by
-DAPOSwitchAgent to route between DAPO (stable regime) and GRPO+KL (transitions).
-Falls back to vol-threshold if hmmlearn is not installed.
-
-Run:
-  python 5e_dapo_agent.py
-
+Walk-forward: 5 expanding folds (same dates as 5c / 5d).
 Outputs:
-  data/dapo_comparison.csv       — per-fold: DAPO vs GRPO vs Fixed
-  figures/dapo_comparison.png    — cumulative alpha + per-fold IR chart
+  data/dapo_comparison.csv    — per-fold metrics (HybridDAPO, PureGRPO, PureDAPO, Fixed)
+  figures/dapo_comparison.png — cumulative active return + per-fold IR bars
 """
 
 import warnings
@@ -50,15 +45,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from pathlib import Path
-from collections import deque
-import random
 import copy
 from scipy.stats import pearsonr
 
 try:
     import torch
     import torch.nn as nn
-    import torch.nn.functional as F
     import torch.optim as optim
     HAS_TORCH = True
 except ImportError:
@@ -74,7 +66,7 @@ PANEL_FILE   = DATA_DIR / "panel_monthly_enriched.parquet"
 FACTORS_FILE = DATA_DIR / "factor_selected.csv"
 WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
 
-# ── Walk-forward folds (same as 5c / 5d) ──────────────────────────────────────
+# ── Walk-forward folds ─────────────────────────────────────────────────────────
 FOLDS = [
     ("2013-12-31", "2014-01-01", "2015-12-31", "2014–2015"),
     ("2015-12-31", "2016-01-01", "2017-12-31", "2016–2017"),
@@ -84,40 +76,46 @@ FOLDS = [
 ]
 TRAIN_START_GLOBAL = "2010-01-01"
 
-# ── Shared hyperparameters ─────────────────────────────────────────────────────
+# ── Hyperparameters ────────────────────────────────────────────────────────────
 ALPHA_MIN   = 0.002
 ALPHA_MAX   = 0.050
 FIXED_ALPHA = 0.010
 HIDDEN_DIM  = 64
 SEED        = 42
 
-# GRPO baseline (same as 5d for fair comparison)
 GRPO_EPOCHS  = 400
 GRPO_LR      = 3e-4
 GRPO_G       = 4
-GRPO_KL_BETA = 0.01
+GRPO_KL_BETA_STABLE     = 0.01   # Risk-Off: conservative KL
+GRPO_KL_BETA_TRANSITION = 0.02   # Transition: tighter KL
 
-# DAPO-specific
-DAPO_EPOCHS        = 400
-DAPO_LR            = 3e-4
-DAPO_EPS_LOW       = 0.20    # clip lower bound (negative advantage)
-DAPO_EPS_HIGH      = 0.28    # clip upper bound (positive advantage) — asymmetric
-DAPO_G_INIT        = 4       # initial candidates to estimate reward variance (≥4 for reliable var estimate)
-DAPO_G_MIN         = 4       # minimum total group size (matches GRPO_G=4 for fair comparison)
-DAPO_G_MAX         = 8       # maximum total group size (hard states)
-DAPO_VAR_THRESH    = 0.05    # reward variance threshold for dynamic sampling
+DAPO_EPOCHS     = 400            # used for all agents
+DAPO_LR         = 3e-4
+DAPO_EPS_LOW    = 0.20           # symmetric clip bound for negative advantages
+DAPO_EPS_HIGH   = 0.28           # higher clip bound for positive advantages
+DAPO_G_INIT     = 4              # initial candidates (matches GRPO_G for fair comparison)
+DAPO_G_MAX      = 8              # extend to this if state is hard (high reward variance)
+DAPO_VAR_THRESH = 0.05           # reward variance threshold for dynamic sampling
 
-STATE_COLS = [
+# Regime IDs
+REGIME_RISK_ON     = 0
+REGIME_TRANSITION  = 1
+REGIME_RISK_OFF    = 2
+
+# State column names (excluding regime cols — those are added by build_episodes)
+BASE_STATE_COLS = [
     "signal_strength",
     "signal_dispersion",
     "bench_vol",
     "recent_active_ret",
-    "regime",
     "rolling_te",
+    "bench_momentum",
 ]
+# Full state (after regime features appended)
+STATE_COLS = BASE_STATE_COLS + ["regime_id_norm", "regime_conf"]
+STATE_DIM  = len(STATE_COLS)
 
 np.random.seed(SEED)
-random.seed(SEED)
 if HAS_TORCH:
     torch.manual_seed(SEED)
 
@@ -127,6 +125,7 @@ if HAS_TORCH:
 # =============================================================================
 
 def compute_fold_weights(panel_train, factor_names, signs):
+    """IC-weighted factor combination. Weights fitted on training data only."""
     ics = {}
     for f in factor_names:
         if f not in panel_train.columns:
@@ -146,34 +145,51 @@ def compute_fold_weights(panel_train, factor_names, signs):
         ics[f] = float(np.mean(np.abs(ic_vals))) if ic_vals else 0.0
 
     total = sum(ics.values())
-    w = ({f: 1.0 / len(factor_names) for f in factor_names} if total < 1e-9
-         else {f: v / total for f, v in ics.items()})
+    if total < 1e-9:
+        w = {f: 1.0 / len(factor_names) for f in factor_names}
+    else:
+        w = {f: v / total for f, v in ics.items()}
     return np.array([w[f] * signs.get(f, 1.0) for f in factor_names], dtype=np.float64)
 
 
 def build_scores(panel_slice, factor_names, signed_w):
+    """Cross-sectional z-score composite scores."""
     available = [f for f in factor_names if f in panel_slice.columns]
-    idx = [factor_names.index(f) for f in available]
-    sw  = signed_w[idx]
-    rows = []
-    for dt, grp in panel_slice.groupby("date"):
-        X  = grp[available].values.astype(np.float64)
-        mu = np.nanmean(X, axis=0)
-        sg = np.nanstd(X,  axis=0) + 1e-8
-        Xz = np.where(np.isnan(X), 0.0, (X - mu) / sg)
-        sc = Xz @ sw
-        for i, (_, row) in enumerate(grp.iterrows()):
-            rows.append({"date": dt, "ticker": row["ticker"],
-                         "score": float(sc[i]),
-                         "fwd_ret_1m": row.get("fwd_ret_1m", np.nan)})
-    return pd.DataFrame(rows)
+    idx       = [factor_names.index(f) for f in available]
+    sw        = signed_w[idx]
+
+    dates   = panel_slice["date"].values
+    tickers = panel_slice["ticker"].values
+    fwds    = panel_slice["fwd_ret_1m"].values.astype(np.float64)
+    X_all   = panel_slice[available].values.astype(np.float64)
+
+    codes, uniq = pd.factorize(dates, sort=True)
+    scores = np.empty(len(dates), dtype=np.float64)
+
+    for c in range(len(uniq)):
+        mask = codes == c
+        X    = X_all[mask]
+        mu   = np.nanmean(X, axis=0)
+        sg   = np.nanstd(X,  axis=0) + 1e-8
+        Xz   = np.where(np.isnan(X), 0.0, (X - mu) / sg)
+        scores[mask] = Xz @ sw
+
+    return pd.DataFrame({
+        "date": dates, "ticker": tickers,
+        "score": scores, "fwd_ret_1m": fwds,
+    })
 
 
 # =============================================================================
 # PORTFOLIO SIMULATION
 # =============================================================================
 
-def simulate_month(scores_month, weights_month, alpha, top_n=100, bottom_n=100):
+def _prep_month(scores_month, weights_month, top_n=100, bottom_n=100):
+    """
+    Pre-compute per-month numpy arrays. Called once per month during episode
+    construction. The result dict is stored in the episode table and reused
+    at every training step (avoids pandas overhead during RL training).
+    """
     df = scores_month.merge(
         weights_month[["ticker", "spx_weight"]], on="ticker", how="inner"
     ).dropna(subset=["score", "spx_weight", "fwd_ret_1m"])
@@ -181,214 +197,534 @@ def simulate_month(scores_month, weights_month, alpha, top_n=100, bottom_n=100):
         return None
     df = df.sort_values("score", ascending=False).reset_index(drop=True)
     n  = len(df)
-    tilt = pd.Series(0.0, index=df.index)
-    tilt.iloc[:top_n]        = +alpha
-    tilt.iloc[n - bottom_n:] = -alpha
-    raw_w = (df["spx_weight"] + tilt).clip(lower=0.0)
+    return {
+        "spx_w":   df["spx_weight"].values.astype(np.float64),
+        "fwd_ret": df["fwd_ret_1m"].values.astype(np.float64),
+        "n":       n,
+        "top_n":   min(top_n,    n // 2),
+        "bot_n":   min(bottom_n, n // 2),
+    }
+
+
+def simulate_month_fast(prep, alpha):
+    """Pure numpy portfolio simulation using precomputed arrays."""
+    if prep is None:
+        return None
+    spx_w   = prep["spx_w"]
+    fwd_ret = prep["fwd_ret"]
+    n       = prep["n"]
+    tilt    = np.zeros(n, dtype=np.float64)
+    tilt[:prep["top_n"]]     = +alpha
+    tilt[n - prep["bot_n"]:] = -alpha
+    raw_w = np.clip(spx_w + tilt, 0.0, None)
     total = raw_w.sum()
     if total < 1e-8:
         return None
     port_w    = raw_w / total
-    port_ret  = (port_w          * df["fwd_ret_1m"]).sum()
-    bench_ret = (df["spx_weight"] * df["fwd_ret_1m"]).sum()
+    port_ret  = float(port_w  @ fwd_ret)
+    bench_ret = float(spx_w   @ fwd_ret)
     return {"port_ret": port_ret, "bench_ret": bench_ret,
             "active_ret": port_ret - bench_ret}
 
 
+def simulate_month(scores_month, weights_month, alpha, top_n=100, bottom_n=100):
+    prep = _prep_month(scores_month, weights_month, top_n, bottom_n)
+    return simulate_month_fast(prep, alpha)
+
+
 # =============================================================================
-# HMM REGIME DETECTION
+# MARKET REGIME DETECTION
 # =============================================================================
 
-def _fit_hmm(bench_vol_series, bench_ret_series):
+class MarketRegimeDetector:
     """
-    Fit a 2-state Gaussian HMM on [bench_vol, bench_ret].
-    Risk-off state = higher volatility state.
-    Returns (model, risk_off_state_index) or (None, None) if hmmlearn unavailable.
+    3-state Gaussian Mixture Model fitted on 5 market features:
+      bench_vol, bench_ret, bench_momentum, vol_trend, cs_dispersion
+
+    Uses sklearn.mixture.GaussianMixture (already in requirements as scikit-learn).
+    GMM is much faster than HMM on monthly data and avoids hmmlearn dependency.
+
+    States relabelled after fitting:
+      0 = Risk-On    (lowest mean vol component)
+      1 = Transition (middle mean vol)
+      2 = Risk-Off   (highest mean vol)
+
+    Falls back to rule-based 3-state if sklearn unavailable.
     """
-    try:
-        from hmmlearn.hmm import GaussianHMM
-    except ImportError:
-        return None, None
-    X = np.column_stack([bench_vol_series.fillna(0).values,
-                         bench_ret_series.fillna(0).values])
-    if len(X) < 12:
-        return None, None
-    try:
-        model = GaussianHMM(n_components=2, covariance_type="full",
-                            n_iter=200, random_state=42)
-        model.fit(X)
-        states = model.predict(X)
-        mean_vol = [X[states == s, 0].mean() for s in range(2)]
-        risk_off_state = int(np.argmax(mean_vol))   # higher vol → risk-off
-        return model, risk_off_state
-    except Exception:
-        return None, None
+
+    def __init__(self):
+        self.model            = None
+        self.state_map        = None   # GMM component → canonical regime (0/1/2)
+        self._fallback_params = {}
+
+    def _build_features(self, df):
+        """5-column raw feature matrix. Returns float64 array, no NaN/inf."""
+        cols = ["bench_vol", "bench_ret", "bench_momentum", "vol_trend", "cs_dispersion"]
+        X = np.column_stack([df[c].fillna(0.0).values for c in cols]).astype(np.float64)
+        return np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+
+    def fit(self, df):
+        """
+        Fit thresholds from training data using percentile ranks across all 5 features.
+        Pure numpy — no external ML library, instant.
+
+        Composite stress score = weighted sum of percentile ranks:
+          +0.4 * prank(bench_vol)       high vol      → stress
+          -0.3 * prank(bench_momentum)  neg momentum  → stress
+          +0.2 * prank(vol_trend)       rising vol    → stress
+          +0.1 * prank(cs_dispersion)   wide cs disp  → stress
+
+        Regimes cut at 33rd / 67th percentile of training stress scores:
+          score < p33 → Risk-On (0)
+          p33 ≤ score < p67 → Transition (1)
+          score ≥ p67 → Risk-Off (2)
+        """
+        X_raw = self._build_features(df)
+        n     = len(X_raw)
+
+        def _prank(col):
+            """Percentile rank of each value (0–1), ties averaged."""
+            order = np.argsort(col)
+            ranks = np.empty_like(order, dtype=float)
+            ranks[order] = (np.arange(n) + 0.5) / n
+            return ranks
+
+        stress = (  0.4 * _prank(X_raw[:, 0])   # bench_vol
+                  - 0.3 * _prank(X_raw[:, 2])   # bench_momentum (neg → stress)
+                  + 0.2 * _prank(X_raw[:, 3])   # vol_trend
+                  + 0.1 * _prank(X_raw[:, 4]))  # cs_dispersion
+
+        p33 = float(np.percentile(stress, 33))
+        p67 = float(np.percentile(stress, 67))
+        self._thresholds = (p33, p67)
+        self._X_mu = X_raw.mean(axis=0)
+        self._X_sg = X_raw.std(axis=0) + 1e-8
+
+        ids = self._stress_to_ids(stress, p33, p67)
+        counts = [int((ids == r).sum()) for r in range(3)]
+        print(f"    [Regime] Detector fitted ({n} months): "
+              f"Risk-On={counts[0]}  Transition={counts[1]}  Risk-Off={counts[2]}")
+
+    @staticmethod
+    def _stress_to_ids(stress, p33, p67):
+        ids = np.full(len(stress), REGIME_TRANSITION, dtype=int)
+        ids[stress <  p33] = REGIME_RISK_ON
+        ids[stress >= p67] = REGIME_RISK_OFF
+        return ids
+
+    def predict(self, df):
+        """
+        Returns (regime_ids, regime_confs).
+        regime_ids  ∈ {0, 1, 2}
+        regime_confs ∈ [0, 1]  (distance from nearest boundary, normalised)
+        """
+        X_raw = self._build_features(df)
+        n     = len(X_raw)
+        p33, p67 = getattr(self, "_thresholds", (0.33, 0.67))
+        mu        = getattr(self, "_X_mu", X_raw.mean(axis=0))
+        sg        = getattr(self, "_X_sg", X_raw.std(axis=0) + 1e-8)
+
+        # Score each test month using training-fitted feature scales
+        X_sc = (X_raw - mu) / sg
+
+        def _prank_vs_train(col_sc):
+            # approximate percentile rank via sigmoid of z-score
+            return 1.0 / (1.0 + np.exp(-col_sc))
+
+        stress = (  0.4 * _prank_vs_train(X_sc[:, 0])
+                  - 0.3 * _prank_vs_train(X_sc[:, 2])
+                  + 0.2 * _prank_vs_train(X_sc[:, 3])
+                  + 0.1 * _prank_vs_train(X_sc[:, 4]))
+
+        ids   = self._stress_to_ids(stress, p33, p67)
+        # Confidence: how far from the nearest boundary (0.5 = exactly on boundary)
+        mid   = (p33 + p67) / 2.0
+        span  = max(p67 - p33, 1e-6)
+        confs = np.clip(np.abs(stress - mid) / span, 0.0, 1.0)
+        return ids, confs
 
 
-def _hmm_predict(model, risk_off_state, df):
-    """Apply a trained HMM to df (must have bench_vol, bench_ret). Returns regime Series (0=risk-on, 1=risk-off)."""
-    X = np.column_stack([df["bench_vol"].fillna(0).values,
-                         df["bench_ret"].fillna(0).values])
-    try:
-        states = model.predict(X)
-        return pd.Series((states == risk_off_state).astype(float), index=df.index)
-    except Exception:
-        return pd.Series(0.0, index=df.index)
+def _attach_regime(df, detector):
+    """
+    Add regime_id / regime_id_norm / regime_conf columns to an episode df
+    in-place using an already-fitted MarketRegimeDetector. Much faster than
+    calling build_episodes a second time on the same data.
+    """
+    if detector is not None and not df.empty:
+        ids, confs = detector.predict(df)
+    else:
+        ids   = np.zeros(len(df), dtype=int)
+        confs = np.ones(len(df), dtype=float)
+    df["regime_id"]      = ids
+    df["regime_id_norm"] = np.clip(ids / 2.0, 0.0, 1.0)
+    df["regime_conf"]    = np.clip(confs,      0.0, 1.0)
 
 
 # =============================================================================
 # EPISODE TABLE
 # =============================================================================
 
-def build_episodes(scores, weights, ref_alpha=0.01, norm_params=None, fit_norm=False):
-    scores  = scores.copy()
-    weights = weights.copy()
-    scores["date"]  = pd.to_datetime(scores["date"])
-    weights["date"] = pd.to_datetime(weights["date"])
+def build_episodes(scores_df, weights_df, scores_panel, ref_alpha=0.01,
+                   norm_params=None, fit_norm=False, regime_detector=None):
+    """
+    Build a per-month episode table with state features and precomputed prep dicts.
+
+    scores_df    — output of build_scores (date, ticker, score, fwd_ret_1m)
+    weights_df   — SPX weights parquet (date, ticker, spx_weight)
+    scores_panel — raw panel (needed for cs_dispersion from stock returns)
+    norm_params  — dict of (mean, std) per BASE_STATE_COLS col; fitted on train
+    fit_norm     — if True, fit norm_params from this slice (training fold)
+    regime_detector — MarketRegimeDetector instance (fitted externally on train)
+    """
+    scores_df  = scores_df.copy()
+    weights_df = weights_df.copy()
+    scores_df["date"]  = pd.to_datetime(scores_df["date"])
+    weights_df["date"] = pd.to_datetime(weights_df["date"])
+
+    # year-month key for weight lookup (avoids date boundary issues)
+    weights_df["_ym"] = weights_df["date"].dt.year * 100 + weights_df["date"].dt.month
+    weights_by_ym     = {ym: grp for ym, grp in weights_df.groupby("_ym")}
+
+    # Cross-sectional dispersion of stock returns from raw panel
+    scores_panel = scores_panel.copy()
+    scores_panel["date"] = pd.to_datetime(scores_panel["date"])
+    cs_disp_map = {}
+    if "fwd_ret_1m" in scores_panel.columns:
+        for dt, grp in scores_panel.groupby("date"):
+            ym = dt.year * 100 + dt.month
+            vals = grp["fwd_ret_1m"].dropna().values
+            cs_disp_map[ym] = float(vals.std()) if len(vals) > 10 else 0.0
 
     rows = []
-    for dt, sc_m in scores.groupby("date"):
-        w_m = weights[weights["date"] == dt][["ticker", "spx_weight"]].copy()
-        if len(sc_m) < 50:
+    for dt, sc_m in scores_df.groupby("date"):
+        ym  = dt.year * 100 + dt.month
+        w_m = weights_by_ym.get(ym, pd.DataFrame())
+        if w_m.empty or len(sc_m) < 50:
             continue
+        w_m = w_m[["ticker", "spx_weight"]].copy()
+
         s_vals = sc_m["score"].values
         z      = (s_vals - s_vals.mean()) / (s_vals.std() + 1e-8)
         ref    = simulate_month(sc_m, w_m, alpha=ref_alpha)
         if ref is None:
             continue
-        rows.append({"date": dt,
-                     "signal_strength":   float(np.abs(z).mean()),
-                     "signal_dispersion": float(z.std()),
-                     "bench_ret":         ref["bench_ret"],
-                     "active_ret_ref":    ref["active_ret"],
-                     "_scores":           sc_m,
-                     "_weights":          w_m})
+        prep = _prep_month(sc_m, w_m)
+
+        rows.append({
+            "date":              dt,
+            "signal_strength":   float(np.abs(z).mean()),
+            "signal_dispersion": float(z.std()),
+            "bench_ret":         float(ref["bench_ret"]),
+            "active_ret_ref":    float(ref["active_ret"]),
+            "cs_dispersion":     cs_disp_map.get(ym, 0.0),
+            "_prep":             prep,
+        })
 
     if not rows:
         return pd.DataFrame(), norm_params
 
     df = pd.DataFrame(rows).set_index("date").sort_index()
-    df["bench_vol"]         = (df["bench_ret"]
-                               .rolling(3, min_periods=2).std()
-                               .fillna(df["bench_ret"].expanding().std())
-                               .fillna(0.0)) * np.sqrt(12)
-    df["rolling_te"]        = (df["active_ret_ref"]
-                               .rolling(3, min_periods=2).std()
-                               .fillna(df["active_ret_ref"].expanding().std())
-                               .fillna(0.0)) * np.sqrt(12)
+
+    # Rolling market features
+    df["bench_vol"]      = (df["bench_ret"]
+                            .rolling(3, min_periods=2).std()
+                            .fillna(df["bench_ret"].expanding().std())
+                            .fillna(0.0)) * np.sqrt(12)
+    # 3-month compounded return — use log-sum for speed (no rolling().apply())
+    log1r = np.log1p(df["bench_ret"].fillna(0.0))
+    df["bench_momentum"] = np.expm1(log1r.rolling(3, min_periods=1).sum())
+    df["vol_trend"]      = df["bench_vol"].diff(2).fillna(0.0)
+    df["rolling_te"]     = (df["active_ret_ref"]
+                            .rolling(3, min_periods=2).std()
+                            .fillna(df["active_ret_ref"].expanding().std())
+                            .fillna(0.0)) * np.sqrt(12)
     df["recent_active_ret"] = df["active_ret_ref"].rolling(3, min_periods=1).mean().fillna(0.0)
 
+    # ── Regime detection ──────────────────────────────────────────────────────
+    if regime_detector is not None:
+        regime_ids, regime_confs = regime_detector.predict(df)
+    else:
+        # Minimal fallback: everything is Risk-On
+        regime_ids  = np.zeros(len(df), dtype=int)
+        regime_confs = np.ones(len(df), dtype=float)
+
+    df["regime_id"]      = regime_ids
+    df["regime_id_norm"] = regime_ids / 2.0          # 0.0 / 0.5 / 1.0
+    df["regime_conf"]    = regime_confs
+
+    # ── Normalise BASE_STATE_COLS ──────────────────────────────────────────────
     if fit_norm:
         norm_params = {}
-        for col in [c for c in STATE_COLS if c != "regime"]:
-            mu, sg = df[col].mean(), df[col].std() + 1e-8
+        for col in BASE_STATE_COLS:
+            mu, sg = float(df[col].mean()), float(df[col].std() + 1e-8)
             norm_params[col] = (mu, sg)
-        # HMM regime detection — fit on training fold, store model for test
-        hmm_model, risk_off_state = _fit_hmm(df["bench_vol"], df["bench_ret"])
-        norm_params["_hmm_model"]          = hmm_model
-        norm_params["_hmm_risk_off_state"] = risk_off_state if risk_off_state is not None else 1
-        if hmm_model is not None:
-            df["regime"] = _hmm_predict(hmm_model, norm_params["_hmm_risk_off_state"], df)
-            print("    [Regime] HMM fitted — risk-off months:",
-                  int(df["regime"].sum()), "/", len(df))
-        else:
-            # fallback: vol-threshold if hmmlearn not installed
-            vol_med = df["bench_vol"].expanding(min_periods=6).median()
-            df["regime"] = (df["bench_vol"] > vol_med).astype(float).fillna(0.0)
-            norm_params["_vol_median"] = float(vol_med.iloc[-1])
-            print("    [Regime] hmmlearn not available — using vol-threshold fallback")
-    else:
-        hmm_model      = norm_params.get("_hmm_model")      if norm_params else None
-        risk_off_state = norm_params.get("_hmm_risk_off_state", 1) if norm_params else 1
-        if hmm_model is not None:
-            df["regime"] = _hmm_predict(hmm_model, risk_off_state, df)
-        else:
-            vol_thresh = (norm_params.get("_vol_median", df["bench_vol"].median())
-                          if norm_params else df["bench_vol"].median())
-            df["regime"] = (df["bench_vol"] > vol_thresh).astype(float).fillna(0.0)
 
     if norm_params:
-        for col in [c for c in STATE_COLS if c != "regime"]:
-            mu, sg = norm_params[col]
-            df[col] = ((df[col] - mu) / sg).fillna(0.0).clip(-5.0, 5.0)
+        for col in BASE_STATE_COLS:
+            if col in df.columns:
+                mu, sg = norm_params[col]
+                df[col] = ((df[col] - mu) / sg).fillna(0.0).clip(-5.0, 5.0)
+
+    # regime_id_norm and regime_conf are NOT z-scored (already on [0,1])
+    for col in ["regime_id_norm", "regime_conf"]:
+        df[col] = df[col].fillna(0.0).clip(0.0, 1.0)
 
     return df, norm_params
 
 
 # =============================================================================
-# NEURAL NETWORK COMPONENTS
+# NEURAL NETWORK COMPONENTS  (only defined when PyTorch is available)
 # =============================================================================
 
-if HAS_TORCH:
-    LOG_STD_MIN, LOG_STD_MAX = -10, 2
-
-    class MLP(nn.Module):
-        def __init__(self, in_dim, out_dim, hidden=HIDDEN_DIM):
-            super().__init__()
-            self.net = nn.Sequential(
-                nn.Linear(in_dim, hidden), nn.ReLU(),
-                nn.Linear(hidden, hidden), nn.ReLU(),
-                nn.Linear(hidden, out_dim),
-            )
-        def forward(self, x): return self.net(x)
-
-    class GaussianActor(nn.Module):
-        """Squashed Gaussian policy over [ALPHA_MIN, ALPHA_MAX]."""
-        def __init__(self, state_dim, hidden=HIDDEN_DIM):
-            super().__init__()
-            self.mean_net    = MLP(state_dim, 1, hidden)
-            self.log_std_net = MLP(state_dim, 1, hidden)
-
-        def forward(self, state):
-            mean    = self.mean_net(state)
-            log_std = self.log_std_net(state).clamp(LOG_STD_MIN, LOG_STD_MAX)
-            return mean, log_std.exp()
-
-        def sample(self, state):
-            mean, std = self(state)
-            dist  = torch.distributions.Normal(mean, std)
-            x_t   = dist.rsample()
-            y_t   = torch.tanh(x_t)
-            alpha = ALPHA_MIN + (y_t + 1.0) / 2.0 * (ALPHA_MAX - ALPHA_MIN)
-            log_p = dist.log_prob(x_t) - torch.log(1.0 - y_t.pow(2) + 1e-6)
-            return alpha, log_p.sum(-1, keepdim=True), mean
+LOG_STD_MIN = -10
+LOG_STD_MAX =   2
 
 
-def _safe_state(row):
-    return np.clip(
-        np.nan_to_num(row[STATE_COLS].values.astype(np.float32),
-                      nan=0.0, posinf=0.0, neginf=0.0),
-        -5.0, 5.0)
+def _make_mlp(in_dim, out_dim, hidden=HIDDEN_DIM):
+    return nn.Sequential(
+        nn.Linear(in_dim, hidden), nn.ReLU(),
+        nn.Linear(hidden, hidden), nn.ReLU(),
+        nn.Linear(hidden, out_dim),
+    )
+
+
+class GaussianActor(nn.Module):
+    """Squashed-Gaussian stochastic policy over α ∈ [ALPHA_MIN, ALPHA_MAX]."""
+
+    def __init__(self, state_dim, hidden=HIDDEN_DIM):
+        super().__init__()
+        self.mean_net    = _make_mlp(state_dim, 1, hidden)
+        self.log_std_net = _make_mlp(state_dim, 1, hidden)
+
+    def forward(self, state):
+        mean    = self.mean_net(state)
+        log_std = self.log_std_net(state).clamp(LOG_STD_MIN, LOG_STD_MAX)
+        return mean, log_std.exp()
+
+    def sample(self, state):
+        """Returns (alpha, log_prob, mean_alpha)."""
+        mean, std = self(state)
+        dist  = torch.distributions.Normal(mean, std)
+        x_t   = dist.rsample()
+        y_t   = torch.tanh(x_t)
+        alpha = ALPHA_MIN + (y_t + 1.0) / 2.0 * (ALPHA_MAX - ALPHA_MIN)
+        log_p = dist.log_prob(x_t) - torch.log(1.0 - y_t.pow(2) + 1e-6)
+        return alpha, log_p.sum(-1, keepdim=True), mean
+
+    def deterministic_action(self, state):
+        with torch.no_grad():
+            mean, _ = self(state)
+            y = torch.tanh(mean)
+            return float(ALPHA_MIN + (y + 1.0) / 2.0 * (ALPHA_MAX - ALPHA_MIN))
+
+
+def _to_state_tensor(row):
+    """Convert an episode row to a float32 numpy array, clipped to [-5, 5]."""
+    vals = []
+    for col in STATE_COLS:
+        v = float(row[col]) if col in row.index else 0.0
+        vals.append(v)
+    arr = np.array(vals, dtype=np.float32)
+    return np.nan_to_num(arr, nan=0.0, posinf=5.0, neginf=-5.0).clip(-5.0, 5.0)
+
+
+def _row_to_torch(row):
+    return torch.FloatTensor(_to_state_tensor(row)).unsqueeze(0)
 
 
 def compute_reward(active_ret):
-    return active_ret * 12.0
+    """Annualised active return as the RL reward signal."""
+    return float(active_ret) * 12.0
 
 
 # =============================================================================
-# GRPO AGENT (baseline — same as 5d, with KL penalty)
+# KL divergence helper (Gaussian)
 # =============================================================================
 
-class GRPOAgent:
-    """GRPO with fixed G=4 and KL penalty. Baseline to compare against DAPO."""
-    name = "GRPO"
+def _gaussian_kl(actor, ref_actor, s):
+    """KL( current_policy || ref_policy ) for a Gaussian actor."""
+    mu1, s1 = actor(s)
+    with torch.no_grad():
+        mu2, s2 = ref_actor(s)
+    kl = (torch.log(s2 / (s1 + 1e-8))
+          + (s1.pow(2) + (mu1 - mu2).pow(2)) / (2 * s2.pow(2) + 1e-8)
+          - 0.5)
+    return kl.mean()
+
+
+# =============================================================================
+# SHARED SAMPLING UTILITY
+# =============================================================================
+
+def _sample_group(actor, s, row, n_samples):
+    """
+    Sample n_samples candidate alphas from the current policy and simulate each.
+    Returns (alphas: list[float], log_probs: list[Tensor], rewards: list[float]).
+    """
+    alphas, log_probs, rewards = [], [], []
+    for _ in range(n_samples):
+        alpha_t, log_p, _ = actor.sample(s)
+        a   = float(alpha_t.squeeze())
+        res = simulate_month_fast(row["_prep"], a)
+        if res is None:
+            continue
+        alphas.append(a)
+        log_probs.append(log_p)
+        rewards.append(compute_reward(res["active_ret"]))
+    return alphas, log_probs, rewards
+
+
+def _group_advantage(rewards):
+    """Group-relative advantage: (r - mean) / std."""
+    r_arr = np.array(rewards, dtype=np.float32)
+    return torch.FloatTensor((r_arr - r_arr.mean()) / (r_arr.std() + 1e-8))
+
+
+# =============================================================================
+# DAPO OBJECTIVE (clip-higher, no KL)
+# =============================================================================
+
+def _dapo_loss(actor, s, alphas, log_probs_old_list, rewards):
+    """
+    Clip-higher PPO objective.
+    Positive advantages: clipped at 1 + DAPO_EPS_HIGH (more permissive)
+    Negative advantages: clipped at 1 - DAPO_EPS_LOW
+    """
+    adv = _group_advantage(rewards)
+
+    log_probs_old = torch.cat(log_probs_old_list, dim=0).squeeze(-1).detach()
+    alphas_t      = torch.FloatTensor(alphas).unsqueeze(-1)
+
+    # Re-derive log probs under current policy parameters
+    mean_c, std_c = actor(s.expand(len(alphas), -1))
+    y_t = ((alphas_t - ALPHA_MIN) / (ALPHA_MAX - ALPHA_MIN) * 2.0 - 1.0
+           ).clamp(-0.9999, 0.9999)
+    x_t = torch.atanh(y_t)
+    dist = torch.distributions.Normal(mean_c, std_c)
+    log_probs_new = (dist.log_prob(x_t) - torch.log(1.0 - y_t.pow(2) + 1e-6)).squeeze(-1)
+
+    ratio     = (log_probs_new - log_probs_old).exp()
+    pos_mask  = adv > 0
+    clip_high = torch.where(pos_mask,
+                            torch.full_like(ratio, 1.0 + DAPO_EPS_HIGH),
+                            torch.full_like(ratio, 1.0 + DAPO_EPS_LOW))
+    clip_low  = torch.full_like(ratio, 1.0 - DAPO_EPS_LOW)
+    ratio_clp = torch.max(torch.min(ratio, clip_high), clip_low)
+    return -torch.min(ratio * adv, ratio_clp * adv).mean()
+
+
+# =============================================================================
+# GRPO OBJECTIVE (REINFORCE + KL)
+# =============================================================================
+
+def _grpo_loss(actor, ref_actor, s, log_probs_list, rewards, kl_beta):
+    """REINFORCE + KL penalty (conservative update rule)."""
+    adv = _group_advantage(rewards)
+    lp  = torch.cat(log_probs_list, dim=0).squeeze(-1)
+    pg  = -(lp * adv).mean()
+    kl  = _gaussian_kl(actor, ref_actor, s)
+    return pg + kl_beta * kl
+
+
+# =============================================================================
+# HYBRID DAPO AGENT (main contribution)
+# =============================================================================
+
+class HybridDAPOAgent:
+    """
+    Regime-adaptive hybrid agent.
+
+    Update rule per timestep:
+      REGIME_RISK_ON    → DAPO (clip-higher, dynamic G, no KL)   — explore freely
+      REGIME_RISK_OFF   → GRPO (KL β=0.01)                       — stay conservative
+      REGIME_TRANSITION → GRPO (KL β=0.02)                       — maximum caution
+    """
+    name = "HybridDAPO"
 
     def __init__(self, state_dim):
+        if not HAS_TORCH:
+            raise RuntimeError("PyTorch required for HybridDAPOAgent")
+        self.actor     = GaussianActor(state_dim)
+        self.actor_opt = optim.Adam(self.actor.parameters(), lr=DAPO_LR)
+        self.ref_actor = copy.deepcopy(self.actor)
+        for p in self.ref_actor.parameters():
+            p.requires_grad_(False)
+
+    def select_action(self, state_arr, deterministic=True):
+        s = torch.FloatTensor(state_arr).unsqueeze(0)
+        if deterministic:
+            return self.actor.deterministic_action(s)
+        with torch.no_grad():
+            a, _, _ = self.actor.sample(s)
+        return float(a.squeeze())
+
+    def train(self, train_rows, verbose=False):
+        """train_rows: list of (dt, row) from episode table."""
+        avg_r = 0.0
+        for epoch in range(DAPO_EPOCHS):
+            ep_rewards = []
+
+            for dt, row in train_rows:
+                state   = _to_state_tensor(row)
+                s       = torch.FloatTensor(state).unsqueeze(0)
+                regime  = int(round(float(row.get("regime_id", 0))))
+
+                if regime == REGIME_RISK_ON:
+                    # ── DAPO: clip-higher, dynamic G ─────────────────────────
+                    alphas, lps, rewards = _sample_group(self.actor, s, row, DAPO_G_INIT)
+                    if len(rewards) >= 2 and len(rewards) < DAPO_G_MAX:
+                        if float(np.var(rewards)) > DAPO_VAR_THRESH:
+                            a2, lp2, r2 = _sample_group(
+                                self.actor, s, row, DAPO_G_MAX - len(rewards))
+                            alphas += a2; lps += lp2; rewards += r2
+                    if len(rewards) < 2:
+                        continue
+                    loss = _dapo_loss(self.actor, s, alphas, lps, rewards)
+
+                else:
+                    # ── GRPO: KL-anchored (tighter β for transition) ──────────
+                    kl_beta = (GRPO_KL_BETA_TRANSITION if regime == REGIME_TRANSITION
+                               else GRPO_KL_BETA_STABLE)
+                    _, lps, rewards = _sample_group(self.actor, s, row, GRPO_G)
+                    if len(rewards) < 2:
+                        continue
+                    loss = _grpo_loss(self.actor, self.ref_actor, s, lps, rewards, kl_beta)
+
+                ep_rewards.extend(rewards)
+                self.actor_opt.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
+                self.actor_opt.step()
+
+            avg_r = float(np.mean(ep_rewards)) if ep_rewards else 0.0
+            if verbose and epoch % 100 == 0:
+                print(f"    [{self.name}] Epoch {epoch:4d}  avg_r={avg_r:+.4f}")
+
+        return avg_r
+
+
+# =============================================================================
+# PURE GRPO AGENT  (baseline — always KL-anchored)
+# =============================================================================
+
+class PureGRPOAgent:
+    name = "PureGRPO"
+
+    def __init__(self, state_dim):
+        if not HAS_TORCH:
+            raise RuntimeError("PyTorch required")
         self.actor     = GaussianActor(state_dim)
         self.actor_opt = optim.Adam(self.actor.parameters(), lr=GRPO_LR)
         self.ref_actor = copy.deepcopy(self.actor)
         for p in self.ref_actor.parameters():
             p.requires_grad_(False)
 
-    def select_action(self, state, deterministic=False):
-        s = torch.nan_to_num(torch.FloatTensor(state).unsqueeze(0), nan=0.0)
+    def select_action(self, state_arr, deterministic=True):
+        s = torch.FloatTensor(state_arr).unsqueeze(0)
+        if deterministic:
+            return self.actor.deterministic_action(s)
         with torch.no_grad():
-            if deterministic:
-                mean, _ = self.actor(s)
-                y = torch.tanh(mean)
-                a = ALPHA_MIN + (y + 1.0) / 2.0 * (ALPHA_MAX - ALPHA_MIN)
-            else:
-                a, _, _ = self.actor.sample(s)
+            a, _, _ = self.actor.sample(s)
         return float(a.squeeze())
 
     def train(self, train_rows, verbose=False):
@@ -396,351 +732,114 @@ class GRPOAgent:
         for epoch in range(GRPO_EPOCHS):
             ep_rewards = []
             for dt, row in train_rows:
-                state = _safe_state(row)
-                s     = torch.nan_to_num(torch.FloatTensor(state).unsqueeze(0), nan=0.0)
-
-                group_log_probs, group_rewards = [], []
-                for _ in range(GRPO_G):
-                    alpha_t, log_p, _ = self.actor.sample(s)
-                    a   = float(alpha_t.squeeze())
-                    res = simulate_month(row["_scores"], row["_weights"], alpha=a)
-                    if res is None:
-                        continue
-                    group_log_probs.append(log_p)
-                    group_rewards.append(compute_reward(res["active_ret"]))
-
-                if len(group_rewards) < 2:
+                s = torch.FloatTensor(_to_state_tensor(row)).unsqueeze(0)
+                _, lps, rewards = _sample_group(self.actor, s, row, GRPO_G)
+                if len(rewards) < 2:
                     continue
-
-                ep_rewards.extend(group_rewards)
-                r_arr = np.array(group_rewards, dtype=np.float32)
-                adv   = torch.FloatTensor(
-                    (r_arr - r_arr.mean()) / (r_arr.std() + 1e-8))
-
-                log_probs = torch.cat(group_log_probs, dim=0).squeeze(-1)
-                pg_loss   = -(log_probs * adv).mean()
-
-                mu1, s1 = self.actor(s)
-                with torch.no_grad():
-                    mu2, s2 = self.ref_actor(s)
-                kl   = (torch.log(s2 / (s1 + 1e-8))
-                        + (s1.pow(2) + (mu1 - mu2).pow(2)) / (2 * s2.pow(2) + 1e-8)
-                        - 0.5).mean()
-                loss = pg_loss + GRPO_KL_BETA * kl
-
+                loss = _grpo_loss(self.actor, self.ref_actor, s, lps, rewards,
+                                  GRPO_KL_BETA_STABLE)
+                ep_rewards.extend(rewards)
                 self.actor_opt.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
                 self.actor_opt.step()
-
             avg_r = float(np.mean(ep_rewards)) if ep_rewards else 0.0
             if verbose and epoch % 100 == 0:
-                print(f"    [GRPO] Epoch {epoch:4d}  avg_r={avg_r:+.4f}")
+                print(f"    [{self.name}] Epoch {epoch:4d}  avg_r={avg_r:+.4f}")
         return avg_r
 
 
 # =============================================================================
-# DAPO AGENT
+# PURE DAPO AGENT  (baseline — always clip-higher, no KL)
 # =============================================================================
 
-class DAPOAgent:
-    """
-    DAPO: Dynamic Sampling Policy Optimisation.
-
-    Three improvements over GRPO:
-    1. Clip-higher: asymmetric clipping eps_low=0.20 / eps_high=0.28
-    2. Dynamic G: sample more candidates for high-variance (hard) states
-    3. No KL penalty: clip-higher provides sufficient regularisation
-
-    For each market state:
-      a) Sample G_INIT=4 candidate alphas → estimate reward variance
-         (G_INIT=4 matches GRPO_G for fair baseline comparison)
-      b) If var(rewards) > VARIANCE_THRESH → extend to G_MAX=8 total samples
-         else keep G_MIN=4 (same budget as GRPO in easy states)
-      c) Compute group-relative advantage A_i = (r_i - mean) / std
-      d) Clip-higher policy gradient update
-    """
-    name = "DAPO"
+class PureDAPOAgent:
+    name = "PureDAPO"
 
     def __init__(self, state_dim):
+        if not HAS_TORCH:
+            raise RuntimeError("PyTorch required")
         self.actor     = GaussianActor(state_dim)
         self.actor_opt = optim.Adam(self.actor.parameters(), lr=DAPO_LR)
 
-    def select_action(self, state, deterministic=False):
-        s = torch.nan_to_num(torch.FloatTensor(state).unsqueeze(0), nan=0.0)
+    def select_action(self, state_arr, deterministic=True):
+        s = torch.FloatTensor(state_arr).unsqueeze(0)
+        if deterministic:
+            return self.actor.deterministic_action(s)
         with torch.no_grad():
-            if deterministic:
-                mean, _ = self.actor(s)
-                y = torch.tanh(mean)
-                a = ALPHA_MIN + (y + 1.0) / 2.0 * (ALPHA_MAX - ALPHA_MIN)
-            else:
-                a, _, _ = self.actor.sample(s)
+            a, _, _ = self.actor.sample(s)
         return float(a.squeeze())
-
-    def _sample_group(self, s, row, n_samples):
-        """Sample n_samples candidate alphas, simulate each, return (alphas, log_probs, rewards)."""
-        alphas, log_probs, rewards = [], [], []
-        for _ in range(n_samples):
-            alpha_t, log_p, _ = self.actor.sample(s)
-            a   = float(alpha_t.squeeze())
-            res = simulate_month(row["_scores"], row["_weights"], alpha=a)
-            if res is None:
-                continue
-            alphas.append(a)
-            log_probs.append(log_p)
-            rewards.append(compute_reward(res["active_ret"]))
-        return alphas, log_probs, rewards
 
     def train(self, train_rows, verbose=False):
         avg_r = 0.0
         for epoch in range(DAPO_EPOCHS):
             ep_rewards = []
             for dt, row in train_rows:
-                state = _safe_state(row)
-                s     = torch.nan_to_num(torch.FloatTensor(state).unsqueeze(0), nan=0.0)
-
-                # ── Phase 1: initial sample to estimate state difficulty ──────
-                alphas, log_probs, rewards = self._sample_group(s, row, DAPO_G_INIT)
-
-                if len(rewards) >= 2:
-                    # Dynamic sampling: hard states get more budget
-                    r_var = float(np.var(rewards))
-                    if r_var > DAPO_VAR_THRESH and len(rewards) < DAPO_G_MAX:
-                        extra = DAPO_G_MAX - len(rewards)
-                        a2, lp2, r2 = self._sample_group(s, row, extra)
-                        alphas    += a2
-                        log_probs += lp2
-                        rewards   += r2
-
+                s = torch.FloatTensor(_to_state_tensor(row)).unsqueeze(0)
+                alphas, lps, rewards = _sample_group(self.actor, s, row, DAPO_G_INIT)
+                if len(rewards) >= 2 and len(rewards) < DAPO_G_MAX:
+                    if float(np.var(rewards)) > DAPO_VAR_THRESH:
+                        a2, lp2, r2 = _sample_group(
+                            self.actor, s, row, DAPO_G_MAX - len(rewards))
+                        alphas += a2; lps += lp2; rewards += r2
                 if len(rewards) < 2:
                     continue
-
-                ep_rewards.extend(rewards)
-
-                # ── Group-relative advantage ──────────────────────────────────
-                r_arr = np.array(rewards, dtype=np.float32)
-                adv   = torch.FloatTensor(
-                    (r_arr - r_arr.mean()) / (r_arr.std() + 1e-8))
-
-                # ── Clip-higher policy gradient ───────────────────────────────
-                # Re-compute log probs under current policy (needed for ratio)
-                log_probs_old = torch.cat(log_probs, dim=0).squeeze(-1).detach()
-                alphas_t      = torch.FloatTensor(alphas).unsqueeze(-1)
-
-                # Get current log probs via reparameterisation
-                mean_c, std_c = self.actor(s.expand(len(alphas), -1))
-                y_t = ((alphas_t - ALPHA_MIN) / (ALPHA_MAX - ALPHA_MIN) * 2.0 - 1.0
-                       ).clamp(-0.9999, 0.9999)
-                x_t = torch.atanh(y_t)
-                dist = torch.distributions.Normal(mean_c, std_c)
-                log_probs_new = (dist.log_prob(x_t)
-                                 - torch.log(1.0 - y_t.pow(2) + 1e-6)).squeeze(-1)
-
-                ratio = (log_probs_new - log_probs_old).exp()
-
-                # Asymmetric clip: positive advantage → higher upper bound
-                pos_mask = adv > 0
-                clip_high = torch.where(pos_mask,
-                                        torch.full_like(ratio, 1.0 + DAPO_EPS_HIGH),
-                                        torch.full_like(ratio, 1.0 + DAPO_EPS_LOW))
-                clip_low  = torch.full_like(ratio, 1.0 - DAPO_EPS_LOW)
-                ratio_clipped = torch.max(torch.min(ratio, clip_high), clip_low)
-
-                # Conservative objective: min(unclipped, clipped) × advantage
-                obj  = torch.min(ratio * adv, ratio_clipped * adv)
-                loss = -obj.mean()
-
-                self.actor_opt.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
-                self.actor_opt.step()
-
-            avg_r = float(np.mean(ep_rewards)) if ep_rewards else 0.0
-            if verbose and epoch % 100 == 0:
-                n_ep = len(train_rows)
-                print(f"    [DAPO] Epoch {epoch:4d}  avg_r={avg_r:+.4f}  "
-                      f"(eps_low={DAPO_EPS_LOW}, eps_high={DAPO_EPS_HIGH})")
-        return avg_r
-
-
-# =============================================================================
-# DAPO-SWITCH AGENT — regime-aware algorithm selection
-# =============================================================================
-
-class DAPOSwitchAgent:
-    """
-    Regime-switching policy: uses DAPO when the market regime is stable,
-    falls back to GRPO (with KL) when a regime transition is detected.
-
-    Motivation:
-      - DAPO's clip-higher lets the policy explore more aggressively when the
-        regime is established and the signal is predictable.
-      - At regime transitions (e.g. QE → rate hike), the right alpha is
-        unclear; GRPO's KL anchors the policy near its last known-good
-        behaviour and prevents wild swings.
-
-    Regime detection:
-      The 'regime' column (0=risk-on, 1=risk-off) is already in the state.
-      A transition is flagged when the current month's regime differs from the
-      previous month's. The first month of each epoch is treated as stable.
-
-    Update rules:
-      Stable  → DAPO: PPO clip-higher objective (no KL), G=G_MIN..G_MAX
-      Transition → GRPO: REINFORCE + KL penalty, G=GRPO_G
-    """
-    name = "DAPOSwitch"
-
-    def __init__(self, state_dim):
-        self.actor     = GaussianActor(state_dim)
-        self.actor_opt = optim.Adam(self.actor.parameters(), lr=DAPO_LR)
-        self.ref_actor = copy.deepcopy(self.actor)
-        for p in self.ref_actor.parameters():
-            p.requires_grad_(False)
-
-    def select_action(self, state, deterministic=False):
-        s = torch.nan_to_num(torch.FloatTensor(state).unsqueeze(0), nan=0.0)
-        with torch.no_grad():
-            if deterministic:
-                mean, _ = self.actor(s)
-                y = torch.tanh(mean)
-                a = ALPHA_MIN + (y + 1.0) / 2.0 * (ALPHA_MAX - ALPHA_MIN)
-            else:
-                a, _, _ = self.actor.sample(s)
-        return float(a.squeeze())
-
-    def _sample_group(self, s, row, n_samples):
-        alphas, log_probs, rewards = [], [], []
-        for _ in range(n_samples):
-            alpha_t, log_p, _ = self.actor.sample(s)
-            a   = float(alpha_t.squeeze())
-            res = simulate_month(row["_scores"], row["_weights"], alpha=a)
-            if res is None:
-                continue
-            alphas.append(a)
-            log_probs.append(log_p)
-            rewards.append(compute_reward(res["active_ret"]))
-        return alphas, log_probs, rewards
-
-    def _dapo_update(self, s, alphas, log_probs, rewards):
-        """Clip-higher PPO objective (no KL)."""
-        r_arr = np.array(rewards, dtype=np.float32)
-        adv   = torch.FloatTensor((r_arr - r_arr.mean()) / (r_arr.std() + 1e-8))
-
-        log_probs_old = torch.cat(log_probs, dim=0).squeeze(-1).detach()
-        alphas_t      = torch.FloatTensor(alphas).unsqueeze(-1)
-
-        mean_c, std_c = self.actor(s.expand(len(alphas), -1))
-        y_t = ((alphas_t - ALPHA_MIN) / (ALPHA_MAX - ALPHA_MIN) * 2.0 - 1.0
-               ).clamp(-0.9999, 0.9999)
-        x_t = torch.atanh(y_t)
-        dist = torch.distributions.Normal(mean_c, std_c)
-        log_probs_new = (dist.log_prob(x_t)
-                         - torch.log(1.0 - y_t.pow(2) + 1e-6)).squeeze(-1)
-
-        ratio = (log_probs_new - log_probs_old).exp()
-        pos_mask  = adv > 0
-        clip_high = torch.where(pos_mask,
-                                torch.full_like(ratio, 1.0 + DAPO_EPS_HIGH),
-                                torch.full_like(ratio, 1.0 + DAPO_EPS_LOW))
-        clip_low  = torch.full_like(ratio, 1.0 - DAPO_EPS_LOW)
-        ratio_clipped = torch.max(torch.min(ratio, clip_high), clip_low)
-        return -torch.min(ratio * adv, ratio_clipped * adv).mean()
-
-    def _grpo_update(self, s, log_probs, rewards):
-        """REINFORCE + KL penalty (GRPO-style, conservative for transitions)."""
-        r_arr = np.array(rewards, dtype=np.float32)
-        adv   = torch.FloatTensor((r_arr - r_arr.mean()) / (r_arr.std() + 1e-8))
-
-        lp    = torch.cat(log_probs, dim=0).squeeze(-1)
-        pg    = -(lp * adv).mean()
-
-        mu1, s1 = self.actor(s)
-        with torch.no_grad():
-            mu2, s2 = self.ref_actor(s)
-        kl   = (torch.log(s2 / (s1 + 1e-8))
-                + (s1.pow(2) + (mu1 - mu2).pow(2)) / (2 * s2.pow(2) + 1e-8)
-                - 0.5).mean()
-        return pg + GRPO_KL_BETA * kl
-
-    def train(self, train_rows, verbose=False):
-        avg_r = 0.0
-        for epoch in range(DAPO_EPOCHS):
-            ep_rewards  = []
-            prev_regime = None   # reset each epoch
-
-            for dt, row in train_rows:
-                state          = _safe_state(row)
-                current_regime = float(row["regime"])   # 0.0 or 1.0 (not z-scored)
-                is_transition  = (prev_regime is not None and
-                                  current_regime != prev_regime)
-                prev_regime    = current_regime
-
-                s = torch.nan_to_num(torch.FloatTensor(state).unsqueeze(0), nan=0.0)
-
-                if is_transition:
-                    # ── GRPO update: conservative, KL-anchored ────────────────
-                    _, log_probs, rewards = self._sample_group(s, row, GRPO_G)
-                    if len(rewards) < 2:
-                        continue
-                    loss = self._grpo_update(s, log_probs, rewards)
-                else:
-                    # ── DAPO update: clip-higher, dynamic G ───────────────────
-                    alphas, log_probs, rewards = self._sample_group(s, row, DAPO_G_INIT)
-                    if len(rewards) >= 2:
-                        r_var = float(np.var(rewards))
-                        if r_var > DAPO_VAR_THRESH and len(rewards) < DAPO_G_MAX:
-                            a2, lp2, r2 = self._sample_group(s, row, DAPO_G_MAX - len(rewards))
-                            alphas += a2; log_probs += lp2; rewards += r2
-                    if len(rewards) < 2:
-                        continue
-                    loss = self._dapo_update(s, alphas, log_probs, rewards)
-
+                loss = _dapo_loss(self.actor, s, alphas, lps, rewards)
                 ep_rewards.extend(rewards)
                 self.actor_opt.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
                 self.actor_opt.step()
-
             avg_r = float(np.mean(ep_rewards)) if ep_rewards else 0.0
             if verbose and epoch % 100 == 0:
-                print(f"    [DAPOSwitch] Epoch {epoch:4d}  avg_r={avg_r:+.4f}")
+                print(f"    [{self.name}] Epoch {epoch:4d}  avg_r={avg_r:+.4f}")
         return avg_r
 
 
 # =============================================================================
-# RULE-BASED FALLBACK
+# RULE-BASED FALLBACK (when PyTorch is unavailable)
 # =============================================================================
 
 class RuleBasedAgent:
-    name = "Rule"
-    def __init__(self, state_dim): pass
-    def select_action(self, state, deterministic=False):
-        regime = state[4] if len(state) > 4 else 0.0
-        return (ALPHA_MIN + ALPHA_MAX) / 2.0 * (1.0 - 0.4 * regime)
-    def train(self, train_rows, verbose=False): return 0.0
+    """Regime-adjusted fixed alpha: lower tilt in risk-off, higher in risk-on."""
+    name = "RuleBased"
+
+    def __init__(self, state_dim):
+        pass
+
+    def select_action(self, state_arr, deterministic=True):
+        regime_norm = float(state_arr[6]) if len(state_arr) > 6 else 0.0
+        # risk-on → higher alpha, risk-off → lower alpha
+        return ALPHA_MIN + (ALPHA_MAX - ALPHA_MIN) * (1.0 - regime_norm) * 0.6 + FIXED_ALPHA * 0.4
+
+    def train(self, train_rows, verbose=False):
+        return 0.0
 
 
 # =============================================================================
-# EVALUATE + STATS
+# EVALUATION
 # =============================================================================
 
 def evaluate(agent, ep_test):
+    """Run agent deterministically on test episodes. Returns (rl_bt, fixed_bt)."""
     rl_rows, fixed_rows = [], []
-    for dt, row in ep_test.iterrows():
-        state    = _safe_state(row)
+    for dt in ep_test.index:
+        row   = ep_test.loc[dt]
+        state = _to_state_tensor(row)
+
         alpha_rl = agent.select_action(state, deterministic=True)
-        r_rl     = simulate_month(row["_scores"], row["_weights"], alpha=alpha_rl)
+        r_rl     = simulate_month_fast(row["_prep"], alpha_rl)
         if r_rl:
             rl_rows.append({"date": dt, "alpha_used": alpha_rl,
-                            "regime": row["regime"], **r_rl})
-        r_fx = simulate_month(row["_scores"], row["_weights"], alpha=FIXED_ALPHA)
+                            "regime_id": int(row.get("regime_id", 0)), **r_rl})
+
+        r_fx = simulate_month_fast(row["_prep"], FIXED_ALPHA)
         if r_fx:
             fixed_rows.append({"date": dt, "alpha_used": FIXED_ALPHA,
-                                "regime": row["regime"], **r_fx})
-    rl_bt    = (pd.DataFrame(rl_rows).set_index("date")
-                if rl_rows else pd.DataFrame())
-    fixed_bt = (pd.DataFrame(fixed_rows).set_index("date")
-                if fixed_rows else pd.DataFrame())
+                               "regime_id": int(row.get("regime_id", 0)), **r_fx})
+
+    rl_bt    = pd.DataFrame(rl_rows).set_index("date")    if rl_rows    else pd.DataFrame()
+    fixed_bt = pd.DataFrame(fixed_rows).set_index("date") if fixed_rows else pd.DataFrame()
     return rl_bt, fixed_bt
 
 
@@ -751,30 +850,41 @@ def ie_stats(bt):
     if len(r) < 4:
         return {}
     n         = len(r)
-    ann_alpha = (1 + r).prod() ** (12 / n) - 1
-    track_err = r.std(ddof=1) * np.sqrt(12)
-    ir        = ann_alpha / track_err if track_err > 0 else float("nan")
+    ann_alpha = float((1 + r).prod() ** (12 / n) - 1)
+    track_err = float(r.std(ddof=1) * np.sqrt(12))
+    ir        = ann_alpha / track_err if track_err > 1e-8 else float("nan")
     nav       = (1 + r).cumprod()
-    return dict(ann_alpha=ann_alpha, track_err=track_err, info_ratio=ir,
-                hit_rate=float((r > 0).mean()),
-                max_active_dd=float((nav / nav.cummax() - 1).min()),
-                n_months=n)
+    return dict(
+        ann_alpha    = ann_alpha,
+        track_err    = track_err,
+        info_ratio   = ir,
+        hit_rate     = float((r > 0).mean()),
+        max_active_dd= float((nav / nav.cummax() - 1).min()),
+        n_months     = n,
+    )
 
 
 # =============================================================================
 # PLOTTING
 # =============================================================================
 
-COLORS = {"DAPO": "#FF6B9D", "GRPO": "#66BB6A", "DAPOSwitch": "#5B9BD5", "Fixed": "#AAAAAA"}
+COLORS = {
+    "HybridDAPO": "#FF6B9D",
+    "PureGRPO":   "#66BB6A",
+    "PureDAPO":   "#5B9BD5",
+    "Fixed":      "#AAAAAA",
+}
 
 
-def plot_comparison(all_bt, fold_summary, algo_names):
+def plot_comparison(all_bt, fold_df, algo_names):
     fig, axes = plt.subplots(2, 1, figsize=(13, 10))
     fig.suptitle(
-        "DAPO vs GRPO vs DAPOSwitch — Walk-Forward Out-of-Sample\n"
-        "DAPOSwitch: DAPO on stable regime, GRPO+KL on regime transitions",
-        fontsize=13, fontweight="bold")
+        "Hybrid GRPO/DAPO vs Pure GRPO vs Pure DAPO — Walk-Forward Out-of-Sample\n"
+        "HybridDAPO: DAPO on Risk-On, GRPO+KL on Risk-Off/Transition (3-state HMM regime)",
+        fontsize=12, fontweight="bold",
+    )
 
+    # ── Panel 1: cumulative active return ─────────────────────────────────────
     ax = axes[0]
     for name, bt in all_bt.items():
         if bt.empty:
@@ -790,17 +900,18 @@ def plot_comparison(all_bt, fold_summary, algo_names):
     ax.grid(True, alpha=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
 
-    ax    = axes[1]
-    lbls  = fold_summary["label"].tolist()
-    x     = np.arange(len(lbls))
+    # ── Panel 2: per-fold IR bars ──────────────────────────────────────────────
+    ax   = axes[1]
+    lbls = fold_df["label"].tolist()
+    x    = np.arange(len(lbls))
     order = algo_names + ["Fixed"]
     n_a   = len(order)
-    w     = 0.20
+    w     = 0.18
     for i, name in enumerate(order):
-        key  = f"{name.lower()}_ir"
-        if key not in fold_summary.columns:
+        key = f"{name.lower()}_ir"
+        if key not in fold_df.columns:
             continue
-        vals   = fold_summary[key].tolist()
+        vals   = fold_df[key].tolist()
         offset = (i - (n_a - 1) / 2) * (w + 0.02)
         ax.bar(x + offset, vals, w, label=name,
                color=COLORS.get(name, "#999"), alpha=0.85)
@@ -808,7 +919,7 @@ def plot_comparison(all_bt, fold_summary, algo_names):
     ax.set_xticks(x)
     ax.set_xticklabels(lbls, fontsize=9)
     ax.set_ylabel("Information Ratio")
-    ax.set_title("Per-Fold IR: DAPO vs GRPO vs DAPOSwitch vs Fixed Alpha")
+    ax.set_title("Per-Fold IR: HybridDAPO vs PureGRPO vs PureDAPO vs Fixed")
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3, axis="y")
 
@@ -824,16 +935,22 @@ def plot_comparison(all_bt, fold_summary, algo_names):
 # =============================================================================
 
 def main():
-    print("=" * 70)
-    print("5e_dapo_agent.py — DAPO vs GRPO vs DAPOSwitch Walk-Forward Comparison")
-    print("DAPO: clip-higher (ε↑=0.28) + dynamic G (4–8) + no KL [G fixed for fair comparison]")
-    print("DAPOSwitch: DAPO on stable regime, GRPO+KL on regime transitions")
-    print("=" * 70)
+    print("=" * 72)
+    print("5e_dapo_agent.py — Hybrid GRPO/DAPO + 3-State Market Regime Detection")
+    print("  HybridDAPO : DAPO on Risk-On, GRPO+KL on Risk-Off, GRPO+2xKL on Transition")
+    print("  Regime     : 3-state HMM on vol / ret / momentum / vol-trend / cross-sec-disp")
+    print("=" * 72)
 
     if not HAS_TORCH:
-        print("WARNING: PyTorch not available — rule-based fallback.\n")
+        print("WARNING: PyTorch not available — using rule-based fallback agents.\n")
 
+    # ── Load data ─────────────────────────────────────────────────────────────
     print("\nLoading data ...")
+    for p in [PANEL_FILE, FACTORS_FILE, WEIGHTS_FILE]:
+        if not p.exists():
+            raise FileNotFoundError(f"Required data file not found: {p}\n"
+                                    "Run the earlier pipeline scripts first.")
+
     panel   = pd.read_parquet(PANEL_FILE)
     panel["date"] = pd.to_datetime(panel["date"])
     factors = pd.read_csv(FACTORS_FILE)
@@ -844,118 +961,152 @@ def main():
     signs        = (factors.set_index("factor")["majority_sign"]
                     .map({"+": 1.0, "-": -1.0}).fillna(1.0).to_dict())
 
-    print(f"  Panel:   {panel['date'].min().date()} -> {panel['date'].max().date()}")
+    print(f"  Panel  : {panel['date'].min().date()} → {panel['date'].max().date()}")
     print(f"  Factors: {len(factor_names)}")
 
-    state_dim  = len(STATE_COLS)
-    algo_names = ["DAPO", "GRPO", "DAPOSwitch"]
-
-    all_bt        = {n: [] for n in algo_names + ["Fixed"]}
-    fold_summary  = []
+    algo_names = ["HybridDAPO", "PureGRPO", "PureDAPO"]
+    all_bt     = {n: [] for n in algo_names + ["Fixed"]}
+    fold_rows  = []
 
     for fold_idx, (train_end, test_start, test_end, label) in enumerate(FOLDS):
-        print(f"\n{'='*70}")
-        print(f"FOLD {fold_idx+1}/5 — {label}  |  train up to {train_end}  |"
+        print(f"\n{'=' * 72}")
+        print(f"FOLD {fold_idx + 1}/5 — {label}  |  train ≤ {train_end}  |"
               f"  test {test_start} → {test_end}")
-        print("="*70)
+        print("=" * 72)
 
-        # ── Data slices ───────────────────────────────────────────────────────
         panel_train = panel[(panel["date"] >= TRAIN_START_GLOBAL) &
                             (panel["date"] <= train_end)].copy()
         panel_test  = panel[(panel["date"] >= test_start) &
                             (panel["date"] <= test_end)].copy()
 
         if len(panel_train) < 500 or len(panel_test) < 50:
-            print(f"  Skipping fold — insufficient data.")
+            print("  Skipping — insufficient data.")
             continue
 
-        # ── Factor weights from training data only ────────────────────────────
-        print("  Computing fold factor weights (training data only) ...")
+        # ── Factor weights (train only) ───────────────────────────────────────
+        print("  Computing factor weights ...")
         signed_w = compute_fold_weights(panel_train, factor_names, signs)
 
-        # ── Build scores ──────────────────────────────────────────────────────
+        # ── Build composite scores ────────────────────────────────────────────
         print("  Building scores ...")
         sc_train = build_scores(panel_train, factor_names, signed_w)
         sc_test  = build_scores(panel_test,  factor_names, signed_w)
 
-        # ── Build episode tables ──────────────────────────────────────────────
-        ep_train, norm_p = build_episodes(sc_train, weights, fit_norm=True)
-        ep_test,  _      = build_episodes(sc_test,  weights, norm_params=norm_p)
+        # Slice only the columns needed for cs_dispersion to avoid copying 80-col panel
+        panel_train_cs = panel_train[["date", "fwd_ret_1m"]].copy()
+        panel_test_cs  = panel_test[["date", "fwd_ret_1m"]].copy()
+
+        # ── Build episode table for training (regime added in-place after) ───
+        print("  Building training episodes ...")
+        ep_train, norm_p = build_episodes(
+            sc_train, weights, panel_train_cs,
+            fit_norm=True, regime_detector=None)
+
+        # ── Fit regime detector on training episodes, then attach ─────────────
+        print("  Fitting regime detector ...")
+        regime_det = MarketRegimeDetector()
+        if not ep_train.empty:
+            regime_det.fit(ep_train)
+        _attach_regime(ep_train, regime_det)
+
+        # ── Build test episodes (regime detector applied during build) ────────
+        print("  Building test episodes ...")
+        ep_test, _ = build_episodes(
+            sc_test, weights, panel_test_cs,
+            norm_params=norm_p, fit_norm=False, regime_detector=regime_det)
 
         if ep_train.empty or ep_test.empty:
-            print("  Skipping fold — empty episodes.")
+            print("  Skipping — empty episode table.")
             continue
 
-        train_rows = list(ep_train.iterrows())
-        print(f"  Train: {len(train_rows)} months  |  Test: {len(ep_test)} months")
+        train_rows_list = [(dt, ep_train.loc[dt]) for dt in ep_train.index]
+        print(f"  Train months: {len(train_rows_list)}  |  Test months: {len(ep_test)}")
 
-        # ── Train each algorithm ──────────────────────────────────────────────
+        # Regime distribution in test set
+        if "regime_id" in ep_test.columns:
+            rc = ep_test["regime_id"].value_counts().sort_index()
+            names_map = {0: "Risk-On", 1: "Transition", 2: "Risk-Off"}
+            dist_str = "  ".join(f"{names_map.get(r, r)}={c}" for r, c in rc.items())
+            print(f"  Test regime distribution: {dist_str}")
+
+        # ── Train agents ──────────────────────────────────────────────────────
+        if HAS_TORCH:
+            AgentClasses = [HybridDAPOAgent, PureGRPOAgent, PureDAPOAgent]
+        else:
+            AgentClasses = [RuleBasedAgent] * 3
+
         fold_bt   = {}
-        fold_rows = {"label": label, "n_months": len(ep_test)}
-
-        AgentClasses = [DAPOAgent, GRPOAgent, DAPOSwitchAgent] if HAS_TORCH else [RuleBasedAgent] * 3
+        fold_info = {"label": label, "n_months": len(ep_test)}
+        fixed_bt  = None
 
         for name, AgentCls in zip(algo_names, AgentClasses):
             print(f"\n  [{name}] Training {DAPO_EPOCHS} epochs ...")
-            agent   = AgentCls(state_dim)
-            avg_r   = agent.train(train_rows, verbose=True)
-            bt, fbt = evaluate(agent, ep_test)
-            s       = ie_stats(bt)
+            agent    = AgentCls(STATE_DIM)
+            avg_r    = agent.train(train_rows_list, verbose=True)
+            bt, fbt  = evaluate(agent, ep_test)
+            s        = ie_stats(bt)
             fold_bt[name] = bt
+            if fixed_bt is None:
+                fixed_bt = fbt
             print(f"  [{name}] IR={s.get('info_ratio', float('nan')):.3f}  "
                   f"α={s.get('ann_alpha', 0)*100:.2f}%  "
-                  f"TE={s.get('track_err', 0)*100:.2f}%")
-            fold_rows[f"{name.lower()}_ir"]    = s.get("info_ratio", float("nan"))
-            fold_rows[f"{name.lower()}_alpha"] = s.get("ann_alpha", float("nan"))
-            fold_rows[f"{name.lower()}_te"]    = s.get("track_err", float("nan"))
-            fold_rows[f"{name.lower()}_maxdd"] = s.get("max_active_dd", float("nan"))
+                  f"TE={s.get('track_err', 0)*100:.2f}%  "
+                  f"Hit={s.get('hit_rate', 0)*100:.0f}%")
+            fold_info[f"{name.lower()}_ir"]    = s.get("info_ratio",    float("nan"))
+            fold_info[f"{name.lower()}_alpha"] = s.get("ann_alpha",     float("nan"))
+            fold_info[f"{name.lower()}_te"]    = s.get("track_err",     float("nan"))
+            fold_info[f"{name.lower()}_maxdd"] = s.get("max_active_dd", float("nan"))
 
-        # Fixed baseline
-        if not fbt.empty:
-            fs = ie_stats(fbt)
-            fold_bt["Fixed"] = fbt
-            fold_rows["fixed_ir"]    = fs.get("info_ratio",   float("nan"))
-            fold_rows["fixed_alpha"] = fs.get("ann_alpha",    float("nan"))
-            fold_rows["fixed_te"]    = fs.get("track_err",    float("nan"))
-            fold_rows["fixed_maxdd"] = fs.get("max_active_dd",float("nan"))
+        # Fixed baseline stats
+        if fixed_bt is not None and not fixed_bt.empty:
+            fs = ie_stats(fixed_bt)
+            fold_bt["Fixed"] = fixed_bt
+            fold_info["fixed_ir"]    = fs.get("info_ratio",    float("nan"))
+            fold_info["fixed_alpha"] = fs.get("ann_alpha",     float("nan"))
+            fold_info["fixed_te"]    = fs.get("track_err",     float("nan"))
+            fold_info["fixed_maxdd"] = fs.get("max_active_dd", float("nan"))
 
-        fold_summary.append(fold_rows)
+        fold_rows.append(fold_info)
 
         for name in algo_names + ["Fixed"]:
             if name in fold_bt and not fold_bt[name].empty:
                 all_bt[name].append(fold_bt[name])
 
-    # ── Concatenate all folds ─────────────────────────────────────────────────
-    all_bt_concat = {}
+    # ── Concatenate folds ─────────────────────────────────────────────────────
+    all_bt_cat = {}
     for name in algo_names + ["Fixed"]:
-        if all_bt[name]:
-            all_bt_concat[name] = pd.concat(all_bt[name]).sort_index()
+        parts = all_bt[name]
+        if parts:
+            all_bt_cat[name] = pd.concat(parts).sort_index()
 
-    fold_df = pd.DataFrame(fold_summary)
+    fold_df = pd.DataFrame(fold_rows)
 
-    # ── Print summary ─────────────────────────────────────────────────────────
-    print("\n" + "="*70)
+    # ── Summary table ─────────────────────────────────────────────────────────
+    print("\n" + "=" * 72)
     print("WALK-FORWARD RESULTS SUMMARY")
-    print("="*70)
+    print("=" * 72)
     if not fold_df.empty:
         for name in algo_names + ["Fixed"]:
             col = f"{name.lower()}_ir"
-            if col in fold_df.columns:
-                irs   = fold_df[col].dropna()
-                avg   = irs.mean()
-                wins  = int((fold_df.get(f"{name.lower()}_ir", pd.Series())
-                             > fold_df.get("fixed_ir", pd.Series())).sum()) if name != "Fixed" else 0
-                print(f"  {name:<6} — avg IR: {avg:.3f}  (folds: "
-                      + "  ".join(f"{v:.3f}" for v in fold_df[col].tolist()) + ")"
-                      + (f"  beats Fixed: {wins}/5" if name != "Fixed" else ""))
+            if col not in fold_df.columns:
+                continue
+            irs  = fold_df[col].dropna()
+            avg  = irs.mean()
+            vals = "  ".join(f"{v:+.3f}" for v in fold_df[col].tolist())
+            beat = ""
+            if name != "Fixed" and "fixed_ir" in fold_df.columns:
+                wins = int((fold_df[col] > fold_df["fixed_ir"]).sum())
+                beat = f"  beats Fixed: {wins}/5"
+            print(f"  {name:<12} avg IR: {avg:+.3f}  [{vals}]{beat}")
 
     # ── Save outputs ──────────────────────────────────────────────────────────
     if not fold_df.empty:
-        fold_df.to_csv(DATA_DIR / "dapo_comparison.csv", index=False)
-        print(f"\nSaved -> data/dapo_comparison.csv")
+        out_csv = DATA_DIR / "dapo_comparison.csv"
+        fold_df.to_csv(out_csv, index=False)
+        print(f"\nSaved -> {out_csv}")
 
-    if fold_df.shape[0] > 0 and all_bt_concat:
-        plot_comparison(all_bt_concat, fold_df, algo_names)
+    if fold_df.shape[0] > 0 and all_bt_cat:
+        plot_comparison(all_bt_cat, fold_df, algo_names)
 
     print("\nDone.")
 

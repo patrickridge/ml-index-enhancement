@@ -320,6 +320,218 @@ def main():
     print(f"\n  Output files saved to: {DATA_DIR}/")
     print("=" * 65)
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # PART E — FACTOR IC CORRELATION ANALYSIS (selected factors only)
+    # ─────────────────────────────────────────────────────────────────────────
+    factor_correlation_analysis()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PART E — FACTOR IC CORRELATION ANALYSIS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def factor_correlation_analysis():
+    """
+    For each factor in data/factor_selected.csv, compute the monthly IC
+    (Pearson correlation with fwd_ret_1m) across all dates, producing a
+    time-series of IC per factor.  Then build a (n_factors × n_months) IC
+    matrix and compute the Spearman correlation between each pair of factors'
+    IC time-series.  Factors are clustered with Ward linkage on 1 - |corr|.
+
+    Outputs:
+      figures/factor_ic_correlation.png   — clustered heatmap
+      data/factor_clusters.csv            — factor, cluster_id
+    """
+    from scipy.cluster.hierarchy import linkage, fcluster, leaves_list
+    from scipy.spatial.distance import squareform
+
+    print(f"\n{'─'*50}")
+    print("PART E: Factor IC Correlation Analysis")
+    print(f"{'─'*50}")
+
+    # ── 1. Load inputs ────────────────────────────────────────────────────────
+    selected_path = DATA_DIR / "factor_selected.csv"
+    if not selected_path.exists():
+        print(f"  Skipped — {selected_path} not found.")
+        return
+
+    factor_sel = pd.read_csv(selected_path)
+    if "factor" not in factor_sel.columns:
+        print("  Skipped — factor_selected.csv must contain a 'factor' column.")
+        return
+    factors = factor_sel["factor"].tolist()
+
+    print(f"  Loading {PANEL_IN}...")
+    panel = pd.read_parquet(PANEL_IN)
+    panel["date"] = pd.to_datetime(panel["date"])
+
+    # Keep only factors present in the panel
+    missing = [f for f in factors if f not in panel.columns]
+    if missing:
+        print(f"  Warning: {len(missing)} factors not found in panel — dropping: {missing}")
+    factors = [f for f in factors if f in panel.columns]
+
+    if "fwd_ret_1m" not in panel.columns:
+        print("  Skipped — fwd_ret_1m column not found in panel.")
+        return
+
+    if not factors:
+        print("  Skipped — no valid factors found.")
+        return
+
+    print(f"  Factors to analyse: {len(factors)}")
+
+    # ── 2. Compute monthly IC (Pearson) for each factor ───────────────────────
+    dates = sorted(panel["date"].unique())
+    n_factors = len(factors)
+    n_months  = len(dates)
+
+    ic_matrix = np.full((n_factors, n_months), np.nan)
+
+    for m, dt in enumerate(dates):
+        month_data = panel[panel["date"] == dt][factors + ["fwd_ret_1m"]].dropna()
+        if len(month_data) < 5:
+            continue
+        ret = month_data["fwd_ret_1m"].values
+        for fi, fac in enumerate(factors):
+            fac_vals = month_data[fac].values
+            # Pearson correlation — skip if zero variance
+            if fac_vals.std() < 1e-12 or ret.std() < 1e-12:
+                continue
+            ic_matrix[fi, m] = float(np.corrcoef(fac_vals, ret)[0, 1])
+
+    # Drop months where all factors are NaN (keeps IC matrix dense)
+    valid_months = ~np.all(np.isnan(ic_matrix), axis=0)
+    ic_matrix = ic_matrix[:, valid_months]
+    print(f"  IC matrix shape: {ic_matrix.shape}  (factors × valid months)")
+
+    # ── 3. Spearman correlation between IC time-series ────────────────────────
+    # Replace NaN with 0 for correlation (neutral IC assumption for missing months)
+    ic_filled = np.where(np.isnan(ic_matrix), 0.0, ic_matrix)
+
+    if n_factors == 1:
+        spearman_corr = np.array([[1.0]])
+    elif n_factors == 2:
+        r, _ = spearmanr(ic_filled[0], ic_filled[1])
+        spearman_corr = np.array([[1.0, r], [r, 1.0]])
+    else:
+        # spearmanr on (n_observations × n_variables) — transpose so months are rows
+        spearman_corr, _ = spearmanr(ic_filled.T)
+        if spearman_corr.ndim == 0:
+            spearman_corr = np.array([[1.0]])
+
+    spearman_corr = np.array(spearman_corr)
+    # Clip to [-1, 1] to guard against floating-point drift
+    spearman_corr = np.clip(spearman_corr, -1.0, 1.0)
+    np.fill_diagonal(spearman_corr, 1.0)
+
+    # ── 4. Hierarchical clustering (Ward, distance = 1 - |corr|) ─────────────
+    dist_matrix = 1.0 - np.abs(spearman_corr)
+    np.fill_diagonal(dist_matrix, 0.0)
+    # squareform expects a condensed distance vector
+    condensed = squareform(dist_matrix, checks=False)
+
+    Z = linkage(condensed, method="ward")
+
+    # Determine number of clusters: cut at distance threshold = 0.5
+    CLUSTER_DIST_THRESHOLD = 0.5
+    cluster_labels = fcluster(Z, t=CLUSTER_DIST_THRESHOLD, criterion="distance")
+    # Re-index cluster IDs to be 0-based
+    unique_labels = sorted(set(cluster_labels))
+    label_map = {old: new for new, old in enumerate(unique_labels)}
+    cluster_ids = np.array([label_map[c] for c in cluster_labels])
+    n_clusters = len(unique_labels)
+
+    # Dendrogram leaf order for reordering the heatmap
+    leaf_order = leaves_list(Z)
+
+    # ── 5. Save cluster CSV ───────────────────────────────────────────────────
+    cluster_df = pd.DataFrame({
+        "factor":     [factors[i] for i in range(n_factors)],
+        "cluster_id": cluster_ids,
+    })
+    cluster_df = (cluster_df
+                  .sort_values(["cluster_id", "factor"])
+                  .reset_index(drop=True))
+    cluster_df.to_csv(DATA_DIR / "factor_clusters.csv", index=False)
+    print(f"  Saved: factor_clusters.csv")
+
+    # ── 6. Print cluster summary ──────────────────────────────────────────────
+    print(f"\n  Cluster summary  (threshold={CLUSTER_DIST_THRESHOLD}, {n_clusters} clusters):")
+    for cid in range(n_clusters):
+        members = cluster_df[cluster_df["cluster_id"] == cid]["factor"].tolist()
+        print(f"    Cluster {cid}  ({len(members)} factors): {', '.join(members)}")
+
+    # ── 7. Clustered heatmap (matplotlib only) ────────────────────────────────
+    reordered_corr   = spearman_corr[np.ix_(leaf_order, leaf_order)]
+    reordered_labels = [factors[i] for i in leaf_order]
+
+    n   = n_factors
+    # Compute a sensible figure size: leave room for labels + dendrogram
+    cell_size  = max(0.35, min(0.6, 20.0 / n))
+    heat_size  = n * cell_size
+    dendro_h   = max(1.5, heat_size * 0.25)
+    fig_w      = heat_size + 1.5   # +1.5 for colorbar
+    fig_h      = heat_size + dendro_h + 0.5
+
+    fig = plt.figure(figsize=(fig_w, fig_h))
+
+    # Axes layout:
+    #   [dendro_ax]  — top, full width, shows dendrogram
+    #   [heat_ax]    — bottom, shows heatmap
+    dendro_frac = dendro_h / fig_h
+    heat_frac   = heat_size / fig_h
+
+    dendro_ax = fig.add_axes([0.12, 1.0 - dendro_frac + 0.01, 0.76, dendro_frac - 0.02])
+    heat_ax   = fig.add_axes([0.12, 0.05,                      0.76, heat_frac])
+    cbar_ax   = fig.add_axes([0.90, 0.05,                      0.03, heat_frac])
+
+    # Draw dendrogram (top orientation so root is at top)
+    from scipy.cluster.hierarchy import dendrogram
+    dendrogram(
+        Z,
+        ax=dendro_ax,
+        labels=factors,
+        leaf_rotation=90,
+        color_threshold=CLUSTER_DIST_THRESHOLD,
+        above_threshold_color="gray",
+        no_labels=True,
+    )
+    dendro_ax.set_ylabel("Distance", fontsize=8)
+    dendro_ax.axhline(CLUSTER_DIST_THRESHOLD, color="red", linewidth=0.8,
+                      linestyle="--", label=f"cut={CLUSTER_DIST_THRESHOLD}")
+    dendro_ax.tick_params(labelsize=7)
+    dendro_ax.set_title(
+        "Factor IC Correlation (Spearman) — Clustered by Ward Linkage",
+        fontsize=10, pad=6,
+    )
+
+    # Draw heatmap
+    im = heat_ax.imshow(
+        reordered_corr,
+        cmap="RdBu_r",
+        vmin=-1, vmax=1,
+        aspect="auto",
+        interpolation="nearest",
+    )
+    tick_fs = max(4, min(8, int(120 / n)))
+    heat_ax.set_xticks(range(n))
+    heat_ax.set_yticks(range(n))
+    heat_ax.set_xticklabels(reordered_labels, rotation=90, fontsize=tick_fs)
+    heat_ax.set_yticklabels(reordered_labels, fontsize=tick_fs)
+
+    # Colorbar
+    plt.colorbar(im, cax=cbar_ax)
+    cbar_ax.tick_params(labelsize=7)
+    cbar_ax.set_ylabel("Spearman corr", fontsize=7)
+
+    out_path = FIG_DIR / "factor_ic_correlation.png"
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  Saved: {out_path.name}")
+
+    print(f"\n  Part E complete — {n_factors} factors, {n_clusters} clusters.")
+
 
 if __name__ == "__main__":
     main()
