@@ -238,72 +238,39 @@ def simulate_month(scores_month, weights_month, alpha, top_n=100, bottom_n=100):
 
 class MarketRegimeDetector:
     """
-    3-state Gaussian Mixture Model fitted on 5 market features:
-      bench_vol, bench_ret, bench_momentum, vol_trend, cs_dispersion
+    3-state regime detector based on a composite market stress score.
 
-    Uses sklearn.mixture.GaussianMixture (already in requirements as scikit-learn).
-    GMM is much faster than HMM on monthly data and avoids hmmlearn dependency.
+    Composite stress score = weighted sum of percentile ranks (fitted on training):
+      +0.4 × prank(bench_vol)       — high vol      → stress
+      −0.3 × prank(bench_momentum)  — neg momentum  → stress
+      +0.2 × prank(vol_trend)       — rising vol    → stress
+      +0.1 × prank(cs_dispersion)   — wide cs disp  → stress
 
-    States relabelled after fitting:
-      0 = Risk-On    (lowest mean vol component)
-      1 = Transition (middle mean vol)
-      2 = Risk-Off   (highest mean vol)
+    Training: ranks computed within the training set → p33/p67 thresholds stored.
+    Prediction: each test month ranked against the TRAINING distribution via
+    searchsorted — avoids the sigmoid-clustering bug where everything scored
+    near the mean fell into Transition.
 
-    Falls back to rule-based 3-state if sklearn unavailable.
+    Regimes:
+      stress < p33  → Risk-On   (0)
+      p33 ≤ stress < p67 → Transition (1)
+      stress ≥ p67  → Risk-Off  (2)
     """
 
+    # Feature column indices in X_raw
+    _FEAT_COLS = ["bench_vol", "bench_ret", "bench_momentum", "vol_trend", "cs_dispersion"]
+    _WEIGHTS   = [0.4, 0.0, -0.3, 0.2, 0.1]   # index-matched to _FEAT_COLS
+
     def __init__(self):
-        self.model            = None
-        self.state_map        = None   # GMM component → canonical regime (0/1/2)
-        self._fallback_params = {}
+        self._sorted_train = None   # (n_train, 5) sorted training features per column
+        self._thresholds   = (0.33, 0.67)
+        self._n_train      = 0
 
     def _build_features(self, df):
-        """5-column raw feature matrix. Returns float64 array, no NaN/inf."""
-        cols = ["bench_vol", "bench_ret", "bench_momentum", "vol_trend", "cs_dispersion"]
-        X = np.column_stack([df[c].fillna(0.0).values for c in cols]).astype(np.float64)
+        """5-column raw feature matrix, NaN/inf → 0."""
+        X = np.column_stack([df[c].fillna(0.0).values
+                             for c in self._FEAT_COLS]).astype(np.float64)
         return np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-
-    def fit(self, df):
-        """
-        Fit thresholds from training data using percentile ranks across all 5 features.
-        Pure numpy — no external ML library, instant.
-
-        Composite stress score = weighted sum of percentile ranks:
-          +0.4 * prank(bench_vol)       high vol      → stress
-          -0.3 * prank(bench_momentum)  neg momentum  → stress
-          +0.2 * prank(vol_trend)       rising vol    → stress
-          +0.1 * prank(cs_dispersion)   wide cs disp  → stress
-
-        Regimes cut at 33rd / 67th percentile of training stress scores:
-          score < p33 → Risk-On (0)
-          p33 ≤ score < p67 → Transition (1)
-          score ≥ p67 → Risk-Off (2)
-        """
-        X_raw = self._build_features(df)
-        n     = len(X_raw)
-
-        def _prank(col):
-            """Percentile rank of each value (0–1), ties averaged."""
-            order = np.argsort(col)
-            ranks = np.empty_like(order, dtype=float)
-            ranks[order] = (np.arange(n) + 0.5) / n
-            return ranks
-
-        stress = (  0.4 * _prank(X_raw[:, 0])   # bench_vol
-                  - 0.3 * _prank(X_raw[:, 2])   # bench_momentum (neg → stress)
-                  + 0.2 * _prank(X_raw[:, 3])   # vol_trend
-                  + 0.1 * _prank(X_raw[:, 4]))  # cs_dispersion
-
-        p33 = float(np.percentile(stress, 33))
-        p67 = float(np.percentile(stress, 67))
-        self._thresholds = (p33, p67)
-        self._X_mu = X_raw.mean(axis=0)
-        self._X_sg = X_raw.std(axis=0) + 1e-8
-
-        ids = self._stress_to_ids(stress, p33, p67)
-        counts = [int((ids == r).sum()) for r in range(3)]
-        print(f"    [Regime] Detector fitted ({n} months): "
-              f"Risk-On={counts[0]}  Transition={counts[1]}  Risk-Off={counts[2]}")
 
     @staticmethod
     def _stress_to_ids(stress, p33, p67):
@@ -312,35 +279,62 @@ class MarketRegimeDetector:
         ids[stress >= p67] = REGIME_RISK_OFF
         return ids
 
+    def _stress_score(self, X_raw, sorted_train=None):
+        """
+        Compute composite stress score for X_raw rows.
+        If sorted_train provided: percentile-rank each column against that
+        reference distribution (correct OOS behaviour).
+        If not: rank within X_raw itself (used during fit).
+        """
+        n = len(X_raw)
+        stress = np.zeros(n, dtype=np.float64)
+        for j, w in enumerate(self._WEIGHTS):
+            if w == 0.0:
+                continue
+            col = X_raw[:, j]
+            if sorted_train is not None:
+                ref = sorted_train[:, j]
+                n_ref = len(ref)
+                # count how many training values lie strictly below each test value
+                counts = np.searchsorted(ref, col, side="left")
+                pranks = (counts + 0.5) / n_ref
+            else:
+                order = np.argsort(col)
+                pranks = np.empty(n, dtype=np.float64)
+                pranks[order] = (np.arange(n) + 0.5) / n
+            stress += w * pranks
+        return stress
+
+    def fit(self, df):
+        X_raw = self._build_features(df)
+        n = len(X_raw)
+        # Sort each column for fast searchsorted in predict()
+        self._sorted_train = np.sort(X_raw, axis=0)
+        self._n_train = n
+
+        stress = self._stress_score(X_raw, sorted_train=None)
+        p33 = float(np.percentile(stress, 33))
+        p67 = float(np.percentile(stress, 67))
+        self._thresholds = (p33, p67)
+
+        ids = self._stress_to_ids(stress, p33, p67)
+        counts = [int((ids == r).sum()) for r in range(3)]
+        print(f"    [Regime] Detector fitted ({n} months): "
+              f"Risk-On={counts[0]}  Transition={counts[1]}  Risk-Off={counts[2]}")
+
     def predict(self, df):
         """
         Returns (regime_ids, regime_confs).
-        regime_ids  ∈ {0, 1, 2}
-        regime_confs ∈ [0, 1]  (distance from nearest boundary, normalised)
+        Test months are ranked against the training distribution (searchsorted),
+        not against each other — so regimes are consistently calibrated OOS.
         """
-        X_raw = self._build_features(df)
-        n     = len(X_raw)
-        p33, p67 = getattr(self, "_thresholds", (0.33, 0.67))
-        mu        = getattr(self, "_X_mu", X_raw.mean(axis=0))
-        sg        = getattr(self, "_X_sg", X_raw.std(axis=0) + 1e-8)
-
-        # Score each test month using training-fitted feature scales
-        X_sc = (X_raw - mu) / sg
-
-        def _prank_vs_train(col_sc):
-            # approximate percentile rank via sigmoid of z-score
-            return 1.0 / (1.0 + np.exp(-col_sc))
-
-        stress = (  0.4 * _prank_vs_train(X_sc[:, 0])
-                  - 0.3 * _prank_vs_train(X_sc[:, 2])
-                  + 0.2 * _prank_vs_train(X_sc[:, 3])
-                  + 0.1 * _prank_vs_train(X_sc[:, 4]))
-
-        ids   = self._stress_to_ids(stress, p33, p67)
-        # Confidence: how far from the nearest boundary (0.5 = exactly on boundary)
-        mid   = (p33 + p67) / 2.0
-        span  = max(p67 - p33, 1e-6)
-        confs = np.clip(np.abs(stress - mid) / span, 0.0, 1.0)
+        X_raw  = self._build_features(df)
+        p33, p67 = self._thresholds
+        stress = self._stress_score(X_raw, sorted_train=self._sorted_train)
+        ids    = self._stress_to_ids(stress, p33, p67)
+        mid    = (p33 + p67) / 2.0
+        span   = max(p67 - p33, 1e-6)
+        confs  = np.clip(np.abs(stress - mid) / span, 0.0, 1.0)
         return ids, confs
 
 

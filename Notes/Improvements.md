@@ -67,9 +67,40 @@ After retraining on 240 months, FT-Transformer IE IR collapsed to 0.015. It is n
 
 **Fixed (29 Mar 2026):** `G_INIT` raised to 4 so the variance estimate uses ≥4 samples before deciding to extend to G_MAX=8. The trigger is now statistically meaningful.
 
-### 14. DAPO Performs Poorly During Regime Transitions — DAPOSwitch Added ✓ Upgraded
-DAPO's clip-higher mechanism (no KL) is effective when market regime is stable but undershoots during regime transitions, where GRPO's KL penalty provides better anchoring.
+### 14. 5e Rebuilt from Scratch — Hybrid GRPO/DAPO + 3-State Regime Detection ✓ Done
 
-**Implemented (29 Mar 2026):** Added `DAPOSwitchAgent` to `5e_dapo_agent.py`. Routes to DAPO (clip-higher, no KL) in stable regime periods and GRPO (REINFORCE + KL) in transition months.
+**Rebuilt (3 Apr 2026):** `5e_dapo_agent.py` completely rewritten with:
+- `HybridDAPOAgent`: single actor, switches update rule per timestep by detected regime (DAPO on Risk-On, GRPO+KL β=0.01 on Risk-Off, GRPO+KL β=0.02 on Transition)
+- `PureGRPOAgent` and `PureDAPOAgent` as comparison baselines
+- `MarketRegimeDetector`: 3-state (Risk-On/Transition/Risk-Off) using composite stress score across 5 features: bench_vol, bench_ret, bench_momentum, vol_trend, cs_dispersion
+- State space expanded to 8 features (added bench_momentum, regime_id_norm, regime_conf)
 
-**Upgraded (31 Mar 2026):** Regime detection replaced with 2-state Gaussian HMM (GaussianHMM on `[bench_vol, bench_ret]` from training data). Previously used crude vol-threshold (bench_vol > rolling median). HMM is fit per fold from training data only — no look-ahead bias. Risk-off state identified as the higher-vol HMM state. Falls back to vol-threshold if `hmmlearn` not installed (`pip install hmmlearn`).
+**Walk-forward results (3 Apr 2026):**
+| Agent | Avg IR | Folds | Beats Fixed |
+|---|---|---|---|
+| PureGRPO | 1.003 | 0.81 / 1.71 / 1.07 / 0.85 / 0.58 | 5/5 |
+| PureDAPO | 0.830 | 0.19 / 1.64 / 0.71 / 0.84 / 0.77 | 5/5 |
+| HybridDAPO | 0.721 | 0.35 / 1.59 / 0.71 / 0.34 / 0.63 | 4/5 |
+| Fixed α=1% | 0.337 | −0.74 / 1.36 / 0.34 / 0.34 / 0.38 | — |
+
+### 15. HybridDAPO Regime Detector Not Firing OOS — Fixed ✓
+
+**Problem:** Regime detector classified 90%+ of test months as Transition across all folds. Root cause: `predict()` used sigmoid(z-score) to approximate percentile ranks, which clusters near 0.5 for average months — always falling in the Transition band between p33 and p67 thresholds.
+
+**Fixed (3 Apr 2026):** `predict()` now uses `np.searchsorted` against sorted training feature columns to compute true percentile ranks of test months against the training distribution. Verified: COVID-crash months correctly classified as Risk-Off, calm bull months as Risk-On.
+
+### 16. CS-Transformer Signal Has Near-Zero OOS Predictive Power
+
+**Finding (3 Apr 2026):** `3e_cs_transformer_audit.py` shows IC = −0.002, ICIR = −0.013 over 38 out-of-sample months. The model has a mild contrarian/mean-reversion tilt (loads negatively on price_to_ma50, rsi_14, ir_3m) but no statistically significant predictive power. Marginal positive IC in Risk-Off regimes (IC = +0.006) vs negative in Risk-On (IC = −0.010), neither significant.
+
+**Action needed:** CS-T needs retraining, architectural review, or replacement with LGBM ensemble before being used in the RL pipeline.
+
+### 17. RL Agent Underperforms in 2024
+
+**Finding (3 Apr 2026):** Fold 5 (2022–2025) shows HybridDAPO IR = 0.626, PureGRPO IR = 0.582 — both weaker than earlier folds, with degradation concentrated in 2024. Likely cause: AI bull market (2023–2025) driven by a narrow set of mega-cap tech stocks, which a cross-sectional 500-stock factor signal struggles to exploit. The regime detector classifies 2024 mostly as Transition (low vol + modest momentum), giving no clear signal to the agent.
+
+**Action needed:** Investigate per-year active returns in fold 5. May need sector concentration features or a signal that captures mega-cap vs rest-of-market divergence.
+
+### 18. Factor Correlation Analysis Added ✓
+
+**Added (3 Apr 2026):** New section in `2f_factor_diagnostics.py` — `factor_correlation_analysis()`. Computes Spearman correlation between monthly IC time-series of all 43 factors, clusters via Ward linkage on (1 − |corr|), outputs `figures/factor_ic_correlation.png` and `data/factor_clusters.csv`. Identifies groups of redundant factors to inform future factor pruning.

@@ -1057,3 +1057,71 @@ Suggested using double-layered DRL for a more advanced version of the strategy:
 - **Why not now:** Requires much more data, compute, and complexity. Current transformer approach must be validated first.
 
 Natural next evolution once the current pipeline is stable and producing consistent alpha.
+
+---
+
+## Session 16 — 5e Rebuild, Regime Fix, Diagnostics (3 Apr 2026)
+
+### 16.1 — 5e_dapo_agent.py Rebuilt from Scratch
+
+Previous `5e_dapo_agent.py` was broken (runtime errors). Rebuilt completely with:
+
+**Algorithm changes:**
+- `HybridDAPOAgent` (new): single actor + reference network. Update rule per timestep:
+  - Risk-On (0) → DAPO: clip-higher (ε↑=0.28), dynamic G (4–8), no KL
+  - Risk-Off (2) → GRPO: KL-anchored (β=0.01), G=4
+  - Transition (1) → GRPO: KL-anchored (β=0.02), G=4 (most conservative)
+- `PureGRPOAgent` and `PureDAPOAgent` as clean baselines
+- `RuleBasedAgent` fallback if PyTorch unavailable
+
+**State space expanded to 8 features:**
+`signal_strength, signal_dispersion, bench_vol, recent_active_ret, rolling_te, bench_momentum, regime_id_norm, regime_conf`
+
+**`MarketRegimeDetector` (new):**
+- 3-state (Risk-On / Transition / Risk-Off)
+- Composite stress score: 0.4×prank(vol) − 0.3×prank(momentum) + 0.2×prank(vol_trend) + 0.1×prank(cs_dispersion)
+- Thresholds at 33rd/67th percentile of training stress scores
+- Pure numpy, no external ML dependency
+
+**Walk-forward results:**
+
+| Agent | Avg IR | F1 | F2 | F3 | F4 | F5 | Beats Fixed |
+|---|---|---|---|---|---|---|---|
+| PureGRPO | 1.003 | 0.805 | 1.714 | 1.065 | 0.849 | 0.582 | 5/5 |
+| PureDAPO | 0.830 | 0.192 | 1.636 | 0.710 | 0.844 | 0.766 | 5/5 |
+| HybridDAPO | 0.721 | 0.346 | 1.588 | 0.709 | 0.335 | 0.626 | 4/5 |
+| Fixed α=1% | 0.337 | −0.740 | 1.360 | 0.341 | 0.342 | 0.380 | — |
+
+HybridDAPO underperforms because the regime detector was classifying 90%+ of test months as Transition (see 16.2).
+
+### 16.2 — HybridDAPO Regime Detector Bug Fixed
+
+**Bug:** `predict()` used `sigmoid(z-score)` to approximate percentile ranks OOS. Sigmoid clusters near 0.5 for average months → stress scores always land between p33 and p67 → classified as Transition. The hybrid never took the DAPO path.
+
+**Fix:** `predict()` now uses `np.searchsorted` against sorted training feature columns to compute true percentile ranks of each test month against the training distribution. Each test month is ranked against the training period, not against other test months.
+
+Verified: COVID-crash months (Mar–May 2020) correctly classified as Risk-Off, calm 2010-2013 months as Risk-On. Need to rerun `5e_dapo_agent.py` for updated results.
+
+### 16.3 — Factor Correlation Analysis Added (2f_factor_diagnostics.py)
+
+Added `factor_correlation_analysis()` to `2f_factor_diagnostics.py`:
+- Computes monthly IC per factor, then Spearman correlation between IC time-series of all 43 factor pairs
+- Clusters factors via Ward linkage on (1 − |IC correlation|)
+- Outputs: `figures/factor_ic_correlation.png` (clustered heatmap), `data/factor_clusters.csv`
+- Identifies redundant factor groups for future pruning
+
+### 16.4 — CS-Transformer Audit (3e_cs_transformer_audit.py)
+
+New script auditing CS-Transformer signal quality:
+- **IC = −0.002, ICIR = −0.013** over 38 OOS months — near-zero predictive power
+- Signal loads negatively on short-term momentum factors (price_to_ma50, rsi_14, ir_3m) → mild contrarian tilt but not statistically significant
+- Marginal positive IC in Risk-Off regimes (IC = +0.006), slightly negative in Risk-On (IC = −0.010)
+- Outputs: `figures/cs_transformer_loadings.png`, `figures/cs_transformer_ic_stability.png`, `data/cs_transformer_loadings.csv`
+
+**Implication:** CS-Transformer needs retraining or architectural rework before use in the RL pipeline. LGBM remains the more reliable signal source.
+
+### 16.5 — 2024 RL Underperformance
+
+Fold 5 (2022–2025) shows weaker IR than earlier folds for all agents. Likely cause: 2024 AI bull market driven by narrow mega-cap tech (Magnificent 7), which cross-sectional factor models struggle to capture. The regime detector classifies most of 2024 as Transition (moderate vol, modest broad-market momentum). 
+
+Action needed: audit per-year active returns in fold 5, consider sector concentration or large-cap divergence features.
