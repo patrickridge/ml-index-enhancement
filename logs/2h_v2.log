@@ -6,34 +6,34 @@ Loading panel → data/panel_monthly_enriched.parquet
   IS  : 2005-01-31 → 2022-12-30  (124,965 rows, 377 months)
   OOS : 2023-01-31 → 2025-11-28  (22,768 rows, 39 months)
 
-  CS factors : 131
+  CS factors : 151
   Macro cols : 14  (excluded from crowding — zero CS variance)
 
 ─────────────────────────────────────────────────────────────────
 SECTION 1 — Factor Crowding (IS data only)
 ─────────────────────────────────────────────────────────────────
   Computing pairwise factor correlation (IS)...
-  Saved → data/crowding_corr_matrix.csv  shape=(131, 131)
+  Saved → data/crowding_corr_matrix.csv  shape=(151, 151)
 
   Flagging pairs with |r| > 0.7...
-  Redundant pairs found: 234
+  Redundant pairs found: 308
   Top 15 most-crowded pairs:
-        factor_a         factor_b      corr  abs_corr
-  dollar_vol_63d       size_proxy  1.000000  1.000000
-        hl_range avg_hl_range_21d  0.993531  0.993531
-         vol_20d          vol_21d  0.990441  0.990441
-     downvol_21d      cvar_95_21d -0.977758  0.977758
-         ret_12m         mom_2_12  0.950731  0.950731
-   price_to_ma50      macd_signal  0.948879  0.948879
-        vol_252d         vol_126d  0.946970  0.946970
-  ma_cross_10_50      macd_signal  0.945867  0.945867
-         ret_12m residual_ret_12m  0.944207  0.944207
-          ret_1m  residual_ret_1m  0.941367  0.941367
-          ir_12m residual_ret_12m  0.940228  0.940228
-          ret_3m            ir_3m  0.939668  0.939668
-         ret_12m           ir_12m  0.933195  0.933195
-        hl_range     atr_21d_norm  0.929138  0.929138
-avg_hl_range_21d     atr_21d_norm  0.928352  0.928352
+         factor_a           factor_b      corr  abs_corr
+ avg_hl_range_21d high_low_range_21d  1.000000  1.000000
+   dollar_vol_63d         size_proxy  1.000000  1.000000
+up_down_vol_ratio      cum_vol_ratio  1.000000  1.000000
+            ir_6m    risk_adj_mom_6m  0.999339  0.999339
+drawdown_pct_252d  nearness_52w_high  0.998656  0.998656
+         hl_range   avg_hl_range_21d  0.993531  0.993531
+         hl_range high_low_range_21d  0.993531  0.993531
+          vol_20d            vol_21d  0.990441  0.990441
+ risk_adj_mom_12m             ir_12m  0.979444  0.979444
+      downvol_21d        cvar_95_21d -0.977758  0.977758
+          ret_12m        mom_quality  0.973725  0.973725
+          ret_12m           mom_2_12  0.950731  0.950731
+    price_to_ma50        macd_signal  0.948879  0.948879
+         vol_252d           vol_126d  0.946970  0.946970
+   ma_cross_10_50        macd_signal  0.945867  0.945867
 
   Plotting correlation heatmap with clustering...
   Saved → figures/crowding_corr_heatmap.png
@@ -75,11 +75,11 @@ idio_vol_252d_top      -0.0129  -0.0133   0.0005  -0.0016   0.0031   -0.0125   -
 vol_21d_top            -0.0128  -0.0112  -0.0018  -0.0071  -0.0035   -0.0085    0.0130    0.0153    0.0245    0.0307              -8.678              True
 residual_ret_1m        -0.0126   0.0046   0.0052  -0.0100  -0.0110    0.0257    0.0432    0.0555    0.0722    0.0464              -4.230              True
 ret_1m_top             -0.0123   0.0052   0.0044  -0.0079  -0.0051    0.0171    0.0122    0.0400    0.0456    0.0400              -7.871              True
-ret_2w                 -0.0122  -0.0105  -0.0117  -0.0166  -0.0182    0.0176    0.0412    0.0205    0.0289    0.0264              -1.450              True
 mom_accel              -0.0112  -0.0095   0.0010  -0.0002   0.0018   -0.0369    0.0010    0.0280   -0.0008   -0.0197             -10.667             False
+vol_expansion          -0.0111  -0.0172  -0.0121  -0.0214  -0.0168    0.0037    0.0184    0.0205    0.0139    0.0209              -1.242              True
 
   Factors that flip sign OOS by day 7: 29
-   ['vol_momentum_21d_bot', 'size_proxy_bot', 'amihud_illiq_21d_top', 'price_to_ma10', 'bollinger_pct', 'price_to_ma20', 'log_mktcap_bot', 'rsi_14', 'vol_momentum_21d_tail', 'vol_momentum_21d', 'price_to_ma50', 'maxdd_126d_bot', 'macd_hist', 'ret_1m', 'ret_1w', 'idio_vol_252d_top', 'vol_21d_top', 'residual_ret_1m', 'ret_1m_top', 'ret_2w', 'trend_slope_21d', 'volume', 'vol_252d_top', 'ret_1w_tail', 'skew_60d', 'ret_1w_top', 'ret_1m_tail', 'ret_2w_top', 'vol_momentum_21d_top']
+   ['vol_momentum_21d_bot', 'size_proxy_bot', 'amihud_illiq_21d_top', 'price_to_ma10', 'bollinger_pct', 'price_to_ma20', 'log_mktcap_bot', 'rsi_14', 'vol_momentum_21d_tail', 'vol_momentum_21d', 'price_to_ma50', 'maxdd_126d_bot', 'macd_hist', 'ret_1m', 'ret_1w', 'idio_vol_252d_top', 'vol_21d_top', 'residual_ret_1m', 'ret_1m_top', 'vol_expansion', 'volume', 'vol_252d_top', 'ret_1w_tail', 'skew_60d', 'ret_1w_top', 'ret_1m_tail', 'ret_2w_top', 'vol_momentum_21d_top', 'reversal_size']
   Saved → figures/crowding_7day_decay_is_oos.png
 
 ─────────────────────────────────────────────────────────────────
@@ -87,8 +87,8 @@ SECTION 3 — Contrarian Factor Analysis (IS vs OOS)
 ─────────────────────────────────────────────────────────────────
   Strict split: IS ≤ TRAIN_END, OOS > TRAIN_END — NEVER mixed
 
-  Sign-flip factors (IS → OOS direction reversed): 58
-  Stable factors  (same direction IS and OOS):     73
+  Sign-flip factors (IS → OOS direction reversed): 69
+  Stable factors  (same direction IS and OOS):     82
 
   Contrarian factor IS vs OOS (top 20 by |IC_OOS|):
                     ic_is  icir_is  pct_pos_is  ic_oos  icir_oos  pct_pos_oos  n_is_months  n_oos_months       interpretation
@@ -107,12 +107,12 @@ rsi_14            -0.0178   -0.122       0.468  0.0311     0.268        0.579   
 residual_ret_1m   -0.0126   -0.094       0.480  0.0257     0.220        0.605          227            38  SHORT-TERM REVERSAL
 price_to_ma20     -0.0238   -0.167       0.451  0.0244     0.187        0.474          233            38        TECHNICAL OSC
 maxdd_126d_top    -0.0088   -0.065       0.472  0.0232     0.181        0.605          229            38                OTHER
+up_down_vol_ratio -0.0084   -0.076       0.470  0.0231     0.269        0.632          232            38                OTHER
+cum_vol_ratio     -0.0084   -0.076       0.470  0.0231     0.269        0.632          232            38                OTHER
+co_skewness_63d   -0.0039   -0.032       0.481  0.0230     0.151        0.605          231            38                OTHER
 price_to_ma100    -0.0048   -0.028       0.511  0.0222     0.181        0.553          231            38        TECHNICAL OSC
 ir_3m             -0.0038   -0.023       0.483  0.0205     0.156        0.553          230            38                OTHER
 skew_60d          -0.0087   -0.101       0.453  0.0203     0.235        0.474          232            38                OTHER
-cvar_95_21d        0.0006    0.003       0.517  0.0185     0.110        0.526          232            38                OTHER
-ret_2w            -0.0122   -0.090       0.464  0.0176     0.139        0.500          233            38  SHORT-TERM REVERSAL
-ret_2w_bot         0.0010    0.010       0.545 -0.0175    -0.222        0.579          233            38  SHORT-TERM REVERSAL
 
   Saved → data/crowding_contrarian_oos.csv
   Saved → figures/crowding_contrarian_oos.png
@@ -130,23 +130,23 @@ CROWDING & DECAY DIAGNOSTIC COMPLETE
 =================================================================
 
   Data outputs:
-    data/crowding_corr_matrix.csv       — 131×131 correlation matrix
-    data/crowding_redundant_pairs.csv   — 234 pairs with |r| > 0.7
+    data/crowding_corr_matrix.csv       — 151×151 correlation matrix
+    data/crowding_redundant_pairs.csv   — 308 pairs with |r| > 0.7
     data/crowding_7day_decay.csv        — IC day0/3/5/10 per factor
     data/crowding_contrarian_oos.csv    — IS vs OOS for sign-flip factors
     data/crowding_quintile_audit.csv    — quintile direction vs IC sign
 
-  ⚠ Factor crowding: 234 redundant pairs (|r| > 0.7)
+  ⚠ Factor crowding: 308 redundant pairs (|r| > 0.7)
   Factors appearing in most redundant pairs (candidates to DROP):
-    atr_21d_norm                        appears in 15 redundant pairs
-    vol_60d                             appears in 14 redundant pairs
-    hl_range                            appears in 13 redundant pairs
-    avg_hl_range_21d                    appears in 13 redundant pairs
-    vol_20d                             appears in 12 redundant pairs
-    vol_21d                             appears in 12 redundant pairs
-    price_to_ma50                       appears in 11 redundant pairs
-    vol_252d                            appears in 11 redundant pairs
-    price_to_ma200                      appears in 11 redundant pairs
-    vol_126d                            appears in 11 redundant pairs
+    atr_21d_norm                        appears in 17 redundant pairs
+    vol_60d                             appears in 17 redundant pairs
+    price_to_ma200                      appears in 15 redundant pairs
+    avg_hl_range_21d                    appears in 14 redundant pairs
+    hl_range                            appears in 14 redundant pairs
+    vol_20d                             appears in 14 redundant pairs
+    vol_21d                             appears in 14 redundant pairs
+    high_low_range_21d                  appears in 14 redundant pairs
+    vol_252d                            appears in 13 redundant pairs
+    intraday_vol_21d                    appears in 13 redundant pairs
 
-Done in 80.0s
+Done in 80.3s

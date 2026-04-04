@@ -1,0 +1,354 @@
+=================================================================
+FACTOR ANALYSIS — Predictive IC and Quantile Backtests
+=================================================================
+
+Loading data/panel_monthly_enriched.parquet …
+  151 features | 273 train months (2010–2022) | 312 total months | 697 tickers
+  Test period held out: 2023-01-01 → present (39 months)
+  Macro features skipped (not cross-sectional): ['vix_level', 'vix_change_21d', 'yield_10y', 'yield_spread_10y2y', 'yield_change_21d', 'dollar_index', 'credit_proxy_change', 'market_trend_spx', 'market_vol_regime', 'spx_ret_1m', 'spx_ret_3m', 'spx_ret_6m', 'spx_ret_12m', 'spx_vol_63d']
+
+Computing monthly IC for 151 features (train: 2010–2022) …
+  20/151 done
+  40/151 done
+  60/151 done
+  80/151 done
+  100/151 done
+  120/151 done
+  140/151 done
+  151/151 done
+
+Saved → factor_ic_summary.csv
+
+─────────────────────────────────────────────────────────────────
+TOP 15 FACTORS by |ICIR|
+─────────────────────────────────────────────────────────────────
+Factor                            IC    ICIR  t-stat   %pos
+─────────────────────────────────────────────────────────────────
+  size_proxy_top             -0.0337  -0.511   -6.39   28.8%
+  amihud_illiq_21d_bot       -0.0301  -0.511   -6.39   29.5%
+  vol_momentum_21d_bot       -0.0362  -0.478   -5.97   30.8%
+  size_proxy_bot             -0.0352  -0.428   -5.34   29.5%
+  amihud_illiq_21d_top       -0.0346  -0.415   -5.19   31.4%
+  log_mktcap_top             -0.0177  -0.363   -3.72   39.1%
+  log_mktcap_bot             -0.0181  -0.335   -3.05   31.3%
+  vol_momentum_21d           +0.0182   0.310    3.87   66.7%
+  vol_momentum_21d_tail      +0.0185   0.268    3.35   60.3%
+  vol_expansion              -0.0142  -0.230   -2.98   41.1%
+  price_to_ma10              -0.0303  -0.229   -2.97   40.5%
+  bollinger_pct              -0.0268  -0.209   -2.71   44.0%
+  ret_1m_top                 -0.0186  -0.205   -2.66   39.9%
+  price_to_ma20              -0.0291  -0.204   -2.64   45.2%
+  log_mktcap                 -0.0103  -0.179   -1.83   47.6%
+
+─────────────────────────────────────────────────────────────────
+BOTTOM 10 FACTORS (weakest / reversed signal)
+─────────────────────────────────────────────────────────────────
+  cvar_95_21d                -0.0014  -0.007   -0.09   50.6%
+  intraday_vol_21d           -0.0008  -0.004   -0.05   52.4%
+  downvol_21d                -0.0000  -0.000   -0.00   49.4%
+  vol_5d                     +0.0003   0.002    0.02   52.4%
+  ret_1m_bot                 +0.0002   0.002    0.03   50.6%
+  var_95_21d                 +0.0005   0.003    0.03   51.8%
+  size_proxy_tail            +0.0002   0.003    0.03   48.1%
+  ret_18m                    +0.0013   0.007    0.09   51.8%
+  atr_21d_norm               +0.0018   0.008    0.11   52.4%
+  adx_regime                 +0.0007   0.010    0.12   50.6%
+
+Significant predictors (|ICIR|>0.3, |t|>2): 8
+  Positive IC: ['vol_momentum_21d']
+  Negative IC (contrarian): ['size_proxy_top', 'amihud_illiq_21d_bot', 'vol_momentum_21d_bot', 'size_proxy_bot', 'amihud_illiq_21d_top', 'log_mktcap_top', 'log_mktcap_bot']
+
+Filter 1 — |IC| > 0 (both directions kept): 150 / 151 kept
+  Positive IC: ['vol_momentum_21d', 'vol_momentum_21d_tail', 'volume', 'amihud_illiq_21d', 'reversal_size', 'corr_spx_21d', 'beta_252d_tail', 'ret_9m_tail', 'mom_2_12', 'beta_252d', 'ret_24m_top', 'ret_consistency_12m', 'ret_24m_tail', 'autocorr_ret_21d', 'ret_9m', 'residual_mom_12m', 'ret_6m_tail', 'ret_12m_tail', 'corr_spx_63d', 'ma_cross_50_200', 'residual_ret_12m', 'ir_12m', 'ret_36m', 'risk_adj_mom_12m', 'ret_6m_top', 'residual_mom_6m', 'maxdd_126d_tail', 'ret_12m', 'beta_21d', 'ret_1w_bot', 'beta_x_idiovol', 'ret_9m_top', 'ret_18m_tail', 'mom_quality', 'beta_63d', 'vol_ratio_st', 'ret_6m', 'down_beta_63d', 'maxdd_126d', 'trend_r2_126d', 'ret_24m', 'adx_14', 'price_range_ratio', 'idio_vol_252d', 'up_beta_63d', 'ret_18m_top', 'hl_range', 'high_low_range_21d', 'avg_hl_range_21d', 'kurt_60d', 'ir_6m', 'risk_adj_mom_6m', 'maxdd_21d', 'ret_12m_top', 'nearness_52w_low', 'drawdown_pct_252d', 'nearness_52w_high', 'vol_126d', 'price_to_ma200', 'trend_strength', 'vol_252d', 'ret_2w_bot', 'adx_regime', 'atr_21d_norm', 'ret_18m', 'size_proxy_tail', 'var_95_21d', 'ret_1m_bot', 'vol_5d']
+  Negative IC (contrarian): ['size_proxy_top', 'amihud_illiq_21d_bot', 'vol_momentum_21d_bot', 'size_proxy_bot', 'amihud_illiq_21d_top', 'log_mktcap_top', 'log_mktcap_bot', 'vol_expansion', 'price_to_ma10', 'bollinger_pct', 'ret_1m_top', 'price_to_ma20', 'log_mktcap', 'vol_21d_top', 'beta_252d_bot', 'ret_1w_top', 'vol_momentum_21d_top', 'maxdd_126d_bot', 'macd_hist', 'idio_vol_252d_top', 'rsi_14', 'ret_2w_top', 'mom_accel', 'vol_252d_top', 'price_to_ma50', 'ret_1w', 'skew_60d', 'ret_1m', 'residual_ret_1m', 'dollar_vol_21d', 'ret_1m_tail', 'ret_1w_tail', 'size_proxy', 'dollar_vol_63d', 'ret_9m_bot', 'ret_2w', 'trend_slope_21d', 'idio_vol_252d_bot', 'omega_ratio_21d', 'ret_12m_bot', 'obv_signal', 'cum_vol_ratio', 'up_down_vol_ratio', 'ret_2w_tail', 'roll_spread', 'mom_decel', 'open_to_close_21d', 'macd_signal', 'log_mktcap_tail', 'amihud_illiq_21d_tail', 'ret_6m_bot', 'vol_252d_bot', 'vol_excess', 'vol_21d_tail', 'ma_cross_10_50', 'vol_21d_bot', 'price_to_ma100', 'maxdd_126d_top', 'max_ret_21d', 'vol_trend_ratio', 'ret_24m_bot', 'ret_18m_bot', 'up_down_beta_spread', 'co_skewness_63d', 'vol_contraction_signal', 'avg_gap_21d', 'vol_of_vol_63d', 'ret_3m', 'idio_vol_252d_tail', 'vol_252d_tail', 'vol_21d', 'vol_20d', 'vol_trend', 'beta_252d_top', 'ir_3m', 'beta_stability_63d', 'vol_60d', 'trend_r2_21d', 'trend_slope_63d', 'cvar_95_21d', 'intraday_vol_21d']
+
+Filter 2 — Regime stability (full panel, COVID Mar–May 2020 excluded) …
+  10/151 done
+  20/151 done
+  30/151 done
+  40/151 done
+  50/151 done
+  60/151 done
+  70/151 done
+  80/151 done
+  90/151 done
+  100/151 done
+  110/151 done
+  120/151 done
+  130/151 done
+  140/151 done
+  150/151 done
+  151/151 done
+Saved → factor_regime_stability.csv
+
+─────────────────────────────────────────────────────────────────────────────────────
+REGIME STABILITY  (COVID Mar–May 2020 excluded)
+─────────────────────────────────────────────────────────────────────────────────────
+Factor                       QE bull  COVID rec  Rate bear   AI bull   Pass  Stable
+─────────────────────────────────────────────────────────────────────────────────────
+  vol_momentum_21d_tail      +0.0228    +0.0222    -0.0040   +0.0188    3/4  ✓
+  corr_spx_21d               +0.0211    +0.0125    -0.0333   +0.0297    3/4  ✓
+  mom_2_12                   +0.0210    -0.0573    +0.0306   +0.0416    3/4  ✓
+  vol_momentum_21d           +0.0193    +0.0129    +0.0354   +0.0068    4/4  ✓
+  beta_252d                  +0.0189    +0.0609    -0.0154   +0.0201    3/4  ✓
+  beta_252d_tail             +0.0176    +0.0527    -0.0188   +0.0083    3/4  ✓
+  residual_mom_12m           +0.0172    -0.0636    +0.0436   +0.0523    3/4  ✓
+  maxdd_126d                 +0.0171    -0.0610    -0.0021   +0.0261    2/4  ✗
+  ret_36m                    +0.0168    -0.0405    -0.0432   +0.0609    2/4  ✗
+  ret_24m_tail               +0.0164    -0.0395    -0.0164   +0.0370    2/4  ✗
+  corr_spx_63d               +0.0163    +0.0127    -0.0173   +0.0448    3/4  ✓
+  maxdd_126d_tail            +0.0160    -0.0432    +0.0022   +0.0327    3/4  ✓
+  ir_12m                     +0.0156    -0.0504    +0.0273   +0.0552    3/4  ✓
+  residual_ret_12m           +0.0142    -0.0588    +0.0453   +0.0510    3/4  ✓
+  ret_9m                     +0.0142    -0.0230    +0.0197   +0.0358    3/4  ✓
+  ret_12m                    +0.0140    -0.0551    +0.0249   +0.0488    3/4  ✓
+  ret_24m                    +0.0139    -0.0526    -0.0368   +0.0507    2/4  ✗
+  risk_adj_mom_12m           +0.0139    -0.0505    +0.0261   +0.0550    3/4  ✓
+  ret_consistency_12m        +0.0137    -0.0128    -0.0053   +0.0476    2/4  ✗
+  volume                     +0.0126    +0.0262    +0.0330   +0.0028    4/4  ✓
+  mom_quality                +0.0125    -0.0522    +0.0226   +0.0519    3/4  ✓
+  beta_21d                   +0.0125    +0.0245    -0.0227   +0.0214    3/4  ✓
+  reversal_size              +0.0120    +0.0001    +0.0104   -0.0139    3/4  ✓
+  ret_9m_tail                +0.0114    -0.0068    +0.0234   +0.0230    3/4  ✓
+  ret_12m_tail               +0.0114    -0.0326    +0.0254   +0.0375    3/4  ✓
+  ma_cross_50_200            +0.0105    -0.0078    +0.0429   +0.0151    3/4  ✓
+  autocorr_ret_21d           +0.0104    -0.0308    +0.0270   +0.0048    3/4  ✓
+  ret_24m_top                +0.0093    -0.0201    +0.0017   +0.0368    3/4  ✓
+  beta_63d                   +0.0090    +0.0479    -0.0175   +0.0265    3/4  ✓
+  maxdd_21d                  +0.0085    -0.0333    -0.0061   +0.0385    2/4  ✗
+  amihud_illiq_21d           +0.0084    -0.0036    +0.0160   -0.0066    2/4  ✗
+  up_beta_63d                +0.0079    +0.0335    -0.0181   +0.0345    3/4  ✓
+  ret_18m_tail               +0.0064    -0.0188    +0.0068   +0.0459    3/4  ✓
+  trend_r2_126d              +0.0062    -0.0333    +0.0177   +0.0016    3/4  ✓
+  drawdown_pct_252d          +0.0060    -0.0406    +0.0163   +0.0374    3/4  ✓
+  nearness_52w_high          +0.0059    -0.0410    +0.0162   +0.0379    3/4  ✓
+  ret_2w_bot                 +0.0051    -0.0083    +0.0084   -0.0175    2/4  ✗
+  ret_1w_bot                 +0.0048    +0.0062    -0.0019   -0.0008    2/4  ✗
+  beta_x_idiovol             +0.0047    +0.0538    -0.0013   -0.0008    2/4  ✗
+  ret_18m                    +0.0046    -0.0376    -0.0193   +0.0606    2/4  ✗
+  ret_6m_tail                +0.0046    +0.0038    +0.0457   +0.0190    4/4  ✓
+  down_beta_63d              +0.0045    +0.0477    -0.0144   +0.0268    3/4  ✓
+  residual_mom_6m            +0.0040    -0.0008    +0.0510   +0.0277    3/4  ✓
+  log_mktcap_tail            +0.0040    -0.0154    -0.0301   +0.0146    2/4  ✗
+  kurt_60d                   +0.0035    -0.0022    -0.0305   -0.0074    1/4  ✓
+  var_95_21d                 +0.0031    -0.0258    +0.0017   +0.0187    3/4  ✓
+  vol_ratio_st               +0.0029    +0.0030    +0.0067   +0.0033    4/4  ✓
+  ret_9m_top                 +0.0026    -0.0091    +0.0239   +0.0197    3/4  ✓
+  trend_strength             +0.0021    -0.0166    +0.0158   +0.0147    3/4  ✓
+  cvar_95_21d                +0.0020    -0.0270    -0.0034   +0.0185    2/4  ✗
+  co_skewness_63d            +0.0020    -0.0178    -0.0227   +0.0230    2/4  ✗
+  hl_range                   +0.0018    +0.0219    +0.0125   -0.0153    3/4  ✓
+  avg_hl_range_21d           +0.0014    +0.0233    +0.0128   -0.0162    3/4  ✓
+  high_low_range_21d         +0.0014    +0.0233    +0.0128   -0.0162    3/4  ✓
+  ir_6m                      +0.0012    -0.0118    +0.0400   +0.0298    3/4  ✓
+  risk_adj_mom_6m            +0.0007    -0.0122    +0.0402   +0.0298    3/4  ✓
+  ret_12m_top                +0.0007    -0.0164    +0.0160   +0.0332    3/4  ✓
+  ret_6m                     +0.0003    +0.0117    +0.0434   +0.0255    4/4  ✓
+  ret_6m_top                 +0.0002    +0.0025    +0.0509   +0.0103    4/4  ✓
+  ret_18m_top                -0.0002    +0.0095    -0.0079   +0.0431    2/4  ✗
+  adx_14                     -0.0003    -0.0058    -0.0020   -0.0051    0/4  ✓
+  vol_5d                     -0.0003    +0.0109    -0.0109   -0.0062    1/4  ✓
+  vol_contraction_signal     -0.0007    +0.0134    -0.0323   +0.0013    2/4  ✗
+  up_down_beta_spread        -0.0007    -0.0049    -0.0124   -0.0152    0/4  ✓
+  vol_trend                  -0.0008    -0.0241    -0.0025   -0.0000    0/4  ✓
+  price_range_ratio          -0.0014    +0.0356    +0.0020   -0.0006    2/4  ✗
+  atr_21d_norm               -0.0014    +0.0277    +0.0032   -0.0139    2/4  ✗
+  price_to_ma200             -0.0015    -0.0021    +0.0253   +0.0359    2/4  ✗
+  trend_slope_63d            -0.0016    -0.0130    +0.0209   +0.0119    2/4  ✗
+  trend_r2_21d               -0.0020    -0.0171    -0.0073   -0.0235    0/4  ✓
+  idio_vol_252d              -0.0020    +0.0358    +0.0130   -0.0153    2/4  ✗
+  amihud_illiq_21d_tail      -0.0024    -0.0094    -0.0140   -0.0170    0/4  ✓
+  ret_1m_bot                 -0.0026    -0.0060    +0.0358   -0.0395    1/4  ✓
+  adx_regime                 -0.0029    -0.0009    +0.0106   -0.0069    1/4  ✓
+  maxdd_126d_top             -0.0031    -0.0378    -0.0145   +0.0232    1/4  ✓
+  size_proxy_tail            -0.0035    +0.0165    +0.0144   -0.0041    2/4  ✗
+  intraday_vol_21d           -0.0036    +0.0154    +0.0019   -0.0125    2/4  ✗
+  vol_126d                   -0.0037    +0.0454    -0.0014   -0.0036    1/4  ✓
+  downvol_21d                -0.0037    +0.0277    +0.0023   -0.0201    2/4  ✗
+  log_mktcap                 -0.0040    -0.0171    -0.0454   +0.0096    1/4  ✓
+  vol_of_vol_63d             -0.0044    +0.0087    -0.0209   +0.0046    2/4  ✗
+  nearness_52w_low           -0.0045    +0.0118    -0.0019   +0.0385    2/4  ✗
+  vol_trend_ratio            -0.0047    -0.0140    +0.0154   +0.0018    2/4  ✗
+  ir_3m                      -0.0048    -0.0104    +0.0120   +0.0205    2/4  ✗
+  beta_252d_top              -0.0049    +0.0268    -0.0288   +0.0162    2/4  ✗
+  vol_252d                   -0.0050    +0.0412    +0.0069   -0.0046    2/4  ✗
+  obv_signal                 -0.0059    -0.0071    -0.0152   +0.0133    1/4  ✓
+  beta_stability_63d         -0.0060    +0.0161    -0.0055   -0.0116    1/4  ✓
+  ma_cross_10_50             -0.0065    -0.0197    -0.0332   +0.0420    1/4  ✓
+  ret_6m_bot                 -0.0067    -0.0031    -0.0170   -0.0181    0/4  ✓
+  vol_21d_bot                -0.0069    -0.0170    -0.0102   +0.0047    1/4  ✓
+  ret_3m                     -0.0074    -0.0042    +0.0180   +0.0140    2/4  ✗
+  vol_60d                    -0.0077    +0.0318    -0.0074   -0.0051    1/4  ✓
+  size_proxy                 -0.0078    +0.0038    -0.0150   +0.0042    2/4  ✗
+  dollar_vol_63d             -0.0078    +0.0038    -0.0150   +0.0042    2/4  ✗
+  vol_252d_bot               -0.0083    -0.0202    -0.0090   +0.0081    1/4  ✓
+  dollar_vol_21d             -0.0089    +0.0024    -0.0082   +0.0026    2/4  ✗
+  vol_20d                    -0.0093    +0.0185    +0.0013   -0.0083    2/4  ✗
+  idio_vol_252d_tail         -0.0094    +0.0236    +0.0045   -0.0152    2/4  ✗
+  vol_252d_tail              -0.0095    +0.0207    -0.0016   -0.0135    1/4  ✓
+  vol_momentum_21d_top       -0.0095    +0.0059    -0.0206   +0.0030    2/4  ✗
+  vol_21d_tail               -0.0096    -0.0012    -0.0076   -0.0088    0/4  ✓
+  ret_18m_bot                -0.0098    +0.0378    -0.0181   -0.0253    1/4  ✓
+  idio_vol_252d_bot          -0.0100    -0.0192    -0.0092   +0.0103    1/4  ✓
+  log_mktcap_top             -0.0103    -0.0315    -0.0529   -0.0002    0/4  ✓
+  vol_21d                    -0.0104    +0.0211    +0.0003   -0.0080    2/4  ✗
+  max_ret_21d                -0.0109    +0.0031    -0.0189   +0.0098    2/4  ✗
+  vol_expansion              -0.0112    -0.0234    -0.0430   +0.0037    1/4  ✓
+  roll_spread                -0.0114    +0.0230    -0.0335   -0.0044    1/4  ✓
+  cum_vol_ratio              -0.0127    -0.0097    +0.0197   +0.0231    2/4  ✗
+  skew_60d                   -0.0127    -0.0068    +0.0051   +0.0203    2/4  ✗
+  up_down_vol_ratio          -0.0127    -0.0097    +0.0197   +0.0231    2/4  ✗
+  vol_excess                 -0.0128    -0.0121    +0.0135   -0.0388    1/4  ✓
+  macd_signal                -0.0134    -0.0118    -0.0349   +0.0440    1/4  ✓
+  price_to_ma100             -0.0141    +0.0044    +0.0049   +0.0222    3/4  ✓
+  avg_gap_21d                -0.0143    +0.0237    +0.0163   +0.0091    3/4  ✓
+  ret_9m_bot                 -0.0144    +0.0011    -0.0109   -0.0146    1/4  ✓
+  ret_24m_bot                -0.0151    +0.0388    +0.0263   -0.0183    2/4  ✗
+  ret_12m_bot                -0.0163    +0.0324    -0.0217   -0.0227    1/4  ✓
+  mom_decel                  -0.0163    +0.0142    +0.0058   +0.0313    3/4  ✓
+  ret_1m_tail                -0.0167    +0.0179    -0.0405   +0.0378    2/4  ✗
+  open_to_close_21d          -0.0169    +0.0104    -0.0100   +0.0398    2/4  ✗
+  omega_ratio_21d            -0.0169    -0.0146    -0.0074   +0.0399    1/4  ✓
+  ret_1w_tail                -0.0170    -0.0016    +0.0279   +0.0031    2/4  ✗
+  ret_2w_tail                -0.0175    +0.0241    -0.0130   +0.0137    2/4  ✗
+  trend_slope_21d            -0.0203    +0.0109    -0.0592   +0.0438    2/4  ✗
+  ret_1w_top                 -0.0205    +0.0036    +0.0392   +0.0039    3/4  ✓
+  ret_2w_top                 -0.0209    +0.0273    -0.0110   +0.0031    2/4  ✗
+  vol_21d_top                -0.0210    -0.0186    -0.0213   -0.0085    0/4  ✓
+  vol_252d_top               -0.0223    +0.0106    -0.0113   -0.0121    1/4  ✓
+  price_to_ma50              -0.0230    -0.0215    -0.0279   +0.0414    1/4  ✓
+  idio_vol_252d_top          -0.0238    +0.0158    -0.0025   -0.0125    1/4  ✓
+  ret_1w                     -0.0242    -0.0223    +0.0345   +0.0036    2/4  ✗
+  log_mktcap_bot             -0.0245    -0.0103    -0.0105   -0.0218    0/4  ✓
+  ret_1m                     -0.0247    +0.0040    -0.0292   +0.0410    2/4  ✗
+  rsi_14                     -0.0259    -0.0111    -0.0050   +0.0311    1/4  ✓
+  residual_ret_1m            -0.0261    +0.0095    +0.0132   +0.0257    3/4  ✓
+  ret_2w                     -0.0266    +0.0272    -0.0253   +0.0176    2/4  ✗
+  maxdd_126d_bot             -0.0271    +0.0265    -0.0181   -0.0255    1/4  ✓
+  ret_1m_top                 -0.0274    +0.0204    -0.0249   +0.0171    2/4  ✗
+  mom_accel                  -0.0275    +0.0569    -0.0190   -0.0369    1/4  ✓
+  beta_252d_bot              -0.0314    -0.0518    -0.0009   +0.0041    1/4  ✓
+  macd_hist                  -0.0327    +0.0324    -0.0348   +0.0101    2/4  ✗
+  bollinger_pct              -0.0339    -0.0086    -0.0006   +0.0169    1/4  ✓
+  amihud_illiq_21d_bot       -0.0353    -0.0163    -0.0260   -0.0031    0/4  ✓
+  amihud_illiq_21d_top       -0.0375    -0.0293    -0.0455   -0.0273    0/4  ✓
+  size_proxy_bot             -0.0396    -0.0241    -0.0397   -0.0099    0/4  ✓
+  price_to_ma20              -0.0397    +0.0111    -0.0393   +0.0244    2/4  ✗
+  price_to_ma10              -0.0407    -0.0120    +0.0004   +0.0111    2/4  ✗
+  vol_momentum_21d_bot       -0.0431    -0.0261    -0.0154   -0.0244    0/4  ✓
+  size_proxy_top             -0.0432    +0.0003    -0.0173   -0.0155    1/4  ✓
+
+Final filter (|IC|>0 + sign-consistent across regimes): 95 / 151 factors kept
+  Kept positive IC: ['vol_momentum_21d', 'vol_momentum_21d_tail', 'volume', 'reversal_size', 'corr_spx_21d', 'beta_252d_tail', 'ret_9m_tail', 'mom_2_12', 'beta_252d', 'ret_24m_top', 'autocorr_ret_21d', 'ret_9m', 'residual_mom_12m', 'ret_6m_tail', 'ret_12m_tail', 'corr_spx_63d', 'ma_cross_50_200', 'residual_ret_12m', 'ir_12m', 'risk_adj_mom_12m', 'ret_6m_top', 'residual_mom_6m', 'maxdd_126d_tail', 'ret_12m', 'beta_21d', 'ret_9m_top', 'ret_18m_tail', 'mom_quality', 'beta_63d', 'vol_ratio_st', 'ret_6m', 'down_beta_63d', 'trend_r2_126d', 'adx_14', 'up_beta_63d', 'hl_range', 'high_low_range_21d', 'avg_hl_range_21d', 'kurt_60d', 'ir_6m', 'risk_adj_mom_6m', 'ret_12m_top', 'drawdown_pct_252d', 'nearness_52w_high', 'vol_126d', 'trend_strength', 'adx_regime', 'var_95_21d', 'ret_1m_bot', 'vol_5d']
+  Kept negative IC (contrarian): ['size_proxy_top', 'amihud_illiq_21d_bot', 'vol_momentum_21d_bot', 'size_proxy_bot', 'amihud_illiq_21d_top', 'log_mktcap_top', 'log_mktcap_bot', 'vol_expansion', 'bollinger_pct', 'log_mktcap', 'vol_21d_top', 'beta_252d_bot', 'ret_1w_top', 'maxdd_126d_bot', 'idio_vol_252d_top', 'rsi_14', 'mom_accel', 'vol_252d_top', 'price_to_ma50', 'residual_ret_1m', 'ret_9m_bot', 'idio_vol_252d_bot', 'omega_ratio_21d', 'ret_12m_bot', 'obv_signal', 'roll_spread', 'mom_decel', 'macd_signal', 'amihud_illiq_21d_tail', 'ret_6m_bot', 'vol_252d_bot', 'vol_excess', 'vol_21d_tail', 'ma_cross_10_50', 'vol_21d_bot', 'price_to_ma100', 'maxdd_126d_top', 'ret_18m_bot', 'up_down_beta_spread', 'avg_gap_21d', 'vol_252d_tail', 'vol_trend', 'beta_stability_63d', 'vol_60d', 'trend_r2_21d']
+  Dropped (sign unstable across regimes): ['price_to_ma10', 'ret_1m_top', 'price_to_ma20', 'amihud_illiq_21d', 'vol_momentum_21d_top', 'macd_hist', 'ret_2w_top', 'ret_1w', 'skew_60d', 'ret_1m', 'dollar_vol_21d', 'ret_1m_tail', 'ret_1w_tail', 'size_proxy', 'dollar_vol_63d', 'ret_2w', 'trend_slope_21d', 'cum_vol_ratio', 'up_down_vol_ratio', 'ret_2w_tail', 'open_to_close_21d', 'ret_consistency_12m', 'ret_24m_tail', 'log_mktcap_tail', 'ret_36m', 'max_ret_21d', 'vol_trend_ratio', 'ret_24m_bot', 'ret_1w_bot', 'beta_x_idiovol', 'co_skewness_63d', 'vol_contraction_signal', 'maxdd_126d', 'vol_of_vol_63d', 'ret_3m', 'idio_vol_252d_tail', 'ret_24m', 'price_range_ratio', 'vol_21d', 'idio_vol_252d', 'ret_18m_top', 'vol_20d', 'beta_252d_top', 'ir_3m', 'maxdd_21d', 'nearness_52w_low', 'price_to_ma200', 'vol_252d', 'trend_slope_63d', 'ret_2w_bot', 'atr_21d_norm', 'cvar_95_21d', 'ret_18m', 'intraday_vol_21d', 'size_proxy_tail']
+
+Computing IC decay (lags 0–60) for top 10 positive + top 10 negative factors …
+  1/20: vol_momentum_21d
+  2/20: vol_momentum_21d_tail
+  3/20: volume
+  4/20: reversal_size
+  5/20: corr_spx_21d
+  6/20: beta_252d_tail
+  7/20: ret_9m_tail
+  8/20: mom_2_12
+  9/20: beta_252d
+  10/20: ret_24m_top
+  11/20: size_proxy_top
+  12/20: amihud_illiq_21d_bot
+  13/20: vol_momentum_21d_bot
+  14/20: size_proxy_bot
+  15/20: amihud_illiq_21d_top
+  16/20: log_mktcap_top
+  17/20: log_mktcap_bot
+  18/20: vol_expansion
+  19/20: bollinger_pct
+  20/20: log_mktcap
+Saved → factor_ic_decay.csv
+
+Running quintile backtests, turnover & RAS tests (train: 2010–2022) …
+  (RAS uses 100 random permutations per factor — takes ~2 min)
+  1/20: vol_momentum_21d                Spread=+6.6%  Mono=✗  Turnover=44%  RAS p=0.66 [✗ noise]
+  3/20: volume                          Spread=+6.8%  Mono=✗  Turnover=40%  RAS p=0.58 [✗ noise]
+  4/20: reversal_size                   Spread=-1.4%  Mono=✗  Turnover=45%  RAS p=0.92 [✗ noise]
+  5/20: corr_spx_21d                    Spread=+0.2%  Mono=✗  Turnover=75%  RAS p=0.89 [✗ noise]
+  8/20: mom_2_12                        Spread=+4.4%  Mono=✗  Turnover=53%  RAS p=0.00 [✓ real]
+  9/20: beta_252d                       Spread=+7.2%  Mono=✗  Turnover=37%  RAS p=0.00 [✓ real]
+  19/20: bollinger_pct                   Spread=-9.8%  Mono=✗  Turnover=83%  RAS p=0.00 [✓ real]
+  20/20: log_mktcap                      Spread=-25.3%  Mono=✗  Turnover=37%  RAS p=0.16 [✗ noise]
+Saved → factor_quintile_returns.csv
+  Saved: factor_quintile_plot.png
+
+Generating plots …
+  Saved: factor_ic_summary_positive.png
+  Saved: factor_ic_summary_negative.png
+  Saved: factor_ic_decay_positive.png
+  Saved: factor_ic_decay_negative.png
+
+=================================================================
+OOS IC DIAGNOSTIC  (test period: 2022-12 → present)
+=================================================================
+  OOS months: 39  (2023-01-31 → 2025-11-28)
+  Computing OOS IC for 151 features...
+
+────────────────────────────────────────────────────────────────────────
+Factor                        IC_IS   IC_OOS  ICIR_OOS   Decay  Status
+────────────────────────────────────────────────────────────────────────
+  ret_36m                   +0.0096  +0.0609    +0.468   +6.32  stable
+  ret_18m                   +0.0013  +0.0606    +0.376  +46.43  stable
+  ir_12m                    +0.0113  +0.0552    +0.392   +4.88  stable
+  risk_adj_mom_12m          +0.0096  +0.0550    +0.378   +5.71  stable
+  residual_mom_12m          +0.0123  +0.0523    +0.318   +4.26  stable
+  mom_quality               +0.0075  +0.0519    +0.380   +6.93  stable
+  residual_ret_12m          +0.0109  +0.0510    +0.328   +4.69  stable
+  ret_24m                   +0.0048  +0.0507    +0.281  +10.65  stable
+  ret_12m                   +0.0087  +0.0488    +0.372   +5.63  stable
+  ret_consistency_12m       +0.0103  +0.0476    +0.367   +4.64  stable
+  ret_18m_tail              +0.0052  +0.0459    +0.378   +8.83  stable
+  corr_spx_63d              +0.0084  +0.0448    +0.243   +5.35  stable
+  macd_signal               -0.0113  +0.0440    +0.337   -3.91  FLIP
+  trend_slope_21d           -0.0155  +0.0438    +0.306   -2.82  FLIP
+  ret_18m_top               +0.0024  +0.0431    +0.397  +17.78  stable
+  ma_cross_10_50            -0.0078  +0.0420    +0.318   -5.40  FLIP
+  mom_2_12                  +0.0143  +0.0416    +0.291   +2.91  stable
+  price_to_ma50             -0.0196  +0.0414    +0.343   -2.11  FLIP
+  ret_1m                    -0.0188  +0.0410    +0.305   -2.18  FLIP
+  omega_ratio_21d           -0.0127  +0.0399    +0.322   -3.14  FLIP
+  open_to_close_21d         -0.0101  +0.0398    +0.352   -3.93  FLIP
+  ret_1m_bot                +0.0002  -0.0395    -0.476 -186.06  FLIP
+  vol_excess                -0.0071  -0.0388    -0.238   +5.47  stable
+  maxdd_21d                 +0.0032  +0.0385    +0.241  +11.87  stable
+  nearness_52w_low          +0.0020  +0.0385    +0.331  +19.36  stable
+  nearness_52w_high         +0.0025  +0.0379    +0.234  +14.87  stable
+  ret_1m_tail               -0.0126  +0.0378    +0.384   -3.00  FLIP
+  ret_12m_tail              +0.0085  +0.0375    +0.376   +4.43  stable
+  drawdown_pct_252d         +0.0027  +0.0374    +0.231  +13.91  stable
+  ret_24m_tail              +0.0086  +0.0370    +0.270   +4.31  stable
+
+OOS Summary (39 months):
+  Stable  (same sign, |decay ratio|≥0.5): 73
+  Decayed (same sign, |decay ratio|<0.5): 9
+  Flipped (sign reversal OOS):            69
+  Flipped factors: ['ret_1m', 'ret_3m', 'vol_252d', 'hl_range', 'ret_1w', 'ret_2w', 'vol_5d', 'vol_126d', 'kurt_60d', 'cvar_95_21d', 'omega_ratio_21d', 'price_to_ma10', 'price_to_ma20', 'price_to_ma50', 'price_to_ma100', 'ma_cross_10_50', 'rsi_14', 'macd_signal', 'macd_hist', 'bollinger_pct', 'trend_slope_21d', 'trend_slope_63d', 'dollar_vol_21d', 'dollar_vol_63d', 'vol_trend_ratio', 'obv_signal', 'idio_vol_252d', 'avg_hl_range_21d', 'avg_gap_21d', 'open_to_close_21d', 'atr_21d_norm', 'skew_60d', 'amihud_illiq_21d', 'size_proxy', 'vol_of_vol_63d', 'max_ret_21d', 'up_down_vol_ratio', 'co_skewness_63d', 'vol_contraction_signal', 'price_range_ratio', 'reversal_size', 'adx_14', 'adx_regime', 'vol_expansion', 'cum_vol_ratio', 'high_low_range_21d', 'ir_3m', 'residual_ret_1m', 'beta_x_idiovol', 'mom_decel', 'log_mktcap', 'ret_1m_top', 'ret_1m_bot', 'ret_1m_tail', 'ret_2w_top', 'ret_2w_bot', 'ret_2w_tail', 'ret_1w_top', 'ret_1w_bot', 'ret_1w_tail', 'vol_momentum_21d_top', 'vol_21d_bot', 'vol_252d_bot', 'idio_vol_252d_bot', 'beta_252d_top', 'beta_252d_bot', 'maxdd_126d_top', 'size_proxy_tail', 'log_mktcap_tail']
+  Saved → data/factor_oos_ic.csv
+
+=================================================================
+FACTOR ANALYSIS COMPLETE
+=================================================================
+  Features analysed:  151
+  Train months:       273  (2010-01-01 → 2022-12-31)
+  Total months:       312  (2010-01-22 → 2025-11-28)
+  Significant factors (|ICIR|>0.3, |t|>2): 8 / 151
+
+  Files saved to data/:
+    factor_ic_summary.csv        ← ranked table of all factors
+    factor_ic_decay.csv          ← IC persistence at lags 0–60
+    factor_quintile_returns.csv  ← Q1–Q5 returns, monotonicity, turnover, RAS p-value
+    factor_quintile_plot.png          ← bar chart Q1–Q5 for top 10 factors
+    factor_ic_summary_positive.png   ← top 10 positive IC factors
+    factor_ic_summary_negative.png   ← top 10 negative IC (contrarian) factors
+    factor_ic_decay_positive.png     ← decay curves for top 10 positive IC
+    factor_ic_decay_negative.png     ← decay curves for top 10 negative IC
+=================================================================
+
+Done in 9.4 min
