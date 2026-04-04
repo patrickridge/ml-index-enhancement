@@ -27,6 +27,11 @@ Factor categories built here:
   Cat 11 — Time signal factors (5 new: ir_6m, trend_r2_126d, ret_consistency_12m, skew_60d, drawdown_pct_252d)
   Cat 12 — Barra-style factors (4 new: amihud_illiq_21d, size_proxy, vol_of_vol_63d, beta_stability_63d)
   Cat 13 — Cross-sectional interaction factors (5 new, monthly: residual_ret_1m, beta_x_idiovol, up_down_beta_spread, vol_excess, mom_decel)
+  Cat 14 — Size / market cap (1 new: log_mktcap via yfinance)
+  Cat 15 — Tail ranking features (51 new: _top/_bot/_tail dummies for 17 base factors)
+  Cat 16 — Mined alpha factors (12 new: nearness_52w_high, max_ret_21d, risk_adj_mom_6m/12m,
+            residual_mom_6m/12m, up_down_vol_ratio, co_skewness_63d, vol_contraction_signal,
+            mom_quality, price_range_ratio, reversal_size)
 
 Run time: ~5-10 min on a laptop.
 """
@@ -55,6 +60,7 @@ from utils_factors import (
     fetch_market_cap_data,
     add_size_factor,
     add_tail_ranking_features,
+    add_mined_factors,
 )
 from config import MACRO_COLS
 import time as _time; _t0 = _time.time()
@@ -196,6 +202,9 @@ def build_daily_features(prices: pd.DataFrame,
 
     print("  Cat 12: Barra-style factors...")
     prices = add_barra_style_factors(prices)
+
+    print("  Cat 16: mined factors...")
+    prices = add_mined_factors(prices)
 
     # Carry month-end close for market cap computation (Cat 14).
     # Named close_me — not in exclude_cols so it survives sample_at_month_end.

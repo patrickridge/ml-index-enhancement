@@ -181,75 +181,208 @@ except Exception as e:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 2 — 7-DAY DECAY (from factor_ic_decay_daily.csv)
+# SECTION 2 — 7-DAY IC DECAY: IS vs OOS (computed from daily prices)
 # ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "─" * 65)
-print("SECTION 2 — 7-Day Intra-Month Factor Decay")
+print("SECTION 2 — 7-Day IC Decay: IS vs OOS")
 print("─" * 65)
-print("  (Uses factor_ic_decay_daily.csv — IC at days 1/2/3/5/7/10 ahead)")
+print("  Computes IC at days 1/3/5/7/10 using daily prices for forward returns.")
+print(f"  IS  = dates ≤ {TRAIN_END}  |  OOS = dates > {TRAIN_END}  — NEVER mixed.")
 
-decay_path = DATA_DIR / "factor_ic_decay_daily.csv"
-if not decay_path.exists():
-    print("  [WARN] factor_ic_decay_daily.csv not found — skipping Section 2")
-    decay_daily = None
-else:
-    decay_daily = pd.read_csv(decay_path, index_col="factor")
-    # Columns: day_1, day_2, day_3, day_5, day_10, day_15, day_20, ...
-    # We want day_1, day_3, day_7 (or day_5 if day_7 absent)
-    day_cols_want = ["day_1", "day_3", "day_5", "day_10"]
-    day_cols_avail = [c for c in day_cols_want if c in decay_daily.columns]
-    decay_7d = decay_daily[day_cols_avail].copy()
+PRICES_PATH = Path("data/prices.parquet")
+DAY_LAGS    = [1, 3, 5, 7, 10]
 
-    # Also load lag-0 IC from factor_ic_summary for context
-    ic_summary = pd.read_csv(DATA_DIR / "factor_ic_summary.csv", index_col="factor")
-    decay_7d["IC_day0"] = ic_summary["ic_mean"].reindex(decay_7d.index)
-
-    # Decay ratio: IC_day5 / IC_day0 — >0.5 = slow decay, <0.2 = very fast
-    if "day_5" in decay_7d.columns:
-        decay_7d["decay_5d_ratio"] = (
-            decay_7d["day_5"] / decay_7d["IC_day0"].replace(0, np.nan)
-        ).round(3)
-
-    # Flag fast decayers: |IC_day5| < 30% of |IC_day0| and |IC_day0| > 0.01
-    decay_7d["fast_decay"] = (
-        (decay_7d["IC_day0"].abs() > 0.01) &
-        (decay_7d.get("decay_5d_ratio", pd.Series(np.nan, index=decay_7d.index)).abs() < 0.3)
+# Limit to factors with clear IS IC signal (avoid noise-dominated factors)
+ic_sum_path = DATA_DIR / "factor_ic_summary.csv"
+if ic_sum_path.exists():
+    ic_sum_all = pd.read_csv(ic_sum_path, index_col="factor")
+    # Pick top 40 factors by |ICIR| from IS, excluding macro
+    top_factors_decay = (
+        ic_sum_all["icir"].abs()
+        .reindex([f for f in ic_sum_all.index if f in cs_factors])
+        .dropna()
+        .sort_values(ascending=False)
+        .head(40)
+        .index.tolist()
     )
+else:
+    top_factors_decay = cs_factors[:40]
 
-    decay_7d = decay_7d.sort_values("IC_day0", key=abs, ascending=False)
-    decay_7d.to_csv(DATA_DIR / "crowding_7day_decay.csv")
-    print(f"  Saved → data/crowding_7day_decay.csv")
-    print(f"\n  Top 20 factors by |IC_day0| with 7-day decay:")
-    print(decay_7d.head(20).to_string())
+print(f"  Analysing {len(top_factors_decay)} top factors by |ICIR_IS|")
 
-    n_fast = decay_7d["fast_decay"].sum()
-    print(f"\n  Fast-decaying factors (decay within 5 days): {n_fast}")
-    fast_list = decay_7d[decay_7d["fast_decay"]].index.tolist()
-    if fast_list:
-        print("  ", fast_list[:20])
+if not PRICES_PATH.exists():
+    print("  [WARN] data/prices.parquet not found — skipping Section 2")
+    decay_7d_result = None
+else:
+    print("  Loading daily prices...")
+    prices_raw = pd.read_parquet(PRICES_PATH, columns=["date", "ticker", "close"])
+    prices_raw["date"] = pd.to_datetime(prices_raw["date"])
+    prices_raw = prices_raw.sort_values(["ticker", "date"])
 
-    # Plot: bar chart of IC_day0, day_3, day_5 for top 30 factors
-    top30 = decay_7d.head(30)
-    fig, ax = plt.subplots(figsize=(16, 7))
-    x = np.arange(len(top30))
-    w = 0.25
-    ax.bar(x - w, top30["IC_day0"], w, label="Day 0 (monthly IC)", color="#2196F3", alpha=0.85)
-    if "day_3" in top30.columns:
-        ax.bar(x,     top30["day_3"],   w, label="Day 3",  color="#FF9800", alpha=0.85)
-    if "day_5" in top30.columns:
-        ax.bar(x + w, top30["day_5"],   w, label="Day 5",  color="#F44336", alpha=0.85)
-    ax.axhline(0, color="black", lw=0.8)
-    ax.set_xticks(x)
-    ax.set_xticklabels(top30.index, rotation=90, fontsize=7)
-    ax.set_ylabel("IC")
-    ax.set_title("7-Day Factor Decay — IC at Day 0 / 3 / 5 (IS data)\n"
-                 "Rapid sign-flip or collapse by Day 5 = factor needs daily refresh",
-                 fontsize=12)
-    ax.legend()
+    # Index daily prices by (ticker, date) for fast O(1) lookup
+    prices_pivot = (
+        prices_raw.pivot(index="date", columns="ticker", values="close")
+        .sort_index()
+    )
+    all_trading_days = prices_pivot.index.values  # numpy array for searchsorted
+
+    def get_fwd_return_kday(signal_dates, k):
+        """
+        For each month-end signal date, find the closing price k trading days later.
+        Returns a DataFrame: index=signal_date, columns=ticker, values=k-day fwd return.
+        Forward return = close[t+k] / close[t] - 1 (using month-end close as base).
+        """
+        fwd_rets = {}
+        for sig_date in signal_dates:
+            sig_ts = pd.Timestamp(sig_date)
+            # Position of signal date in trading-day index
+            pos = np.searchsorted(all_trading_days, sig_ts.to_datetime64(), side="right") - 1
+            pos_fwd = pos + k
+            if pos < 0 or pos_fwd >= len(all_trading_days):
+                continue
+            base_close = prices_pivot.iloc[pos]
+            fwd_close  = prices_pivot.iloc[pos_fwd]
+            ret = fwd_close / base_close - 1
+            fwd_rets[sig_date] = ret
+        return pd.DataFrame(fwd_rets).T  # index=date, cols=ticker
+
+    def compute_decay_ic(panel_sub, factors, lags):
+        """
+        For each factor and each lag, compute mean IC across months in panel_sub.
+        panel_sub is already restricted to IS or OOS — no mixing.
+        Returns dict: {factor: {lag: mean_ic}}
+        """
+        signal_dates = sorted(panel_sub["date"].unique())
+        # Pre-build forward returns for each lag (avoids re-scanning prices)
+        fwd_by_lag = {}
+        for k in lags:
+            fwd_by_lag[k] = get_fwd_return_kday(signal_dates, k)
+
+        results = {f: {} for f in factors}
+        for f in factors:
+            if f not in panel_sub.columns:
+                continue
+            # Lag 0 = standard monthly IC (use fwd_ret_1m from panel)
+            ic0_vals = []
+            for dt, grp in panel_sub.groupby("date"):
+                sub = grp[[f, "fwd_ret_1m"]].dropna()
+                if len(sub) < MIN_STOCKS:
+                    continue
+                c, _ = spearmanr(sub[f], sub["fwd_ret_1m"])
+                if not np.isnan(c):
+                    ic0_vals.append(c)
+            results[f][0] = np.mean(ic0_vals) if ic0_vals else np.nan
+
+            # Lags 1-10: use daily forward returns
+            for k in lags:
+                fwd_df = fwd_by_lag[k]
+                ic_vals = []
+                for dt, grp in panel_sub.groupby("date"):
+                    if dt not in fwd_df.index:
+                        continue
+                    factor_vals = grp[["ticker", f]].dropna().set_index("ticker")[f]
+                    ret_row     = fwd_df.loc[dt].dropna()
+                    common      = factor_vals.index.intersection(ret_row.index)
+                    if len(common) < MIN_STOCKS:
+                        continue
+                    c, _ = spearmanr(factor_vals[common], ret_row[common])
+                    if not np.isnan(c):
+                        ic_vals.append(c)
+                results[f][k] = np.mean(ic_vals) if ic_vals else np.nan
+
+        return results
+
+    print("  Computing IS 7-day decay IC...")
+    is_decay  = compute_decay_ic(panel_is,  top_factors_decay, DAY_LAGS)
+    print("  Computing OOS 7-day decay IC...")
+    oos_decay = compute_decay_ic(panel_oos, top_factors_decay, DAY_LAGS)
+
+    # Build tidy output DataFrame
+    lag_labels = [0] + DAY_LAGS  # 0, 1, 3, 5, 7, 10
+    records = []
+    for f in top_factors_decay:
+        row = {"factor": f}
+        for lag in lag_labels:
+            row[f"is_day{lag}"]  = is_decay.get(f, {}).get(lag, np.nan)
+            row[f"oos_day{lag}"] = oos_decay.get(f, {}).get(lag, np.nan)
+        # Decay ratio at day 7: OOS_IC_day7 / IS_IC_day7
+        is_d7  = is_decay.get(f, {}).get(7, np.nan)
+        oos_d7 = oos_decay.get(f, {}).get(7, np.nan)
+        row["oos_decay_ratio_d7"] = round(oos_d7 / is_d7, 3) if (is_d7 and abs(is_d7) > 1e-4) else np.nan
+        # Flag: OOS IC flips sign by day 7
+        is_d0  = is_decay.get(f, {}).get(0, np.nan)
+        oos_d7_sign_flip = (
+            not np.isnan(is_d0) and not np.isnan(oos_d7)
+            and np.sign(is_d0) != np.sign(oos_d7)
+        )
+        row["oos_sign_flip_d7"] = oos_sign_flip_d7 = oos_d7_sign_flip
+        records.append(row)
+
+    decay_7d_result = pd.DataFrame(records).set_index("factor")
+    decay_7d_result = decay_7d_result.sort_values("is_day0", key=abs, ascending=False)
+    decay_7d_result.to_csv(DATA_DIR / "crowding_7day_decay_is_oos.csv")
+    print(f"  Saved → data/crowding_7day_decay_is_oos.csv")
+
+    print(f"\n  7-Day IC Decay — IS vs OOS (top 25 factors by |IS IC_day0|):")
+    disp_cols = [c for c in ["is_day0", "is_day1", "is_day3", "is_day5", "is_day7",
+                              "oos_day0", "oos_day1", "oos_day3", "oos_day5", "oos_day7",
+                              "oos_decay_ratio_d7", "oos_sign_flip_d7"]
+                 if c in decay_7d_result.columns]
+    print(decay_7d_result[disp_cols].head(25).round(4).to_string())
+
+    n_flip = decay_7d_result["oos_sign_flip_d7"].sum()
+    print(f"\n  Factors that flip sign OOS by day 7: {int(n_flip)}")
+    flipped = decay_7d_result[decay_7d_result["oos_sign_flip_d7"]].index.tolist()
+    if flipped:
+        print("  ", flipped)
+
+    # ── PLOT: IS vs OOS decay curves for top 16 factors ──────────────────────
+    plot_factors = decay_7d_result.head(16).index.tolist()
+    n_plot = len(plot_factors)
+    ncols = 4
+    nrows = (n_plot + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(16, nrows * 3.2), squeeze=False)
+
+    x_ticks  = [0] + DAY_LAGS
+    x_labels = ["Day 0\n(monthly)", "Day 1", "Day 3", "Day 5", "Day 7", "Day 10"]
+
+    for idx, fac in enumerate(plot_factors):
+        ax = axes[idx // ncols][idx % ncols]
+        row = decay_7d_result.loc[fac]
+
+        is_vals  = [row.get(f"is_day{k}",  np.nan) for k in x_ticks]
+        oos_vals = [row.get(f"oos_day{k}", np.nan) for k in x_ticks]
+
+        ax.plot(range(len(x_ticks)), is_vals,  "o-", color="#1565C0", lw=2,
+                label=f"IS  (≤{TRAIN_END[:4]})", markersize=5)
+        ax.plot(range(len(x_ticks)), oos_vals, "s--", color="#C62828", lw=2,
+                label=f"OOS (>{TRAIN_END[:4]})", markersize=5)
+        ax.axhline(0, color="grey", lw=0.7, ls=":")
+        ax.fill_between(range(len(x_ticks)),
+                        [v if v is not None and not np.isnan(v) else 0 for v in is_vals],
+                        0, alpha=0.08, color="#1565C0")
+        ax.set_xticks(range(len(x_ticks)))
+        ax.set_xticklabels(x_labels, fontsize=6.5)
+        ax.set_title(fac, fontsize=8.5, fontweight="bold")
+        ax.set_ylabel("IC", fontsize=7)
+        ax.tick_params(labelsize=6.5)
+        if idx == 0:
+            ax.legend(fontsize=6, loc="upper right")
+
+    # Hide unused axes
+    for idx in range(n_plot, nrows * ncols):
+        axes[idx // ncols][idx % ncols].set_visible(False)
+
+    fig.suptitle(
+        f"7-Day IC Decay: IS (blue) vs OOS (red)\n"
+        f"IS ≤ {TRAIN_END}  |  OOS > {TRAIN_END}  —  STRICT SEPARATION\n"
+        f"Divergence = regime shift; OOS sign-flip = do NOT use this factor as-is",
+        fontsize=11, y=1.01
+    )
     plt.tight_layout()
-    fig.savefig(FIG_DIR / "crowding_7day_decay.png", dpi=150)
+    fig.savefig(FIG_DIR / "crowding_7day_decay_is_oos.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print("  Saved → figures/crowding_7day_decay.png")
+    print("  Saved → figures/crowding_7day_decay_is_oos.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

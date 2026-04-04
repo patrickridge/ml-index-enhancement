@@ -1136,3 +1136,157 @@ def add_tail_ranking_features(
     print(f"  Cat 15: {n_new} tail-ranking features added "
           f"(top {int(top_pct*100)}% / bot {int(bot_pct*100)}% per {len(valid_factors)} base factors)")
     return panel
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CAT 16 — FACTOR MINING (new alpha signals from prices)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cat 16: New alpha factors mined from prices only.
+
+    Mix of:
+      • Time-signal factors  — WHEN to use a signal (regime-conditional)
+      • Ordinary alpha       — raw price-derived signals with academic backing
+      • Non-linear combos    — interaction / ratio factors prices can support
+
+    NEW COLUMNS (all computed per-ticker):
+      nearness_52w_high      George & Hwang (2004): close / 252d high. Strong predictor
+                             of 6-12m returns; complements nearness_52w_low.
+      max_ret_21d            MAX effect (Kumar 2009): max single-day return in past month.
+                             Lottery-seeking drives high-MAX stocks to underperform.
+      risk_adj_mom_6m        Sharpe-weighted momentum: ret_6m / vol_126d. Strips out
+                             the volatility component of momentum; more stable OOS.
+      risk_adj_mom_12m       Same as above for 12-month horizon.
+      residual_mom_6m        ret_6m minus beta × spx_ret_6m. Market-neutral momentum —
+                             strips common factor, gives idiosyncratic 6m momentum.
+      residual_mom_12m       Same for 12m horizon.
+      up_down_vol_ratio      upvol_63d / downvol_63d. Values > 1 = more upside realized
+                             vol than downside = positive skew, quality-growth signal.
+      co_skewness_63d        Coskewness with market (Harvey & Siddique 2000): stocks that
+                             crash when market crashes have negative coskewness and earn a
+                             premium. Proxy: cross-product of demeaned ret × demeaned spx_ret².
+      vol_contraction_signal Vol regime timing: vol_21d < vol_63d × 0.85 = volatility
+                             contracting = historically bullish for near-term returns.
+      mom_quality            Momentum quality = ret_12m × pct_positive_months_12m.
+                             High momentum with consistent monthly gains > erratic gains.
+      price_range_ratio      (high_52w - low_52w) / close. Wide range = high uncertainty
+                             premium. Complement to ATR and nearness factors.
+      reversal_size          ret_1m × (-1) × log(dollar_vol_21d). Short-term reversal
+                             is stronger in large liquid stocks (Lehmann 1990).
+    """
+    prices = prices.copy()
+
+    def _safe_div(a, b, fill=np.nan):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            result = np.where(np.abs(b) > 1e-10, a / b, fill)
+        return result.astype(np.float64)
+
+    for tk, grp in prices.groupby("ticker", sort=False):
+        idx = grp.index
+        close    = grp["close"].values
+        ret_d    = grp["ret_d"].values if "ret_d" in grp.columns else np.full(len(grp), np.nan)
+        spx      = grp["spx_ret"].values if "spx_ret" in grp.columns else np.full(len(grp), np.nan)
+        n        = len(grp)
+
+        # ── nearness_52w_high ────────────────────────────────────────────────
+        high_252 = pd.Series(close).rolling(252, min_periods=126).max().values
+        prices.loc[idx, "nearness_52w_high"] = _safe_div(close, high_252)
+
+        # ── max_ret_21d (MAX effect) ─────────────────────────────────────────
+        prices.loc[idx, "max_ret_21d"] = (
+            pd.Series(ret_d).rolling(21, min_periods=10).max().values
+        )
+
+        # ── risk_adj_mom ─────────────────────────────────────────────────────
+        # Require at least 63 days of clean returns for volatility estimate
+        ret_126 = pd.Series(close).pct_change(126).values
+        ret_252 = pd.Series(close).pct_change(252).values
+        vol_126 = pd.Series(ret_d).rolling(126, min_periods=63).std().values * np.sqrt(252)
+        vol_252 = pd.Series(ret_d).rolling(252, min_periods=126).std().values * np.sqrt(252)
+        prices.loc[idx, "risk_adj_mom_6m"]  = _safe_div(ret_126, vol_126)
+        prices.loc[idx, "risk_adj_mom_12m"] = _safe_div(ret_252, vol_252)
+
+        # ── residual_mom (strip market beta from momentum) ───────────────────
+        # Use rolling 252d beta × SPX return to get market-neutral momentum
+        # beta already computed in Cat 6; use spx cumulative return proxy here
+        if not np.all(np.isnan(spx)):
+            # SPX cumulative return over same window
+            spx_s = pd.Series(spx)
+            spx_6m  = spx_s.rolling(126, min_periods=63).sum().values   # approx spx_ret_6m
+            spx_12m = spx_s.rolling(252, min_periods=126).sum().values  # approx spx_ret_12m
+            # Rolling beta (63d window for stability)
+            cov_63  = pd.Series(ret_d).rolling(63, min_periods=30).cov(pd.Series(spx)).values
+            var_63  = pd.Series(spx).rolling(63, min_periods=30).var().values
+            beta_63 = _safe_div(cov_63, var_63, fill=1.0)
+            prices.loc[idx, "residual_mom_6m"]  = ret_126 - beta_63 * spx_6m
+            prices.loc[idx, "residual_mom_12m"] = ret_252 - beta_63 * spx_12m
+        else:
+            prices.loc[idx, "residual_mom_6m"]  = np.nan
+            prices.loc[idx, "residual_mom_12m"] = np.nan
+
+        # ── up_down_vol_ratio ────────────────────────────────────────────────
+        ret_s    = pd.Series(ret_d)
+        upvol_63 = ret_s.where(ret_s > 0, 0).rolling(63, min_periods=21).std().values
+        dnvol_63 = ret_s.where(ret_s < 0, 0).rolling(63, min_periods=21).std().values
+        prices.loc[idx, "up_down_vol_ratio"] = _safe_div(upvol_63, dnvol_63)
+
+        # ── co_skewness_63d ──────────────────────────────────────────────────
+        # Harvey & Siddique (2000): E[(r - μ)*(rm - μm)²] / (σ * σm²)
+        # Stocks with negative coskewness earn a premium
+        if not np.all(np.isnan(spx)):
+            spx_s  = pd.Series(spx)
+            ret_dm = ret_s - ret_s.rolling(63, min_periods=21).mean()
+            spx_dm = spx_s - spx_s.rolling(63, min_periods=21).mean()
+            coskew = (ret_dm * spx_dm ** 2).rolling(63, min_periods=21).mean().values
+            spx_v2 = (spx_dm ** 2).rolling(63, min_periods=21).mean().values
+            ret_std = ret_s.rolling(63, min_periods=21).std().values
+            prices.loc[idx, "co_skewness_63d"] = _safe_div(coskew, ret_std * spx_v2)
+        else:
+            prices.loc[idx, "co_skewness_63d"] = np.nan
+
+        # ── vol_contraction_signal ───────────────────────────────────────────
+        # 1 when short-term vol < 85% of medium-term vol = vol regime compressing
+        vol_21 = ret_s.rolling(21, min_periods=10).std().values
+        vol_63 = ret_s.rolling(63, min_periods=21).std().values
+        prices.loc[idx, "vol_contraction_signal"] = (
+            (vol_21 < vol_63 * 0.85).astype(np.float32)
+        )
+
+        # ── mom_quality ──────────────────────────────────────────────────────
+        # ret_12m × fraction of trailing 12 months with positive return
+        # High momentum from consistent monthly gains > erratic gains
+        monthly_pos_frac = (
+            ret_s.rolling(252, min_periods=126)
+                 .apply(lambda x: (x > 0).mean(), raw=True)
+                 .values
+        )
+        prices.loc[idx, "mom_quality"] = ret_252 * monthly_pos_frac
+
+        # ── price_range_ratio ────────────────────────────────────────────────
+        # (52w high - 52w low) / close  — uncertainty / ambiguity premium
+        low_252 = pd.Series(close).rolling(252, min_periods=126).min().values
+        prices.loc[idx, "price_range_ratio"] = _safe_div(high_252 - low_252, close)
+
+        # ── reversal_size ────────────────────────────────────────────────────
+        # Lehmann (1990): short-term reversal stronger in large liquid stocks
+        # = -ret_1m × log(dollar_vol_21d).  Signed: negative = contrarian long.
+        ret_1m = pd.Series(close).pct_change(21).values
+        if "dollar_vol_21d" in grp.columns:
+            dvol = np.log1p(grp["dollar_vol_21d"].values.clip(1e3))
+        else:
+            dvol = np.ones(n)
+        prices.loc[idx, "reversal_size"] = -ret_1m * dvol
+
+    new_cols = [
+        "nearness_52w_high", "max_ret_21d",
+        "risk_adj_mom_6m", "risk_adj_mom_12m",
+        "residual_mom_6m", "residual_mom_12m",
+        "up_down_vol_ratio", "co_skewness_63d",
+        "vol_contraction_signal", "mom_quality",
+        "price_range_ratio", "reversal_size",
+    ]
+    added = [c for c in new_cols if c in prices.columns]
+    print(f"  Cat 16: {len(added)} mined factors added: {added}")
+    return prices
