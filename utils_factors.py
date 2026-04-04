@@ -32,6 +32,7 @@ Factor categories:
 
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from typing import Optional
 
 
@@ -732,3 +733,336 @@ def add_macro_factors(
         tolerance=pd.Timedelta("35 days"),
     )
     return result.sort_values(["date", "ticker"]).reset_index(drop=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CAT 11 — TIME SIGNAL FACTORS  (5 new factors)
+# Trend quality, momentum consistency, skewness — regime-sensitive signals
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def add_time_signal_factors(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add time-series signal quality factors.
+
+    NEW COLUMNS:
+      ir_6m               — 6m info ratio: ret_6m / vol_126d
+      trend_r2_126d       — R² of 126d OLS linear trend (trend persistence)
+      ret_consistency_12m — fraction of last 252 trading days with positive return
+      skew_60d            — 60d rolling return skewness (negative = crash risk)
+      drawdown_pct_252d   — current price / 252d rolling max - 1 (distance from ATH)
+
+    Requires: close, ret_d
+    """
+    grp = prices.groupby("ticker", group_keys=False)
+
+    # 6m information ratio: annualised return / vol
+    if "ret_6m" not in prices.columns:
+        prices["_ret_6m_ts"] = grp["close"].transform(
+            lambda x: x.pct_change(126)
+        )
+        ret_6m_col = "_ret_6m_ts"
+    else:
+        ret_6m_col = "ret_6m"
+
+    vol_126 = grp["ret_d"].transform(
+        lambda x: x.rolling(126, min_periods=60).std()
+    )
+    prices["ir_6m"] = prices[ret_6m_col] / (vol_126 + 1e-9)
+
+    # 126d trend R² (persistence of trend — higher = more trending)
+    prices["trend_r2_126d"] = grp["close"].transform(
+        lambda x: _trend_r2(x, w=126)
+    )
+
+    # Return consistency: % of last 252 daily returns that were positive
+    prices["ret_consistency_12m"] = grp["ret_d"].transform(
+        lambda x: x.rolling(252, min_periods=120).apply(
+            lambda w: (w > 0).mean(), raw=True
+        )
+    )
+
+    # 60d rolling skewness
+    prices["skew_60d"] = grp["ret_d"].transform(
+        lambda x: x.rolling(60, min_periods=20).skew()
+    )
+
+    # Distance from 252d rolling high (current drawdown from ATH)
+    rolling_max_252 = grp["close"].transform(
+        lambda x: x.rolling(252, min_periods=120).max()
+    )
+    prices["drawdown_pct_252d"] = prices["close"] / (rolling_max_252 + 1e-9) - 1
+
+    return prices
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CAT 12 — BARRA-STYLE FACTORS  (4 new factors)
+# Size proxy, vol-of-vol, beta stability — cross-sectional risk exposures
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def add_barra_style_factors(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add Barra-inspired cross-sectional risk exposure factors.
+
+    NEW COLUMNS:
+      amihud_illiq_21d  — Amihud illiquidity: mean(|ret_d| / dollar_vol) over 21d
+                          High = illiquid = small-cap proxy (Barra "SIZE" factor)
+      vol_of_vol_63d    — rolling std of vol_21d over 63d (Barra "DASTD" factor)
+      beta_stability_63d — rolling std of beta_21d over 63d (unstable beta → risk)
+      size_proxy        — log(dollar_vol_63d + 1) as continuous size proxy
+
+    amihud_illiq_21d and size_proxy require 'volume' column.
+    vol_of_vol_63d and beta_stability_63d require vol_21d and beta_21d columns.
+    All degrade gracefully if inputs are absent.
+    """
+    grp = prices.groupby("ticker", group_keys=False)
+
+    # Amihud illiquidity and size proxy (need volume)
+    if "volume" in prices.columns:
+        dollar_vol = prices["close"] * prices["volume"]
+        prices["_dollar_vol_d"] = dollar_vol
+
+        # Amihud: mean(|ret_d| / dollar_vol) — high = illiquid = small
+        prices["_amihud_d"] = prices["ret_d"].abs() / (dollar_vol + 1e-9)
+        prices["amihud_illiq_21d"] = grp["_amihud_d"].transform(
+            lambda x: x.rolling(21, min_periods=10).mean() * 1e6  # scale for readability
+        )
+
+        # Size proxy: log of 63d mean dollar volume
+        dv63 = grp["_dollar_vol_d"].transform(
+            lambda x: x.rolling(63, min_periods=30).mean()
+        )
+        prices["size_proxy"] = np.log(dv63.clip(lower=1e-9) + 1)
+    else:
+        prices["amihud_illiq_21d"] = np.nan
+        prices["size_proxy"] = np.nan
+
+    # Vol-of-vol: rolling std of vol_21d (requires vol_21d from Cat 2)
+    if "vol_21d" in prices.columns:
+        prices["vol_of_vol_63d"] = grp["vol_21d"].transform(
+            lambda x: x.rolling(63, min_periods=30).std()
+        )
+    else:
+        prices["vol_of_vol_63d"] = np.nan
+
+    # Beta stability: rolling std of beta_21d over 63d (requires beta_21d from Cat 2)
+    if "beta_21d" in prices.columns:
+        prices["beta_stability_63d"] = grp["beta_21d"].transform(
+            lambda x: x.rolling(63, min_periods=30).std()
+        )
+    else:
+        prices["beta_stability_63d"] = np.nan
+
+    return prices
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CAT 13 — CROSS-SECTIONAL INTERACTION FACTORS  (5 new factors, monthly level)
+# Multi-dimensional cross-sectional signals and CAPM residuals
+# Called AFTER add_macro_factors() so spx_ret_* cols are present in panel
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def add_macro_interaction_factors(panel: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add cross-sectional interaction factors to the monthly panel.
+
+    Note on design: products of (macro_scalar × CS_var) collapse to rank(CS_var)
+    after cross-sectional ranking (macro scalar is constant within each month).
+    Instead, these factors combine TWO cross-sectional variables or a CS variable
+    with a market-relative benchmark, producing genuinely 2D cross-sectional signals.
+
+    NEW COLUMNS:
+      residual_ret_1m     — ret_1m - beta_252d × spx_ret_1m   (1m CAPM alpha)
+      beta_x_idiovol      — beta_252d × idio_vol_252d          (systematic × idiosyncratic risk)
+      up_down_beta_spread — up_beta_63d - down_beta_63d         (directional beta asymmetry)
+      vol_excess          — vol_21d / (|beta_252d| × spx_vol_63d + ε) - 1
+                            (stock vol in excess of market-implied vol)
+      mom_decel           — ret_1m / (|ret_6m| / 6 + ε) - 1   (short-term vs avg 6m momentum)
+
+    All degrade gracefully if underlying columns are missing.
+    """
+    panel = panel.copy()
+
+    # 1-month CAPM alpha: idiosyncratic return stripped of market move
+    if all(c in panel.columns for c in ["ret_1m", "beta_252d", "spx_ret_1m"]):
+        panel["residual_ret_1m"] = (
+            panel["ret_1m"] - panel["beta_252d"] * panel["spx_ret_1m"]
+        )
+    else:
+        panel["residual_ret_1m"] = np.nan
+
+    # Systematic × idiosyncratic risk: highest for stocks with both high beta and high IVOL
+    if "beta_252d" in panel.columns and "idio_vol_252d" in panel.columns:
+        panel["beta_x_idiovol"] = panel["beta_252d"].abs() * panel["idio_vol_252d"]
+    else:
+        panel["beta_x_idiovol"] = np.nan
+
+    # Directional beta asymmetry: stocks with high up-beta and low down-beta are desirable
+    if "up_beta_63d" in panel.columns and "down_beta_63d" in panel.columns:
+        panel["up_down_beta_spread"] = panel["up_beta_63d"] - panel["down_beta_63d"]
+    else:
+        panel["up_down_beta_spread"] = np.nan
+
+    # Excess volatility over market-implied (vol not explained by market beta)
+    if all(c in panel.columns for c in ["vol_21d", "beta_252d", "spx_vol_63d"]):
+        market_implied_vol = panel["beta_252d"].abs() * panel["spx_vol_63d"]
+        panel["vol_excess"] = panel["vol_21d"] / (market_implied_vol + 1e-9) - 1
+    else:
+        panel["vol_excess"] = np.nan
+
+    # Momentum deceleration: recent 1m return vs average monthly run rate over 6m
+    if "ret_1m" in panel.columns and "ret_6m" in panel.columns:
+        avg_monthly_6m = panel["ret_6m"].abs() / 6.0
+        panel["mom_decel"] = panel["ret_1m"] / (avg_monthly_6m + 1e-9) - 1
+    else:
+        panel["mom_decel"] = np.nan
+
+    cat13_cols = [
+        "residual_ret_1m", "beta_x_idiovol", "up_down_beta_spread",
+        "vol_excess", "mom_decel",
+    ]
+    added = [c for c in cat13_cols if c in panel.columns]
+    print(f"  Cat 13 interaction factors added: {added}")
+    return panel
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CAT 14 — SIZE FACTOR  (log market cap, fetched from yfinance with caching)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def fetch_market_cap_data(
+    tickers: list,
+    start_date: str,
+    end_date: str,
+    cache_path: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Fetch current shares outstanding from yfinance for each ticker.
+    Returns long-form DataFrame: [date, ticker, shares].
+    Uses fast_info.shares (lightweight endpoint, ~0.3s/ticker, no 404 spam).
+    Caches to cache_path after first run — subsequent runs load instantly.
+    """
+    import warnings as _warnings
+    try:
+        import yfinance as yf
+    except ImportError:
+        print("  [WARN] yfinance not installed — skipping market cap (Cat 14)")
+        return pd.DataFrame()
+
+    cache = Path(cache_path) if cache_path else None
+    if cache and cache.exists():
+        print(f"  Loading market cap cache: {cache}")
+        return pd.read_parquet(cache)
+
+    print(f"  Fetching shares outstanding for {len(tickers)} tickers "          f"(~2-3 min first time, then cached)...")
+    rows     = []
+    n_ok     = 0
+    n_failed = 0
+    ref_date = pd.Timestamp(end_date)
+
+    for i, tk in enumerate(tickers):
+        if (i + 1) % 100 == 0:
+            print(f"    {i+1}/{len(tickers)}  ok={n_ok}  failed={n_failed}")
+        try:
+            with _warnings.catch_warnings():
+                _warnings.simplefilter("ignore")
+                t  = yf.Ticker(tk)
+                so = None
+                # fast_info.shares — quickest, no full info page needed
+                try:
+                    fi = t.fast_info
+                    v  = getattr(fi, "shares", None)
+                    if v and float(v) > 0:
+                        so = float(v)
+                except Exception:
+                    pass
+                # Fallback: info dict
+                if not so:
+                    try:
+                        info = t.info
+                        for key in ("sharesOutstanding",
+                                    "impliedSharesOutstanding"):
+                            v = info.get(key)
+                            if v and float(v) > 0:
+                                so = float(v)
+                                break
+                    except Exception:
+                        pass
+            if so:
+                rows.append({"date": ref_date, "ticker": tk, "shares": so})
+                n_ok += 1
+            else:
+                n_failed += 1
+        except Exception:
+            n_failed += 1
+
+    print(f"  Done: {n_ok} fetched, {n_failed} failed "          f"({n_ok}/{len(tickers)} tickers covered)")
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = (pd.DataFrame(rows)
+          .assign(date=lambda d: pd.to_datetime(d["date"]).dt.tz_localize(None))
+          .dropna(subset=["shares"])
+          .sort_values(["ticker", "date"])
+          .reset_index(drop=True))
+
+    if cache:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(cache, index=False)
+        print(f"  Saved cache → {cache}")
+
+    return df
+
+
+def add_size_factor(
+    panel: pd.DataFrame,
+    shares_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Add log_mktcap to the monthly panel.
+    Requires 'close_me' in panel (month-end close price, added in build_daily_features).
+    Market cap = shares_outstanding × close_me.
+
+    NEW COLUMN: log_mktcap — log(market cap in $).
+    Cross-sectionally ranked in 1g (higher rank = larger cap).
+    Falls back to NaN (→ filled with 0 = neutral rank) if data unavailable.
+    """
+    panel = panel.copy()
+
+    if shares_df.empty or "close_me" not in panel.columns:
+        print("  [WARN] add_size_factor: missing shares_df or close_me → log_mktcap = NaN")
+        panel["log_mktcap"] = np.nan
+        return panel
+
+    shares_sorted = shares_df.sort_values("date")   # merge_asof requires sort by `on` key only
+    shares_sorted["date"] = shares_sorted["date"].astype("datetime64[us]")
+    panel_sorted  = panel.sort_values(["date", "ticker"])
+    panel_sorted["date"] = panel_sorted["date"].astype("datetime64[us]")
+
+    merged = pd.merge_asof(
+        panel_sorted,
+        shares_sorted,
+        on="date",
+        by="ticker",
+        direction="backward",
+        tolerance=pd.Timedelta("185 days"),   # up to 6-month-old quarterly filing
+    )
+
+    valid = (merged["shares"].notna()
+             & merged["close_me"].notna()
+             & (merged["close_me"] > 0)
+             & (merged["shares"] > 0))
+    mktcap = np.where(valid, merged["shares"] * merged["close_me"], np.nan)
+    merged["log_mktcap"] = np.where(
+        np.isfinite(mktcap) & (mktcap > 0),
+        np.log(mktcap),
+        np.nan,
+    )
+    merged = merged.drop(columns=["shares"], errors="ignore")
+
+    n_valid = merged["log_mktcap"].notna().sum()
+    print(f"  log_mktcap: {n_valid:,}/{len(merged):,} valid "
+          f"({100*n_valid/max(len(merged),1):.1f}%)")
+
+    return merged.sort_values(["date", "ticker"]).reset_index(drop=True)

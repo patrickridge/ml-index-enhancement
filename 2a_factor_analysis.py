@@ -46,11 +46,15 @@ from pathlib import Path
 from scipy.stats import spearmanr
 
 try:
-    from config import MACRO_COLS, DATA_DIR as _cfg_dir
-    _DATA_DIR = _cfg_dir
+    from config import MACRO_COLS, DATA_DIR as _cfg_dir, TRAIN_END as _cfg_train_end, START_DATE as _cfg_start
+    _DATA_DIR       = _cfg_dir
+    _CFG_TRAIN_END  = _cfg_train_end
+    _CFG_TRAIN_START = _cfg_start
 except ImportError:
-    MACRO_COLS = []
-    _DATA_DIR  = Path("data")
+    MACRO_COLS       = []
+    _DATA_DIR        = Path("data")
+    _CFG_TRAIN_END   = None
+    _CFG_TRAIN_START = None
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 DATA_DIR = Path("data")
@@ -65,8 +69,9 @@ MIN_STOCKS        = 20    # skip month if fewer stocks
 # ── Train / test split ─────────────────────────────────────────────────────────
 # Factor analysis (IC, ICIR, quintile, RAS) uses TRAINING data only to avoid
 # lookahead bias. Regime stability uses full panel to cover all 4 regimes.
-TRAIN_START = "2010-01-01"
-TRAIN_END   = "2020-12-31"   # hold out 2021–2025 as test set
+# Reads from config.py (TRAIN_END / START_DATE) so date splits stay in sync.
+TRAIN_START = _CFG_TRAIN_START if _CFG_TRAIN_START else "2010-01-01"
+TRAIN_END   = _CFG_TRAIN_END   if _CFG_TRAIN_END   else "2022-12-31"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -127,9 +132,19 @@ def quintile_backtest(panel: pd.DataFrame, factor: str) -> pd.DataFrame:
         if len(sub) < N_QUINTILES * 4:
             continue
         sub = sub.copy()
-        sub["quintile"] = pd.qcut(sub[factor], N_QUINTILES,
-                                   labels=list(range(1, N_QUINTILES + 1)),
-                                   duplicates="drop")
+        # Winsorise returns at 1st/99th percentile to prevent data errors
+        # (delistings, bad prices) from blowing up quintile arithmetic means.
+        # Spearman IC is robust to outliers; arithmetic means are not.
+        lo = sub["fwd_ret_1m"].quantile(0.01)
+        hi = sub["fwd_ret_1m"].quantile(0.99)
+        sub["fwd_ret_1m"] = sub["fwd_ret_1m"].clip(lo, hi)
+        try:
+            sub["quintile"] = pd.qcut(sub[factor], N_QUINTILES,
+                                       labels=list(range(1, N_QUINTILES + 1)),
+                                       duplicates="drop")
+        except ValueError:
+            # Fewer unique values than quintiles after deduplication — skip month
+            continue
         q_rets = sub.groupby("quintile")["fwd_ret_1m"].mean()
         row = {"date": dt}
         for q in range(1, N_QUINTILES + 1):
@@ -402,7 +417,8 @@ def main():
     n_tickers = panel["ticker"].nunique()
     print(f"  {len(feat_cols)} features | {n_months_train} train months ({TRAIN_START[:4]}–{TRAIN_END[:4]}) "
           f"| {n_months_full} total months | {n_tickers} tickers")
-    print(f"  Test period held out: 2021-01-01 → present ({n_months_full - n_months_train} months)")
+    oos_cutoff = (pd.Timestamp(TRAIN_END) + pd.DateOffset(days=1)).date()
+    print(f"  Test period held out: {oos_cutoff} → present ({n_months_full - n_months_train} months)")
     if macro_in_panel:
         print(f"  Macro features skipped (not cross-sectional): {macro_in_panel}")
 
@@ -583,6 +599,81 @@ def main():
     plot_ic_summary(summary_df, FIG_DIR, top_n=10)   # saves _positive.png + _negative.png
     plot_ic_decay(decay_df, top10_pos, FIG_DIR / "factor_ic_decay_positive.png")
     plot_ic_decay(decay_df, top10_neg, FIG_DIR / "factor_ic_decay_negative.png")
+
+    # ── OOS IC Diagnostic ────────────────────────────────────────────────────────
+    print(f"\n{'='*65}")
+    print(f"OOS IC DIAGNOSTIC  (test period: {TRAIN_END[:7]} → present)")
+    print(f"{'='*65}")
+
+    oos_start = pd.Timestamp(TRAIN_END) + pd.DateOffset(days=1)
+    panel_oos = panel[panel["date"] >= oos_start].reset_index(drop=True)
+    n_oos     = panel_oos["date"].nunique()
+    if n_oos == 0:
+        print("  No OOS data available — skipping.")
+    else:
+        print(f"  OOS months: {n_oos}  "
+              f"({panel_oos['date'].min().date()} → {panel_oos['date'].max().date()})")
+        print(f"  Computing OOS IC for {len(feat_cols)} features...")
+
+        oos_records = []
+        for fac in feat_cols:
+            ic_oos   = monthly_ic(panel_oos, fac)
+            ic_is    = ic_series_all.get(fac, pd.Series(dtype=float))
+            ic_is_m  = ic_is.mean()  if len(ic_is)  > 0 else np.nan
+            ic_oos_m = ic_oos.mean() if len(ic_oos) > 0 else np.nan
+            icir_oos = (ic_oos.mean() / ic_oos.std(ddof=1)
+                        if len(ic_oos) > 1 and ic_oos.std(ddof=1) > 0 else np.nan)
+
+            sign_flip   = (not np.isnan(ic_is_m) and not np.isnan(ic_oos_m)
+                           and np.sign(ic_is_m) != np.sign(ic_oos_m))
+            decay_ratio = (ic_oos_m / ic_is_m
+                           if not np.isnan(ic_is_m) and abs(ic_is_m) > 1e-6
+                           else np.nan)
+
+            if sign_flip:
+                flag = "FLIP"
+            elif np.isnan(decay_ratio) or abs(decay_ratio) >= 0.5:
+                flag = "stable"
+            else:
+                flag = "decay"
+
+            oos_records.append({
+                "factor":       fac,
+                "ic_is":        round(ic_is_m,  4) if not np.isnan(ic_is_m)  else np.nan,
+                "ic_oos":       round(ic_oos_m, 4) if not np.isnan(ic_oos_m) else np.nan,
+                "icir_oos":     round(icir_oos, 3) if not np.isnan(icir_oos) else np.nan,
+                "n_oos_months": len(ic_oos),
+                "sign_flip":    sign_flip,
+                "decay_ratio":  round(decay_ratio, 2) if not np.isnan(decay_ratio) else np.nan,
+                "flag":         flag,
+            })
+
+        oos_df = pd.DataFrame(oos_records)
+        oos_df.to_csv(DATA_DIR / "factor_oos_ic.csv", index=False)
+
+        print(f"\n{'─'*72}")
+        print(f"{'Factor':<26} {'IC_IS':>8} {'IC_OOS':>8} {'ICIR_OOS':>9} "
+              f"{'Decay':>7}  Status")
+        print(f"{'─'*72}")
+        for _, row in oos_df.sort_values("ic_oos", key=abs, ascending=False).head(30).iterrows():
+            decay_s  = f"{row['decay_ratio']:+.2f}" if not pd.isna(row["decay_ratio"]) else "   n/a"
+            ic_is_s  = f"{row['ic_is']:+.4f}"       if not pd.isna(row["ic_is"])       else "    n/a"
+            ic_oos_s = f"{row['ic_oos']:+.4f}"      if not pd.isna(row["ic_oos"])      else "    n/a"
+            icir_s   = f"{row['icir_oos']:+.3f}"    if not pd.isna(row["icir_oos"])    else "   n/a"
+            print(f"  {row['factor']:<24} {ic_is_s:>8} {ic_oos_s:>8} "
+                  f"{icir_s:>9} {decay_s:>7}  {row['flag']}")
+
+        n_flip   = int(oos_df["sign_flip"].sum())
+        n_decay  = int((oos_df["flag"] == "decay").sum())
+        n_stable = int((oos_df["flag"] == "stable").sum())
+        flipped  = oos_df[oos_df["sign_flip"]]["factor"].tolist()
+        print(f"\nOOS Summary ({n_oos} months):")
+        print(f"  Stable  (same sign, |decay ratio|≥0.5): {n_stable}")
+        print(f"  Decayed (same sign, |decay ratio|<0.5): {n_decay}")
+        print(f"  Flipped (sign reversal OOS):            {n_flip}")
+        if flipped:
+            print(f"  Flipped factors: {flipped}")
+        print(f"  Saved → data/factor_oos_ic.csv")
 
     # ── Final summary table ───────────────────────────────────────────────────────
     print(f"\n{'='*65}")

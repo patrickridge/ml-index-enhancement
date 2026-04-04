@@ -15,8 +15,8 @@ DATA_DIR = Path("data")
 #
 # Current: Option A (recommended — avoids GFC regime in training)
 START_DATE    = "2010-01-01"   # cut pre-GFC data
-TRAIN_END     = "2020-12-31"   # ~132 months training (extended with 20yr data)
-VALID_END     = "2022-12-31"   # ~24 months validation; test = 2023+ (~24 months)
+TRAIN_END     = "2022-12-31"   # ~156 months training (includes 2021-2022 vol regime)
+VALID_END     = "2024-06-30"   # ~18 months validation (Jan 2023–Jun 2024); test = Jul 2024+ (~12 months)
 
 # ── Portfolio construction ────────────────────────────────────────────────────
 TOP_N         = 100            # overweight top N stocks vs benchmark

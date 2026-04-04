@@ -24,6 +24,9 @@ Factor categories built here:
   Cat 8  — Cross-sectional relative (6 new)
   Cat 9  — Fundamental / quality (12 optional)
   Cat 10 — Macro / regime (9, time-series z-scored NOT cross-sectionally ranked)
+  Cat 11 — Time signal factors (5 new: ir_6m, trend_r2_126d, ret_consistency_12m, skew_60d, drawdown_pct_252d)
+  Cat 12 — Barra-style factors (4 new: amihud_illiq_21d, size_proxy, vol_of_vol_63d, beta_stability_63d)
+  Cat 13 — Cross-sectional interaction factors (5 new, monthly: residual_ret_1m, beta_x_idiovol, up_down_beta_spread, vol_excess, mom_decel)
 
 Run time: ~5-10 min on a laptop.
 """
@@ -46,6 +49,11 @@ from utils_factors import (
     add_fundamental_factors,
     fetch_macro_data,
     add_macro_factors,
+    add_time_signal_factors,
+    add_barra_style_factors,
+    add_macro_interaction_factors,
+    fetch_market_cap_data,
+    add_size_factor,
 )
 from config import MACRO_COLS
 import time as _time; _t0 = _time.time()
@@ -182,6 +190,16 @@ def build_daily_features(prices: pd.DataFrame,
     print("  Cat 7: intraday / microstructure...")
     prices = add_microstructure(prices)
 
+    print("  Cat 11: time signal factors...")
+    prices = add_time_signal_factors(prices)
+
+    print("  Cat 12: Barra-style factors...")
+    prices = add_barra_style_factors(prices)
+
+    # Carry month-end close for market cap computation (Cat 14).
+    # Named close_me — not in exclude_cols so it survives sample_at_month_end.
+    prices["close_me"] = prices["close"]
+
     return prices
 
 
@@ -247,7 +265,7 @@ def add_momentum_extensions(panel: pd.DataFrame) -> pd.DataFrame:
 
 def main():
     print("=" * 65)
-    print("FEATURE ENGINEERING v2 — 100+ factors")
+    print("FEATURE ENGINEERING v3 — 100+ factors (Cats 1-13)")
     print("=" * 65)
 
     # Load base data
@@ -311,8 +329,20 @@ def main():
         panel = add_macro_factors(panel, macro_daily)
         found_macro = [c for c in MACRO_COLS if c in panel.columns]
         print(f"  Macro columns added: {found_macro}")
+        print("\nAdding Cat 13: macro interaction factors...")
+        panel = add_macro_interaction_factors(panel)
     else:
-        print("  Macro data unavailable — skipping Cat 10.")
+        print("  Macro data unavailable — skipping Cat 10 and Cat 13.")
+
+    # Cat 14: size factor — log(market cap) = log(shares × close_me)
+    mktcap_cache = str(DATA_DIR / "mktcap_shares.parquet")
+    all_tickers  = panel["ticker"].unique().tolist()
+    print("\nFetching market cap data (Cat 14: log_mktcap)...")
+    shares_df = fetch_market_cap_data(all_tickers, start_str, end_str,
+                                      cache_path=mktcap_cache)
+    panel = add_size_factor(panel, shares_df)
+    # Drop the helper column — it is not a model feature
+    panel = panel.drop(columns=["close_me"], errors="ignore")
 
     # Identify all feature columns
     always_exclude = {"date", "ticker", "fwd_ret_1m"}
