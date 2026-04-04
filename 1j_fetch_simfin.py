@@ -65,32 +65,35 @@ except FileNotFoundError:
     our_tickers = None
 
 # ── Download quarterly financial statements ───────────────────────────────────
-print("\nDownloading Simfin bulk data (US quarterly)...")
+df_income = pd.DataFrame()
+df_balance = pd.DataFrame()
+df_cashflow = pd.DataFrame()
+USE_YFINANCE_FALLBACK = False
 
-try:
-    df_income = sf.load_income(variant="quarterly", market="us")
-    print(f"  Income statements: {len(df_income):,} rows")
-except Exception as e:
-    print(f"  [ERROR] Failed to load income data: {e}")
-    df_income = pd.DataFrame()
+if HAS_SIMFIN and SIMFIN_API_KEY:
+    print("\nDownloading Simfin bulk data (US quarterly)...")
+    try:
+        df_income = sf.load_income(variant="quarterly", market="us")
+        print(f"  Income statements: {len(df_income):,} rows")
+    except Exception as e:
+        print(f"  [WARN] Simfin income failed: {e}")
 
-try:
-    df_balance = sf.load_balance(variant="quarterly", market="us")
-    print(f"  Balance sheets: {len(df_balance):,} rows")
-except Exception as e:
-    print(f"  [ERROR] Failed to load balance data: {e}")
-    df_balance = pd.DataFrame()
+    try:
+        df_balance = sf.load_balance(variant="quarterly", market="us")
+        print(f"  Balance sheets: {len(df_balance):,} rows")
+    except Exception as e:
+        print(f"  [WARN] Simfin balance failed: {e}")
 
-try:
-    df_cashflow = sf.load_cashflow(variant="quarterly", market="us")
-    print(f"  Cash flow statements: {len(df_cashflow):,} rows")
-except Exception as e:
-    print(f"  [ERROR] Failed to load cashflow data: {e}")
-    df_cashflow = pd.DataFrame()
+    try:
+        df_cashflow = sf.load_cashflow(variant="quarterly", market="us")
+        print(f"  Cash flow statements: {len(df_cashflow):,} rows")
+    except Exception as e:
+        print(f"  [WARN] Simfin cashflow failed: {e}")
 
 if df_income.empty and df_balance.empty:
-    print("\n[ERROR] No data downloaded. Check your internet connection.")
-    raise SystemExit(1)
+    print("\n  Simfin unavailable — falling back to yfinance fundamentals.")
+    print("  NOTE: To use Simfin, register free at simfin.com and set SIMFIN_API_KEY.")
+    USE_YFINANCE_FALLBACK = True
 
 # ── Ticker mapping ────────────────────────────────────────────────────────────
 # Simfin uses plain tickers (AAPL), our pipeline may use exchange-suffixed (AAPL.O)
@@ -340,12 +343,201 @@ def compute_fundamentals(df_i, df_b, df_c):
     return result
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# YFINANCE FALLBACK — fetch fundamentals ticker-by-ticker
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def fetch_fundamentals_yfinance(tickers, batch_size=20):
+    """
+    Fetch quarterly fundamentals from yfinance for a list of tickers.
+    Returns DataFrame with columns: date, ticker, + fundamental ratios.
+
+    yfinance provides ~4-5 years of quarterly data per ticker.
+    We use the filing date (column date) as point-in-time observation.
+
+    NOTE: This is slower than Simfin bulk download (~1-2 sec per ticker).
+    For 500 tickers, expect ~10-20 min.
+    """
+    import yfinance as yf
+
+    records = []
+    n = len(tickers)
+    failed = 0
+
+    for i, tk in enumerate(tickers):
+        if (i + 1) % 50 == 0 or i == 0:
+            print(f"  [{i+1}/{n}] Processing {tk}...")
+
+        # yfinance wants plain ticker (no .O/.N suffix)
+        yf_tk = strip_exchange_suffix(tk)
+        # Special cases: BRK.B → BRK-B for yfinance
+        yf_tk = yf_tk.replace(".", "-")
+
+        try:
+            obj = yf.Ticker(yf_tk)
+
+            # ── Quarterly financials (income statement) ──
+            inc = obj.quarterly_financials  # line items × dates
+            if inc is None or inc.empty:
+                failed += 1
+                continue
+
+            # ── Quarterly balance sheet ──
+            bal = obj.quarterly_balance_sheet
+            if bal is None:
+                bal = pd.DataFrame()
+
+            # ── Quarterly cash flow ──
+            cf = obj.quarterly_cashflow
+            if cf is None:
+                cf = pd.DataFrame()
+
+            # Transpose: dates become rows, line items become columns
+            inc_t = inc.T.sort_index()
+            bal_t = bal.T.sort_index() if not bal.empty else pd.DataFrame()
+            cf_t  = cf.T.sort_index()  if not cf.empty  else pd.DataFrame()
+
+            # Helper to safely get a column
+            def get(df, names, default=np.nan):
+                if df.empty:
+                    return pd.Series(default, index=inc_t.index)
+                for name in names:
+                    if name in df.columns:
+                        return df[name].reindex(inc_t.index)
+                return pd.Series(default, index=inc_t.index)
+
+            # Extract key line items
+            revenue    = get(inc_t, ["Total Revenue", "Revenue"])
+            net_income = get(inc_t, ["Net Income", "Net Income Common Stockholders"])
+            cogs       = get(inc_t, ["Cost Of Revenue", "Cost of Revenue"])
+            op_income  = get(inc_t, ["Operating Income", "EBIT"])
+
+            total_eq     = get(bal_t, ["Total Stockholders Equity", "Stockholders Equity",
+                                        "Total Equity Gross Minority Interest"])
+            total_assets = get(bal_t, ["Total Assets"])
+            total_debt   = get(bal_t, ["Total Debt", "Long Term Debt", "Total Liabilities Net Minority Interest"])
+            shares_out   = get(bal_t, ["Share Issued", "Ordinary Shares Number"])
+
+            cfo   = get(cf_t, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"])
+            capex = get(cf_t, ["Capital Expenditure"])
+
+            # ── TTM (trailing 4 quarters) ──
+            def ttm(s):
+                return s.rolling(4, min_periods=3).sum()
+
+            rev_ttm = ttm(revenue)
+            ni_ttm  = ttm(net_income)
+            cogs_ttm = ttm(cogs)
+            cfo_ttm = ttm(cfo)
+
+            # ── For each quarter, compute ratios ──
+            for j, dt in enumerate(inc_t.index):
+                rec = {"date": pd.Timestamp(dt), "ticker": tk}
+
+                rev_v = rev_ttm.iloc[j] if not pd.isna(rev_ttm.iloc[j]) else np.nan
+                ni_v  = ni_ttm.iloc[j]  if not pd.isna(ni_ttm.iloc[j])  else np.nan
+                cogs_v = cogs_ttm.iloc[j] if not pd.isna(cogs_ttm.iloc[j]) else np.nan
+                cfo_v  = cfo_ttm.iloc[j] if not pd.isna(cfo_ttm.iloc[j]) else np.nan
+
+                eq_v     = total_eq.iloc[j]     if j < len(total_eq) and not pd.isna(total_eq.iloc[j]) else np.nan
+                assets_v = total_assets.iloc[j]  if j < len(total_assets) and not pd.isna(total_assets.iloc[j]) else np.nan
+                debt_v   = total_debt.iloc[j]    if j < len(total_debt) and not pd.isna(total_debt.iloc[j]) else np.nan
+                shares_v = shares_out.iloc[j]    if j < len(shares_out) and not pd.isna(shares_out.iloc[j]) else np.nan
+
+                # ROE = NI_TTM / Equity
+                rec["roe"] = ni_v / eq_v if eq_v and abs(eq_v) > 1e6 else np.nan
+                # ROA = NI_TTM / Assets
+                rec["roa"] = ni_v / assets_v if assets_v and abs(assets_v) > 1e6 else np.nan
+                # Gross margin
+                if rev_v and abs(rev_v) > 1e6 and not np.isnan(cogs_v):
+                    rec["gross_margin"] = (rev_v - cogs_v) / rev_v
+                else:
+                    rec["gross_margin"] = np.nan
+                # Debt to equity
+                rec["debt_to_equity"] = debt_v / eq_v if eq_v and abs(eq_v) > 1e6 else np.nan
+
+                # YoY growth (need 4 prior quarters)
+                if j >= 4:
+                    rev_1y = rev_ttm.iloc[j - 4]
+                    ni_1y  = ni_ttm.iloc[j - 4]
+                    rec["revenue_growth_yoy"] = (rev_v / rev_1y - 1) if rev_1y and abs(rev_1y) > 1e6 else np.nan
+                    rec["eps_growth_yoy"]     = (ni_v / ni_1y - 1)   if ni_1y and abs(ni_1y) > 1e6 else np.nan
+                else:
+                    rec["revenue_growth_yoy"] = np.nan
+                    rec["eps_growth_yoy"] = np.nan
+
+                # Earnings quality = CFO_TTM / NI_TTM (Sloan 1996)
+                rec["earnings_quality"] = cfo_v / ni_v if ni_v and abs(ni_v) > 1e6 else np.nan
+
+                # Per-share helpers (for price-based ratios in 1h)
+                if shares_v and shares_v > 0:
+                    rec["_eps_ttm"]        = ni_v / shares_v if ni_v else np.nan
+                    rec["_book_per_share"] = eq_v / shares_v if eq_v else np.nan
+                    rec["_rev_per_share"]  = rev_v / shares_v if rev_v else np.nan
+                else:
+                    rec["_eps_ttm"] = rec["_book_per_share"] = rec["_rev_per_share"] = np.nan
+
+                # Placeholder for price-dependent ratios
+                rec["pe_ratio"]  = np.nan
+                rec["pb_ratio"]  = np.nan
+                rec["ps_ratio"]  = np.nan
+                rec["ev_ebitda"] = np.nan
+                rec["buyback_yield"] = np.nan
+
+                records.append(rec)
+
+        except Exception as e:
+            failed += 1
+            if failed <= 5:
+                print(f"    [WARN] {yf_tk}: {e}")
+            elif failed == 6:
+                print(f"    [WARN] Suppressing further individual errors...")
+            continue
+
+        # Rate limiting: small sleep every batch_size tickers
+        if (i + 1) % batch_size == 0:
+            _time.sleep(0.5)
+
+    print(f"  Completed: {n - failed}/{n} tickers ({failed} failed)")
+
+    if not records:
+        return pd.DataFrame()
+
+    result = pd.DataFrame(records)
+    result["date"] = pd.to_datetime(result["date"])
+
+    # yfinance dates are period-end, not publish dates
+    # Add ~45 day lag as conservative point-in-time estimate
+    # (10-Q filing deadline = 40 days for large accelerated filers)
+    result["date"] = result["date"] + pd.Timedelta(days=45)
+
+    # Drop all-NaN ratio rows
+    ratio_cols = ["roe", "roa", "gross_margin", "debt_to_equity",
+                  "revenue_growth_yoy", "eps_growth_yoy", "earnings_quality"]
+    result = result.dropna(subset=ratio_cols, how="all")
+
+    return result
+
+
 # ── Run ───────────────────────────────────────────────────────────────────────
-print("\nComputing fundamental ratios (TTM, point-in-time)...")
-fund_df = compute_fundamentals(df_i, df_b, df_c)
+if USE_YFINANCE_FALLBACK:
+    print("\nFetching fundamentals via yfinance (ticker-by-ticker)...")
+    print("  This may take 10-20 min for 500+ tickers.")
+    if our_tickers:
+        fund_df = fetch_fundamentals_yfinance(our_tickers)
+    else:
+        print("  [ERROR] No ticker list available. Run 1h first to generate panel_monthly.parquet.")
+        fund_df = pd.DataFrame()
+else:
+    print("\nComputing fundamental ratios (TTM, point-in-time) from Simfin...")
+    fund_df = compute_fundamentals(df_i, df_b, df_c)
 
 if fund_df.empty:
-    print("\n[WARN] No fundamental data computed. Check Simfin data availability.")
+    print("\n[WARN] No fundamental data computed.")
+    if USE_YFINANCE_FALLBACK:
+        print("  yfinance fallback returned no data. Check internet connection.")
+    else:
+        print("  Simfin returned no data. Set SIMFIN_API_KEY or use yfinance fallback.")
 else:
     # Keep only the columns expected by the pipeline
     from utils_factors import FUNDAMENTAL_COLS

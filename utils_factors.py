@@ -1531,3 +1531,108 @@ def add_seasonality_factors(prices: pd.DataFrame) -> pd.DataFrame:
     added = [c for c in new_cols if c in prices.columns]
     print(f"  Cat 18: {len(added)} seasonality factors added: {added}")
     return prices
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CAT 19 — Short Interest Factors
+# ═══════════════════════════════════════════════════════════════════════════════
+# Drechsler & Drechsler (2016) — short interest cost and equity returns
+# Asquith, Pathak & Ritter (2005) — short interest and returns
+# Diether, Lee & Werner (2009) — short-selling
+
+SHORT_INTEREST_COLS = [
+    "short_pct_float", "short_interest_ratio", "short_change_2w", "short_squeeze_risk",
+]
+
+
+def add_short_interest_factors(
+    panel: pd.DataFrame,
+    short_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Merge short interest factors into the monthly panel.
+
+    Parameters
+    ----------
+    panel : pd.DataFrame
+        Monthly panel (date, ticker, features…).
+    short_df : pd.DataFrame
+        Must have columns: date, ticker, plus SHORT_INTEREST_COLS subset.
+        Point-in-time: each row is the most recent short interest report as of date.
+
+    Returns panel with available short interest columns left-joined.
+    """
+    si_cols = [c for c in SHORT_INTEREST_COLS if c in short_df.columns]
+    if not si_cols:
+        print("  Cat 19: no short interest columns found — skipping")
+        return panel
+
+    si_sub = short_df[["date", "ticker"] + si_cols].copy()
+    si_sub["date"] = pd.to_datetime(si_sub["date"]).astype("datetime64[us]")
+    si_sub = si_sub.sort_values("date")
+
+    panel["date"] = pd.to_datetime(panel["date"]).astype("datetime64[us]")
+
+    # merge_asof: for each (ticker, month-end), get the most recent short interest
+    panel = panel.sort_values("date")
+    panel = pd.merge_asof(
+        panel, si_sub,
+        on="date", by="ticker",
+        direction="backward",
+        tolerance=pd.Timedelta(days=60),  # short interest is bi-monthly
+    )
+    print(f"  Cat 19: {len(si_cols)} short interest factors merged: {si_cols}")
+    return panel
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CAT 20 — Institutional Ownership Factors
+# ═══════════════════════════════════════════════════════════════════════════════
+# Gompers & Metrick (2001) — institutional ownership and stock returns
+# Yan & Zhang (2009) — institutional investors and cross-section
+# Chen, Hong & Stein (2002) — breadth of ownership
+# Hartzell & Starks (2003) — institutional investors and executive compensation
+
+INSTITUTIONAL_COLS = [
+    "inst_own_pct", "inst_own_change", "num_institutions", "inst_concentration",
+]
+
+
+def add_institutional_factors(
+    panel: pd.DataFrame,
+    inst_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Merge institutional ownership factors into the monthly panel.
+
+    Parameters
+    ----------
+    panel : pd.DataFrame
+        Monthly panel (date, ticker, features…).
+    inst_df : pd.DataFrame
+        Must have columns: date, ticker, plus INSTITUTIONAL_COLS subset.
+        Quarterly frequency from 13F filings.
+
+    Returns panel with available institutional columns left-joined.
+    """
+    inst_cols = [c for c in INSTITUTIONAL_COLS if c in inst_df.columns]
+    if not inst_cols:
+        print("  Cat 20: no institutional ownership columns found — skipping")
+        return panel
+
+    inst_sub = inst_df[["date", "ticker"] + inst_cols].copy()
+    inst_sub["date"] = pd.to_datetime(inst_sub["date"]).astype("datetime64[us]")
+    inst_sub = inst_sub.sort_values("date")
+
+    panel["date"] = pd.to_datetime(panel["date"]).astype("datetime64[us]")
+
+    # merge_asof: quarterly data, allow up to 185 days tolerance
+    panel = panel.sort_values("date")
+    panel = pd.merge_asof(
+        panel, inst_sub,
+        on="date", by="ticker",
+        direction="backward",
+        tolerance=pd.Timedelta(days=185),  # quarterly filing cadence
+    )
+    print(f"  Cat 20: {len(inst_cols)} institutional ownership factors merged: {inst_cols}")
+    return panel

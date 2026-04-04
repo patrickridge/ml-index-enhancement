@@ -63,6 +63,8 @@ from utils_factors import (
     add_mined_factors,
     add_time_signal_v2,
     add_seasonality_factors,
+    add_short_interest_factors,
+    add_institutional_factors,
 )
 from config import MACRO_COLS
 import time as _time; _t0 = _time.time()
@@ -338,6 +340,26 @@ def main():
         panel = add_fundamental_factors(panel, fundamental)
     else:
         print(f"\n{FUND_IN} not found — skipping Cat 9 fundamental factors.")
+
+    # Cat 19: short interest (optional)
+    SI_IN = DATA_DIR / "short_interest.parquet"
+    if SI_IN.exists():
+        print(f"\nFound {SI_IN} — adding Cat 19: short interest factors...")
+        short_df = pd.read_parquet(SI_IN)
+        short_df["date"] = pd.to_datetime(short_df["date"])
+        panel = add_short_interest_factors(panel, short_df)
+    else:
+        print(f"\n{SI_IN} not found — skipping Cat 19 short interest factors.")
+
+    # Cat 20: institutional ownership (optional)
+    IO_IN = DATA_DIR / "institutional_ownership.parquet"
+    if IO_IN.exists():
+        print(f"\nFound {IO_IN} — adding Cat 20: institutional ownership factors...")
+        inst_df = pd.read_parquet(IO_IN)
+        inst_df["date"] = pd.to_datetime(inst_df["date"])
+        panel = add_institutional_factors(panel, inst_df)
+    else:
+        print(f"\n{IO_IN} not found — skipping Cat 20 institutional ownership factors.")
 
     # Cat 10: macro / regime
     print("\nFetching macro data (Cat 10)...")
