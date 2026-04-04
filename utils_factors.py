@@ -1066,3 +1066,73 @@ def add_size_factor(
           f"({100*n_valid/max(len(merged),1):.1f}%)")
 
     return merged.sort_values(["date", "ticker"]).reset_index(drop=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CAT 15 — TAIL RANKING FEATURES
+# ══════════════════════════════════════════════════════════════════════════════
+
+def add_tail_ranking_features(
+    panel: pd.DataFrame,
+    base_factors: list,
+    top_pct: float = 0.10,
+    bot_pct: float = 0.10,
+) -> pd.DataFrame:
+    """
+    Cat 15: Non-linear tail membership features.
+
+    Rationale (per Kieran):
+      "Use contrarian factors, use quantile test to make those tail ranking factors."
+      The CS-Transformer sees continuous ranks [0,1].  Explicit tail dummies give
+      it a hard signal: this stock is in the EXTREME TOP/BOTTOM decile — a regime
+      the model might under-weight with smooth inputs alone.
+
+    For each base factor we add:
+      {f}_top  : 1 if CS-rank >= (1 - top_pct), else 0  (top decile long candidate)
+      {f}_bot  : 1 if CS-rank <= bot_pct,        else 0  (bottom decile short candidate)
+      {f}_tail : +1 top, -1 bottom, 0 middle              (signed tail indicator)
+
+    These are computed CROSS-SECTIONALLY within each month so there is no
+    lookahead.  The resulting columns are already in {0,1} / {-1,0,+1} space —
+    no additional CS ranking is applied (marked via TAIL_COLS list in 1g).
+
+    Parameters
+    ----------
+    panel        : monthly enriched panel (must already have base_factors columns)
+    base_factors : list of factor column names to build tail features from
+    top_pct      : fraction defining "top" tail (default 10%)
+    bot_pct      : fraction defining "bottom" tail (default 10%)
+
+    Returns
+    -------
+    panel with new {f}_top / {f}_bot / {f}_tail columns appended.
+    """
+    panel = panel.copy()
+    new_cols_added = []
+
+    valid_factors = [f for f in base_factors if f in panel.columns]
+
+    for dt, grp_idx in panel.groupby("date").groups.items():
+        grp = panel.loc[grp_idx, valid_factors]
+        # Cross-sectional percentile rank within this month
+        pct_rank = grp.rank(pct=True, method="average")
+
+        for f in valid_factors:
+            top_col  = f"{f}_top"
+            bot_col  = f"{f}_bot"
+            tail_col = f"{f}_tail"
+            col = pct_rank[f]
+            panel.loc[grp_idx, top_col]  = (col >= 1.0 - top_pct).astype(np.float32)
+            panel.loc[grp_idx, bot_col]  = (col <= bot_pct).astype(np.float32)
+            panel.loc[grp_idx, tail_col] = (
+                (col >= 1.0 - top_pct).astype(float)
+                - (col <= bot_pct).astype(float)
+            ).astype(np.float32)
+
+    for f in valid_factors:
+        new_cols_added += [f"{f}_top", f"{f}_bot", f"{f}_tail"]
+
+    n_new = sum(1 for c in new_cols_added if c in panel.columns)
+    print(f"  Cat 15: {n_new} tail-ranking features added "
+          f"(top {int(top_pct*100)}% / bot {int(bot_pct*100)}% per {len(valid_factors)} base factors)")
+    return panel

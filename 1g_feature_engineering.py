@@ -54,6 +54,7 @@ from utils_factors import (
     add_macro_interaction_factors,
     fetch_market_cap_data,
     add_size_factor,
+    add_tail_ranking_features,
 )
 from config import MACRO_COLS
 import time as _time; _t0 = _time.time()
@@ -344,12 +345,42 @@ def main():
     # Drop the helper column — it is not a model feature
     panel = panel.drop(columns=["close_me"], errors="ignore")
 
+    # Cat 15: Tail-ranking features — explicit top/bottom decile dummies
+    # Capture non-linear tail effects on contrarian + momentum + vol factors.
+    # These are already in {0,1}/{-1,0,1} space; do NOT CS-rank them again.
+    print("\nAdding Cat 15: tail-ranking features...")
+    TAIL_BASE_FACTORS = [
+        # Short-term reversal (contrarian candidates)
+        "ret_1m", "ret_2w", "ret_1w",
+        # Multi-horizon momentum
+        "ret_6m", "ret_9m", "ret_12m", "ret_18m", "ret_24m",
+        # Volatility
+        "vol_momentum_21d", "vol_21d", "vol_252d",
+        # Quality/risk
+        "idio_vol_252d", "beta_252d", "maxdd_126d",
+        # Barra-style size/liquidity
+        "size_proxy", "amihud_illiq_21d", "log_mktcap",
+    ]
+    tail_base_available = [f for f in TAIL_BASE_FACTORS if f in panel.columns]
+    panel = add_tail_ranking_features(panel, tail_base_available, top_pct=0.10, bot_pct=0.10)
+
+    # Track tail columns so they skip CS-ranking (already {0,1} / {-1,0,1})
+    TAIL_COLS = set()
+    for f in tail_base_available:
+        for suffix in ("_top", "_bot", "_tail"):
+            col = f"{f}{suffix}"
+            if col in panel.columns:
+                TAIL_COLS.add(col)
+
     # Identify all feature columns
     always_exclude = {"date", "ticker", "fwd_ret_1m"}
     macro_in_panel = [c for c in MACRO_COLS if c in panel.columns]
+    # Tail cols already normalised ({0,1}/{-1,0,1}) — skip CS-ranking
     feat_cols_cs   = [c for c in panel.columns
-                      if c not in always_exclude and c not in macro_in_panel]
-    all_feat_cols  = feat_cols_cs + macro_in_panel
+                      if c not in always_exclude
+                      and c not in macro_in_panel
+                      and c not in TAIL_COLS]
+    all_feat_cols  = feat_cols_cs + list(TAIL_COLS) + macro_in_panel
 
     print(f"\nTotal features: {len(all_feat_cols)}")
     print(f"  Cross-sectionally ranked: {len(feat_cols_cs)}")
