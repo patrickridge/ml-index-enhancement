@@ -2,9 +2,6 @@
 
 ML-driven S&P 500 index enhancement pipeline. Three models (LightGBM, FT-Transformer, CS-Transformer) rank ~500 stocks monthly and tilt portfolio weights to beat the index with low tracking error. A two-layer Deep Reinforcement Learning (DRL) system then adaptively controls portfolio tilt each month.
 
-See [Notes/STRATEGY.md](Notes/STRATEGY.md) for a full plain-English explanation of the methodology and results.
-See [Notes/DEVELOPMENT_LOG.md](Notes/DEVELOPMENT_LOG.md) for a chronological record of all changes and findings.
-
 ---
 
 ## Requirements
@@ -18,29 +15,47 @@ pip install -r requirements.txt
 ## How to Run — Full Pipeline (in order)
 
 ### Phase 1 — Data Prep
+
 ```bash
 python 1a_price_parquet.py             # parse OHLC source → data/prices.parquet
 python 1b_fetch_constituents.py        # historical S&P 500 constituent list
 python 1c_fetch_market_cap.py          # monthly SPX weights via yfinance
 python 1d_fetch_missing_tickers.py     # recover delisted/missing tickers via yfinance
-python 1d2_parse_wind_prices.py        # parse Kieran's Missing data.xlsx → merge ~179 historical tickers
-python 1e_ingest_wind_xlsx.py          # ingest Wind fundamentals xlsx (PE, ROE etc → data/wind_exports/)
-python 1f_rebuild_panel.py             # build monthly panel from prices
-python 1g_feature_engineering.py       # compute 43+ factors → data/panel_monthly_enriched.parquet
-python 1h_orthogonalize.py             # PCA residualization (run after finalising feature set)
+python 1e_parse_wind_prices.py         # parse Kieran's Missing data.xlsx → merge ~179 historical tickers
+python 1f_ingest_wind_xlsx.py          # ingest Wind fundamentals xlsx (PE, ROE etc → data/wind_exports/)
+python 1g_rebuild_panel.py             # build monthly panel from prices
+
+# Optional external data fetches (run once; rebuild periodically)
+python 1j_fetch_simfin.py              # quarterly fundamentals via Simfin/yfinance → data/fundamental.parquet
+python 1k_fetch_short_interest.py      # short interest snapshot via yfinance → data/short_interest.parquet
+python 1l_fetch_13f.py                 # institutional ownership snapshot → data/institutional_ownership.parquet
+python 1m_fetch_prediction_markets.py  # Fed/VIX/yield prediction market signals → data/prediction_markets.parquet
+
+python 1h_feature_engineering.py       # compute 190+ factors across 21 categories → data/panel_monthly_enriched.parquet
+python 1i_orthogonalize.py             # PCA residualization (run after finalising feature set)
 ```
 
-### Phase 2 — Factor Analysis
+Or run everything at once:
+```bash
+bash run_pipeline.sh             # fetch data + rebuild panel + run diagnostics
+bash run_pipeline.sh --skip-fetch  # skip external data fetch (use existing files)
+```
+
+### Phase 2 — Factor Analysis & Diagnostics
+
 ```bash
 python 2a_factor_analysis.py           # IC, quintile, regime stability → data/factor_selected.csv
 python 2b_ic_decay_all.py              # IC decay grid for all factors → figures/
 python 2c_ic_decay_daily.py            # daily IC decay (1–90 trading days)
 python 2d_factor_weights.py            # IC-decay based weights → data/factor_selected.csv
 python 2e_ic_optimise.py               # gradient-optimised weights → data/factor_selected_optimised.csv
-python 2f_factor_diagnostics.py        # IC correlation, VIF, RMT eigenvalue analysis (optional)
+python 2f_factor_diagnostics.py        # IC correlation, VIF, RMT eigenvalue analysis
+python 2g_factor_decay_report.py       # 7-day IC decay report (IS vs OOS)
+python 2h_factor_crowding.py           # correlation matrix, IC decay, contrarian & quintile audits
 ```
 
 ### Phase 3 — Models
+
 ```bash
 python 3a_ft_transformer.py            # FT-Transformer (CPU, ~10–15 min) → data/scores_transformer.parquet
 ```
@@ -54,6 +69,7 @@ CS-Transformer requires Kaggle GPU:
 ```
 
 ### Phase 4 — Evaluation
+
 ```bash
 python 4a_factor_combo_baseline.py     # linear factor combo baseline (no ML)
 python 4b_index_enhancement.py         # IE portfolio construction → data/bt_ie_*.csv
@@ -63,13 +79,47 @@ python 4d_benchmark_spx.py             # full comparison vs S&P 500
 ```
 
 ### Phase 5 — Deep Reinforcement Learning
+
 ```bash
-python 5a_rl_factor_agent.py           # Layer 1 SAC — adaptive factor IC weighting (requires torch)
-python 5b_rl_portfolio_agent.py        # Layer 2 SAC — adaptive alpha tilt, 9-feature macro state (run after 5a)
+python 5a_rl_factor_agent.py           # Layer 1 SAC — adaptive factor IC weighting
+python 5b_rl_portfolio_agent.py        # Layer 2 SAC — adaptive alpha tilt, 9-feature macro state
 python 5c_walk_forward.py              # Walk-forward backtest — 5 folds, no leakage, 95 OOS months
-python 5d_algorithm_comparison.py      # SAC vs PPO vs GRPO walk-forward comparison (GRPO + KL penalty)
-python 5e_dapo_agent.py                # DAPO vs GRPO — clip-higher + dynamic sampling (no KL)
+python 5d_algorithm_comparison.py      # SAC vs PPO vs GRPO walk-forward comparison
+python 5e_dapo_agent.py                # DAPO vs GRPO — clip-higher + dynamic sampling + no KL
 ```
+
+---
+
+## Factor Categories (21 total, ~190 features)
+
+| Cat | Name | Description |
+|-----|------|-------------|
+| 1 | Momentum | 1/3/6/12m returns, skip-month reversal |
+| 2 | Volatility | Realised vol, idiosyncratic vol, downside vol |
+| 3 | Tail Risk | CVaR, max drawdown, skewness, kurtosis |
+| 4 | Price Trend | RSI, MACD, Bollinger, trend strength |
+| 5 | Volume/Liquidity | Amihud illiquidity, turnover, Bid-Ask spread proxy |
+| 6 | Beta/Correlation | Market beta, rolling beta, downside beta |
+| 7 | Microstructure | Bid-ask spread, price impact, autocorrelation |
+| 8 | Cross-sectional | SPX-relative return, sector-relative vol |
+| 9 | Fundamentals | ROE, ROA, gross margin, debt/equity, growth, earnings quality (from `1j`) |
+| 10 | Macro/Regime | VIX, yield curve, credit spread, PMI (cross-ticker) |
+| 11 | Time-Signal v1 | Stock-level regime timing: ADX, trend consistency |
+| 12 | Barra Style | Value, growth, leverage, earnings variability |
+| 13 | Macro Interactions | Momentum × VIX, value × yield curve |
+| 14 | Size | log(market cap) |
+| 15 | Tail Ranking | Binary top/bottom decile dummies for base factors |
+| 16 | Mined Alpha | 12 novel price signals: nearness to 52w high, residual momentum, up/down vol ratio, co-skewness, vol contraction, etc. |
+| 17 | Time-Signal v2 | ADX regime, roll spread, autocorr, vol expansion, trend strength |
+| 18 | Seasonality | Same-month return (Heston & Sadka 2008), turn-of-month, January dummy |
+| 19 | Short Interest | short % of float, days-to-cover, short change, squeeze risk (from `1k`) |
+| 20 | Institutional | inst. ownership %, change, # holders, concentration HHI (from `1l`) |
+| 21 | Prediction Markets | Fed hike/cut probability, recession probability, VIX term structure, policy uncertainty (from `1m`) |
+
+**Crowding/selection rules (Kieran):**
+- Correlation filter applied **after** backtest, not before training
+- OOS IC is diagnostic only — never used for factor selection (lookahead bias)
+- Prediction market factors used as **when-to-trade** signals (time-signals), not cross-sectional stock signals
 
 ---
 
@@ -84,11 +134,9 @@ python 5e_dapo_agent.py                # DAPO vs GRPO — clip-higher + dynamic 
 | LGBM | ~0.5% | ~2.0% | 0.384 | — |
 | Linear Factor Combo (baseline) | — | — | −0.046 | — |
 
-IR > 0.5 is institutional-grade. IR > 1.0 is top-quartile. CS-Transformer is regime-stable across all market conditions.
+IR > 0.5 is institutional-grade. IR > 1.0 is top-quartile.
 
 ### RL Walk-Forward Backtest (95 out-of-sample months, 2014–2025)
-
-Fully expanding-window validation — factor weights, state normalisation, and RL policy all trained on past data only. No test-period information used anywhere in the pipeline.
 
 | | RL Agent (SAC) | Fixed α=1% |
 |---|---|---|
@@ -98,8 +146,6 @@ Fully expanding-window validation — factor weights, state normalisation, and R
 | **Hit Rate** | 50.5% | 48.4% |
 | **Max Active DD** | **−6.04%** | −10.50% |
 
-RL beats fixed alpha in 4/5 folds. Max drawdown cut nearly in half — the agent scales back tilt in high-volatility regimes and sizes up when factor IC is high.
-
 | Fold | RL IR | Fixed IR |
 |------|-------|----------|
 | 2014–2015 | −0.755 | −1.659 ✓ |
@@ -108,18 +154,14 @@ RL beats fixed alpha in 4/5 folds. Max drawdown cut nearly in half — the agent
 | 2020–2021 | 1.125 | 0.751 ✓ |
 | 2022–2025 | 1.188 | 0.380 ✓ |
 
-### Algorithm Comparison — SAC vs PPO vs GRPO (5d)
+### Algorithm Comparison — SAC vs PPO vs GRPO
 
-Same 5-fold walk-forward structure. GRPO implements the DeepSeek-R1 (2025) algorithm with KL penalty.
-
-| Algorithm | Type | IR | Notes |
-|-----------|------|----|-------|
-| GRPO | No critic, group ranking | **0.875** | DeepSeek-R1 method + KL penalty |
-| PPO | On-policy, clipped | 0.870 | Critic baseline |
-| SAC | Off-policy, replay buffer | 0.788 | Twin Q-critics, entropy reg |
-| Fixed α=1% | Baseline | 0.276 | No RL |
-
-GRPO and PPO outperform SAC overall — in a deterministic simulation environment, SAC's off-policy advantage is reduced. GRPO's critic-free group ranking is the best fit for the small-data (~100 training months) regime.
+| Algorithm | IR | Notes |
+|-----------|----|-------|
+| GRPO | **0.875** | DeepSeek-R1 method + KL penalty |
+| PPO | 0.870 | Critic baseline |
+| SAC | 0.788 | Twin Q-critics, entropy reg |
+| Fixed α=1% | 0.276 | No RL |
 
 ### Data Splits
 
@@ -139,16 +181,23 @@ GRPO and PPO outperform SAC overall — in a deterministic simulation environmen
 | `1b_fetch_constituents.py` | Download full historical S&P 500 constituent list |
 | `1c_fetch_market_cap.py` | Fetch monthly SPX constituent weights via yfinance |
 | `1d_fetch_missing_tickers.py` | Secondary yfinance fetch for missing/delisted tickers |
-| `1e_ingest_wind_xlsx.py` | Ingest Wind platform XLSX exports |
-| `1f_rebuild_panel.py` | Rebuild monthly panel from prices.parquet |
-| `1g_feature_engineering.py` | Build 43+ factors → panel_monthly_enriched.parquet |
-| `1h_orthogonalize.py` | PCA residualization for factor orthogonality |
-| `2a_factor_analysis.py` | IC, quintile, regime stability, factor selection |
-| `2b_ic_decay_all.py` | IC decay grid for all 43 factors |
+| `1e_parse_wind_prices.py` | Parse Missing data.xlsx → merge ~179 historical tickers |
+| `1f_ingest_wind_xlsx.py` | Ingest Wind platform XLSX exports |
+| `1g_rebuild_panel.py` | Rebuild monthly panel from prices.parquet |
+| `1h_feature_engineering.py` | Build 190+ factors (21 categories) → panel_monthly_enriched.parquet |
+| `1i_orthogonalize.py` | PCA residualization for factor orthogonality |
+| `1j_fetch_simfin.py` | Quarterly fundamentals via Simfin or yfinance fallback |
+| `1k_fetch_short_interest.py` | Short interest snapshot (yfinance, run periodically) |
+| `1l_fetch_13f.py` | Institutional ownership snapshot (yfinance, run quarterly) |
+| `1m_fetch_prediction_markets.py` | Fed/VIX/yield prediction market signals (daily, 2010–present) |
+| `2a_factor_analysis.py` | IC, quintile, regime stability — IS diagnostic only |
+| `2b_ic_decay_all.py` | IC decay grid for all factors |
 | `2c_ic_decay_daily.py` | Daily IC decay (1–90 trading days) |
 | `2d_factor_weights.py` | IC-decay based factor weights |
 | `2e_ic_optimise.py` | Gradient-optimised factor weights (PyTorch) |
 | `2f_factor_diagnostics.py` | IC correlation matrix, VIF, RMT eigenvalue analysis |
+| `2g_factor_decay_report.py` | 7-day IC decay IS vs OOS report |
+| `2h_factor_crowding.py` | Correlation matrix, IC decay, contrarian factors, quintile direction audit |
 | `3a_ft_transformer.py` | FT-Transformer walk-forward backtest (local CPU) |
 | `3b_ft_transformer_kaggle.py` | FT-Transformer (Kaggle GPU version) |
 | `3c_cs_transformer.py` | CS-Transformer (local, slow) |
@@ -157,15 +206,15 @@ GRPO and PPO outperform SAC overall — in a deterministic simulation environmen
 | `4b_index_enhancement.py` | IE portfolio construction, alpha sweep |
 | `4c_regime_engine.py` | Per-regime IE performance breakdown (rule-based + HMM) |
 | `4d_benchmark_spx.py` | Compare all strategies vs S&P 500 |
-| `5a_rl_factor_agent.py` | Layer 1 SAC — adaptive factor IC weighting across 43 factors |
-| `5b_rl_portfolio_agent.py` | Layer 2 SAC — adaptive alpha tilt, 9-feature state (base + macro: VIX, yield, spread) |
-| `5c_walk_forward.py` | Walk-forward RL backtest — 5 folds, no data leakage, 95 OOS months |
-| `5d_algorithm_comparison.py` | SAC vs PPO vs GRPO walk-forward comparison — GRPO with KL penalty (DeepSeek-R1) |
-| `5e_dapo_agent.py` | DAPO vs GRPO — clip-higher (ε↑=0.28) + dynamic sampling (G=2–8) + no KL |
-| `1d2_parse_wind_prices.py` | Parse Missing data.xlsx → merge ~179 historical S&P 500 tickers into prices.parquet |
+| `5a_rl_factor_agent.py` | Layer 1 SAC — adaptive factor IC weighting |
+| `5b_rl_portfolio_agent.py` | Layer 2 SAC — adaptive alpha tilt, 9-feature macro state |
+| `5c_walk_forward.py` | Walk-forward RL backtest — 5 folds, 95 OOS months |
+| `5d_algorithm_comparison.py` | SAC vs PPO vs GRPO walk-forward comparison |
+| `5e_dapo_agent.py` | DAPO vs GRPO — clip-higher + dynamic sampling + no KL |
 | `config.py` | All shared parameters and hyperparameters |
-| `utils_factors.py` | 100+ factor computation functions (10 categories) |
+| `utils_factors.py` | 190+ factor functions across 21 categories |
 | `utils_rmt.py` | Random Matrix Theory covariance denoising |
+| `run_pipeline.sh` | Automated: fetch data → rebuild panel → analyse → diagnostics |
 
 ---
 
@@ -174,26 +223,17 @@ GRPO and PPO outperform SAC overall — in a deterministic simulation environmen
 | File | Description |
 |------|-------------|
 | `data/prices.parquet` | Daily OHLC — 697 tickers, 2010–2025 |
-| `data/panel_monthly_enriched.parquet` | Monthly panel — 43+ factors, cross-sectionally ranked |
-| `data/factor_selected_optimised.csv` | 43 selected factors with IC-optimised weights |
+| `data/panel_monthly_enriched.parquet` | Monthly panel — 190+ factors, cross-sectionally ranked |
+| `data/fundamental.parquet` | Quarterly fundamentals — ROE, ROA, margins, growth (from 1j) |
+| `data/short_interest.parquet` | Short interest snapshot — % float, days-to-cover, etc. (from 1k) |
+| `data/institutional_ownership.parquet` | Institutional ownership — % owned, # holders, HHI (from 1l) |
+| `data/prediction_markets.parquet` | Daily Fed/VIX/yield signals — 6 factors, 2010–2026 (from 1m) |
+| `data/factor_selected_optimised.csv` | Selected factors with IC-optimised weights |
 | `data/scores_transformer.parquet` | FT-Transformer scores (test period) |
 | `data/scores_cs_transformer.parquet` | CS-Transformer scores (from Kaggle) |
 | `data/bt_ie_cs_transformer.csv` | CS-Transformer IE backtest monthly returns |
-| `data/bt_ie_transformer.csv` | FT-Transformer IE backtest monthly returns |
-| `data/bt_ie_lgbm.csv` | LGBM IE backtest monthly returns |
-| `data/ie_regime_breakdown.csv` | Per-regime IR breakdown (all models) |
 | `data/bt_wf_rl.csv` | Walk-forward RL monthly returns (95 OOS months) |
-| `data/wf_fold_summary.csv` | Per-fold IR, alpha, TE summary |
 | `data/algo_comparison.csv` | SAC vs PPO vs GRPO per-fold metrics |
-| `data/dapo_comparison.csv` | DAPO vs GRPO per-fold metrics |
-| `data/wind_parse_log.csv` | Log of tickers added/skipped from Missing data.xlsx |
-| `data/l1_rl_ic_full.csv` | Layer 1 RL IC series (used as L2 state feature) |
-| `figures/ie_regime_breakdown.png` | Bar chart: IR by regime per model |
-| `figures/wf_rl_comparison.png` | Walk-forward cumulative alpha: RL vs fixed |
-| `figures/algo_comparison.png` | SAC vs PPO vs GRPO cumulative alpha + per-fold IR |
-| `figures/dapo_comparison.png` | DAPO vs GRPO cumulative alpha + per-fold IR |
-| `figures/factor_ic_summary_positive.png` | Top 10 positive-IC factors |
-| `figures/factor_weights_optimised.png` | Optimised factor weight distribution |
 
 ---
 

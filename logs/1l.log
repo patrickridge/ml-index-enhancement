@@ -1,0 +1,81 @@
+=================================================================
+INSTITUTIONAL OWNERSHIP DATA FETCH (SEC EDGAR 13F)
+=================================================================
+Pipeline tickers: 697
+
+Using yfinance to fetch institutional ownership snapshots...
+  (Full EDGAR 13F parsing is planned for a future update.)
+
+  [1/697] Processing A.N...
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+  [50/697] Processing APD.N...
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+  [100/697] Processing BWA...
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+  [150/697] Processing COF.N...
+HTTP Error 404: 
+HTTP Error 404: 
+  [200/697] Processing DRI.N...
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+  [250/697] Processing FDS.N...
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+  [300/697] Processing GT...
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+HTTP Error 404: 
+  [350/697] Processing ITW.N...
+HTTP Error 404: 
+HTTP Error 404: 
+  [400/697] Processing LYB.N...
+    [WARN] LYB: Too Many Requests. Rate limited. Try after a while.
+    [WARN] LYV: Too Many Requests. Rate limited. Try after a while.
+    [WARN] M: Too Many Requests. Rate limited. Try after a while.
+    [WARN] MA: Too Many Requests. Rate limited. Try after a while.
+    [WARN] MAA: Too Many Requests. Rate limited. Try after a while.
+    [WARN] Suppressing further individual errors...
+  [450/697] Processing MUR...
+  [500/697] Processing PEG.N...
+  [550/697] Processing RSG.N...
+  [600/697] Processing TECH.O...
+  [650/697] Processing V.N...
+
+  Completed: 399/697 tickers (298 failed)
+
+Saved → data/institutional_ownership.parquet
+  Shape: (365, 6)
+  Tickers: 365
+  Date range: 2026-04-04 → 2026-04-04
+    inst_own_pct               99.5% filled | mean=0.8751 | std=0.1947
+    inst_own_change             0.0% filled | mean=nan | std=nan
+    num_institutions          100.0% filled | mean=9.9671 | std=0.4962
+    inst_concentration        100.0% filled | mean=0.1614 | std=0.0639
+
+Done in 168.5s
+
+NOTE: Institutional ownership is snapshot-only from yfinance.
+  Run quarterly to build time series. For historical 13F data,
+  full EDGAR parsing with CUSIP→ticker mapping is planned.
