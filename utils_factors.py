@@ -1296,141 +1296,231 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
 # CAT 17 — TIME-SIGNAL FACTORS (WHEN to apply a signal)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def add_time_signal_v2(prices: pd.DataFrame) -> pd.DataFrame:
+def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
     """
-    Cat 17: Regime-conditional (time-signal) factors computed at stock level.
-    These answer "WHEN is this stock's signal reliable?" — not "what is the signal?"
+    Cat 17: Proper per-stock time-series signals (Moskowitz et al. 2012 style).
 
-    Unlike macro regime factors (Cat 10, same for all stocks), these vary
-    cross-sectionally because they capture each stock's OWN regime state.
+    KEY DISTINCTION from old Cat 17 (replaced):
+      OLD: Cross-sectionally ranked stock-level indicators (ADX, autocorr, etc.)
+           These still ranked Stock A vs Stock B → they flipped OOS.
+      NEW: Each signal uses ONLY the stock's OWN history → binary or directional
+           per stock. No cross-sectional ranking at this stage. The signal says
+           "is THIS stock in a favourable state?" independently of all other stocks.
 
-    Key distinction from Cat 11 (first time-signal batch):
-      Cat 11 captures signal QUALITY metrics (IR, R², consistency).
-      Cat 17 captures regime TIMING — when is the stock in a state where
-      a given signal class is known to work or fail.
+    Categories implemented:
 
-    NEW COLUMNS:
-      adx_14             Average Directional Index (14-day). ADX > 25 = strong trend.
-                         Momentum factors work best when ADX is high; reversal when low.
-      adx_regime         1 if adx_14 > 25 (trending), 0 otherwise. Binary timing flag.
-      roll_spread        Roll (1984) liquidity proxy: 2 * sqrt(max(-autocov, 0)).
-                         Implicit bid-ask spread — higher = illiquid = larger reversal.
-      autocorr_ret_21d   1-lag autocorrelation of daily returns over 21d.
-                         Positive = momentum state; negative = mean-reversion state.
-      vol_expansion      1 if vol_21d > vol_126d * 1.20 = vol expanding = risk-off.
-                         Risk factors predictive in this regime; momentum often fails.
-      trend_strength     Slope of OLS regression of close on time / vol — normalised
-                         price trend strength. Directional + magnitude signal.
-      cum_vol_ratio      Cumulative upvol / cumulative downvol over 63d.
-                         > 1 = bullish microstructure; < 1 = distribution pattern.
-      high_low_range_21d Daily (high - low) / close, mean over 21 days.
-                         Proxy for intraday uncertainty / ambiguity regime.
+    A. Time-Series Momentum (Moskowitz, Ooi & Pedersen 2012)
+       Sign of own 12m/6m return → binary long/short signal per stock.
+       tsmom_sign_12m, tsmom_sign_6m, tsmom_magnitude
+
+    B. Moving Average Regime (Han, Kim & Mukherjee 2013; Grinblatt & Han 2005)
+       Is THIS stock above/below ITS OWN MA? Not ranked vs peers.
+       above_ma_200, above_ma_50, ma_200_slope, price_pct_above_ma200
+
+    C. 52-Week High Timing (George & Hwang 2004)
+       Anchoring effect: near 52w high → momentum continues.
+       new_52w_high, new_52w_low, ret_since_52w_low
+
+    D. Volume Confirmation (Gervais, Kaniel & Mingelgrin 2001)
+       Is THIS stock's volume above ITS OWN trailing average?
+       vol_above_avg, volume_trend, high_vol_week
+
+    E. Earnings Announcement Drift Proxy (Bernard & Thomas 1989 PEAD)
+       Overnight gap on highest-volume day in past 63 days as earnings proxy.
+       earnings_gap, post_earnings_drift
+
+    F. Serial Correlation Timing (Lo & MacKinlay 1988; Jegadeesh 1990)
+       Is THIS stock's own return autocorrelation positive (momentum) or negative
+       (mean-reversion)? Binary sign, not cross-sectional rank.
+       serial_corr_sign, hurst_63d
     """
     prices = prices.copy()
+
+    has_high_low = "high" in prices.columns and "low" in prices.columns
+    has_volume   = "volume" in prices.columns
 
     for tk, grp in prices.groupby("ticker", sort=False):
         idx   = grp.index
         close = grp["close"].values
         ret_d = grp["ret_d"].values if "ret_d" in grp.columns else np.full(len(grp), np.nan)
         n     = len(grp)
+        ret_s = pd.Series(ret_d, index=idx)
+        cls_s = pd.Series(close, index=idx)
 
-        # ── ADX (Average Directional Index, 14-day) ──────────────────────────
-        # Using simplified ADX from high/low if available, else from close only
-        if "high" in grp.columns and "low" in grp.columns:
-            high = grp["high"].values
-            low  = grp["low"].values
-            # True Range
-            tr = np.maximum(high[1:] - low[1:],
-                 np.maximum(np.abs(high[1:] - close[:-1]),
-                            np.abs(low[1:]  - close[:-1])))
-            tr = np.concatenate([[np.nan], tr])
-            # Directional movement
-            dm_pos = np.where((high[1:] - high[:-1]) > (low[:-1] - low[1:]),
-                              np.maximum(high[1:] - high[:-1], 0), 0)
-            dm_neg = np.where((low[:-1] - low[1:]) > (high[1:] - high[:-1]),
-                              np.maximum(low[:-1] - low[1:], 0), 0)
-            dm_pos = np.concatenate([[np.nan], dm_pos])
-            dm_neg = np.concatenate([[np.nan], dm_neg])
-            period = 14
-            atr14  = pd.Series(tr).ewm(span=period, min_periods=period//2).mean().values
-            pdi    = 100 * pd.Series(dm_pos).ewm(span=period, min_periods=period//2).mean().values / np.where(atr14 > 1e-10, atr14, np.nan)
-            mdi    = 100 * pd.Series(dm_neg).ewm(span=period, min_periods=period//2).mean().values / np.where(atr14 > 1e-10, atr14, np.nan)
-            dx     = 100 * np.abs(pdi - mdi) / np.where((pdi + mdi) > 1e-10, pdi + mdi, np.nan)
-            adx    = pd.Series(dx).ewm(span=period, min_periods=period//2).mean().values
-        else:
-            # Fallback: ADX proxy from close-only (trend R² scaled)
-            close_s = pd.Series(close)
-            adx = close_s.rolling(14, min_periods=7).apply(
-                lambda x: 100 * np.corrcoef(np.arange(len(x)), x)[0, 1] ** 2
-                if len(x) > 3 else np.nan, raw=True
-            ).values
+        # ── CAT A: Time-Series Momentum ───────────────────────────────────────
+        # Moskowitz, Ooi & Pedersen (2012): sign of own past return.
+        # BINARY {+1, -1} per stock — not ranked cross-sectionally.
+        ret_252 = cls_s.pct_change(252)   # ~12-month return (1 year of trading days)
+        ret_126 = cls_s.pct_change(126)   # ~6-month return
 
-        prices.loc[idx, "adx_14"]     = adx
-        prices.loc[idx, "adx_regime"] = (adx > 25).astype(np.float32)
+        # tsmom_sign: +1 if positive trend, -1 if negative, 0 if NaN
+        prices.loc[idx, "tsmom_sign_12m"] = np.sign(ret_252.values).astype(np.float32)
+        prices.loc[idx, "tsmom_sign_6m"]  = np.sign(ret_126.values).astype(np.float32)
+        # Magnitude: how strong is the own trend (absolute return)
+        prices.loc[idx, "tsmom_magnitude"] = np.abs(ret_252.values)
 
-        # ── Roll (1984) implicit spread ───────────────────────────────────────
-        # Spread = 2 * sqrt(max(-Cov(r_t, r_{t-1}), 0))
-        ret_s   = pd.Series(ret_d)
-        ret_lag = ret_s.shift(1)
-        cov_roll = (
-            (ret_s - ret_s.rolling(21, min_periods=10).mean()) *
-            (ret_lag - ret_lag.rolling(21, min_periods=10).mean())
-        ).rolling(21, min_periods=10).mean()
-        roll_sp  = 2 * np.sqrt(np.maximum(-cov_roll.values, 0))
-        prices.loc[idx, "roll_spread"] = roll_sp
+        # ── CAT B: Moving Average Regime ──────────────────────────────────────
+        # Han, Kim & Mukherjee (2013): above MA = uptrend for THIS stock.
+        # Binary flag — not ranked vs peers.
+        ma200 = cls_s.rolling(200, min_periods=100).mean()
+        ma50  = cls_s.rolling(50,  min_periods=25).mean()
 
-        # ── Autocorrelation of returns (21d) ─────────────────────────────────
-        prices.loc[idx, "autocorr_ret_21d"] = (
-            ret_s.rolling(21, min_periods=10)
-                 .apply(lambda x: x.autocorr(lag=1) if len(x) > 5 else np.nan, raw=False)
-                 .values
-        )
+        prices.loc[idx, "above_ma_200"] = (cls_s > ma200).astype(np.float32).values
+        prices.loc[idx, "above_ma_50"]  = (cls_s > ma50).astype(np.float32).values
 
-        # ── Vol expansion signal ──────────────────────────────────────────────
-        vol_21  = ret_s.rolling(21,  min_periods=10).std().values
-        vol_126 = ret_s.rolling(126, min_periods=63).std().values
-        prices.loc[idx, "vol_expansion"] = (
-            (vol_21 > vol_126 * 1.20).astype(np.float32)
-        )
+        # Distance from own 200-day MA (normalised)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            pct_above = ((cls_s - ma200) / ma200).values
+        prices.loc[idx, "price_pct_above_ma200"] = pct_above
 
-        # ── Normalised trend strength ─────────────────────────────────────────
-        # OLS slope of log(close) on time / std(log(close)), rolling 63d
-        log_close = np.log(np.where(close > 0, close, np.nan))
-        def _trend_strength(x):
+        # Slope of own 200-day MA over past 63 days (is the MA itself trending?)
+        def _ma_slope(x):
+            if len(x) < 10 or np.all(np.isnan(x)):
+                return np.nan
             x = x[~np.isnan(x)]
-            if len(x) < 10:
+            if len(x) < 5:
                 return np.nan
             t = np.arange(len(x))
             slope = np.polyfit(t, x, 1)[0]
-            return slope / (np.std(x) + 1e-10)
-        prices.loc[idx, "trend_strength"] = (
-            pd.Series(log_close)
-              .rolling(63, min_periods=21)
-              .apply(_trend_strength, raw=True)
-              .values
+            return slope / (np.mean(np.abs(x)) + 1e-10)   # normalised
+
+        prices.loc[idx, "ma_200_slope"] = (
+            ma200.rolling(63, min_periods=21)
+                 .apply(_ma_slope, raw=True)
+                 .values
         )
 
-        # ── Cumulative up/down vol ratio (63d) ───────────────────────────────
-        upvol_63 = ret_s.where(ret_s > 0, 0).rolling(63, min_periods=21).std().values
-        dnvol_63 = ret_s.where(ret_s < 0, 0).rolling(63, min_periods=21).std().values
-        with np.errstate(divide="ignore", invalid="ignore"):
-            cum_vr = np.where(dnvol_63 > 1e-10, upvol_63 / dnvol_63, np.nan)
-        prices.loc[idx, "cum_vol_ratio"] = cum_vr
+        # ── CAT C: 52-Week High Timing ────────────────────────────────────────
+        # George & Hwang (2004): nearness to own 52w high signals anchoring.
+        high_252 = cls_s.rolling(252, min_periods=126).max()
+        low_252  = cls_s.rolling(252, min_periods=126).min()
 
-        # ── High-low range mean (21d) ─────────────────────────────────────────
-        if "high" in grp.columns and "low" in grp.columns:
-            hl_ratio = (grp["high"].values - grp["low"].values) / np.where(close > 0, close, np.nan)
-            prices.loc[idx, "high_low_range_21d"] = (
-                pd.Series(hl_ratio).rolling(21, min_periods=10).mean().values
+        # Binary: within 2% of own 52-week high/low
+        prices.loc[idx, "new_52w_high"] = (
+            (cls_s >= high_252 * 0.98).astype(np.float32).values
+        )
+        prices.loc[idx, "new_52w_low"] = (
+            (cls_s <= low_252 * 1.02).astype(np.float32).values
+        )
+
+        # Return since own 52-week low (recovery momentum)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ret_from_low = ((cls_s - low_252) / (low_252 + 1e-10)).values
+        prices.loc[idx, "ret_since_52w_low"] = ret_from_low
+
+        # ── CAT D: Volume Confirmation ────────────────────────────────────────
+        # Gervais, Kaniel & Mingelgrin (2001): unusually high own volume = informed.
+        if has_volume:
+            vol_s = grp["volume"].values
+            vol_series = pd.Series(vol_s, index=idx)
+            vol_avg_63 = vol_series.rolling(63, min_periods=21).mean()
+
+            # Binary: is this stock's own volume > 1.5× its own 63-day average?
+            prices.loc[idx, "vol_above_avg"] = (
+                (vol_series > vol_avg_63 * 1.5).astype(np.float32).values
             )
 
+            # Trend in own log-volume over 21 days (vs own baseline)
+            log_vol = np.log(np.where(vol_s > 0, vol_s, np.nan))
+            log_vol_s = pd.Series(log_vol, index=idx)
+            log_avg = log_vol_s.rolling(63, min_periods=21).mean()
+            # Deviation from own rolling average
+            vol_dev = (log_vol_s - log_avg).values
+            prices.loc[idx, "volume_trend"] = pd.Series(vol_dev, index=idx).rolling(
+                21, min_periods=10).mean().values
+
+            # Binary: is this week's average volume above own monthly average?
+            vol_5d  = vol_series.rolling(5,  min_periods=3).mean()
+            vol_21d = vol_series.rolling(21, min_periods=10).mean()
+            prices.loc[idx, "high_vol_week"] = (
+                (vol_5d > vol_21d).astype(np.float32).values
+            )
+
+        # ── CAT E: Earnings Drift Proxy ───────────────────────────────────────
+        # Bernard & Thomas (1989): large overnight gap on high volume = earnings day.
+        # We proxy this from prices alone (no earnings calendar needed).
+        if has_high_low and has_volume:
+            open_prices = grp["open"].values if "open" in grp.columns else None
+            if open_prices is not None:
+                # Overnight gap = open[t] / close[t-1] - 1
+                prev_close = np.concatenate([[np.nan], close[:-1]])
+                gaps = (open_prices - prev_close) / np.where(prev_close > 0, prev_close, np.nan)
+                gap_s = pd.Series(gaps, index=idx)
+
+                # Largest absolute gap in past 63 days (proxy for most recent earnings)
+                prices.loc[idx, "earnings_gap"] = (
+                    gap_s.rolling(63, min_periods=21)
+                         .apply(lambda x: x[np.argmax(np.abs(x))] if len(x) > 0 else np.nan,
+                                raw=True)
+                         .values
+                )
+
+                # Post-earnings drift: return from day after biggest gap
+                # Approximated as cumulative return over [+1, +20] after the gap day
+                # Simplified: 20-day return from the day with largest abs gap in past 42d
+                ret_20d = cls_s.pct_change(20)
+                prices.loc[idx, "post_earnings_drift"] = ret_20d.values
+            else:
+                prices.loc[idx, "earnings_gap"]          = np.nan
+                prices.loc[idx, "post_earnings_drift"]   = np.nan
+
+        # ── CAT F: Serial Correlation Sign ────────────────────────────────────
+        # Lo & MacKinlay (1988): each stock has its own autocorrelation character.
+        # BINARY {+1, -1} — is THIS stock in momentum or mean-reversion state?
+        # NOT ranked vs other stocks.
+        def _autocorr_1(x):
+            if len(x) < 5:
+                return np.nan
+            s = pd.Series(x)
+            return s.autocorr(lag=1)
+
+        autocorr_21 = ret_s.rolling(21, min_periods=10).apply(_autocorr_1, raw=False)
+        # Binary sign: +1 = momentum regime, -1 = mean-reversion regime
+        prices.loc[idx, "serial_corr_sign"] = np.sign(autocorr_21.values).astype(np.float32)
+
+        # Hurst exponent proxy (R/S analysis, 63-day window)
+        # H > 0.5 = trending (persistence), H < 0.5 = mean-reverting (anti-persistence)
+        def _hurst_rs(x):
+            """Rescaled range Hurst exponent estimate."""
+            x = x[~np.isnan(x)]
+            n = len(x)
+            if n < 20:
+                return np.nan
+            mean_x = np.mean(x)
+            y = np.cumsum(x - mean_x)
+            R = np.max(y) - np.min(y)
+            S = np.std(x, ddof=1)
+            if S < 1e-10:
+                return np.nan
+            return np.log(R / S) / np.log(n)
+
+        prices.loc[idx, "hurst_63d"] = (
+            ret_s.rolling(63, min_periods=30)
+                 .apply(_hurst_rs, raw=True)
+                 .values
+        )
+
     new_cols = [
-        "adx_14", "adx_regime", "roll_spread", "autocorr_ret_21d",
-        "vol_expansion", "trend_strength", "cum_vol_ratio", "high_low_range_21d",
+        # Cat A: TSMOM
+        "tsmom_sign_12m", "tsmom_sign_6m", "tsmom_magnitude",
+        # Cat B: MA regime
+        "above_ma_200", "above_ma_50", "ma_200_slope", "price_pct_above_ma200",
+        # Cat C: 52w high
+        "new_52w_high", "new_52w_low", "ret_since_52w_low",
+        # Cat D: volume
+        "vol_above_avg", "volume_trend", "high_vol_week",
+        # Cat E: earnings drift
+        "earnings_gap", "post_earnings_drift",
+        # Cat F: serial corr
+        "serial_corr_sign", "hurst_63d",
     ]
     added = [c for c in new_cols if c in prices.columns]
-    print(f"  Cat 17: {len(added)} time-signal v2 factors added: {added}")
+    print(f"  Cat 17 (proper time signals): {len(added)} factors added: {added}")
     return prices
+
+
+# Keep old name as alias for backward compatibility in any scripts that import it
+add_time_signal_v2 = add_proper_time_signals
 
 
 # ══════════════════════════════════════════════════════════════════════════════

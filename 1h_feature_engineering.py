@@ -61,7 +61,7 @@ from utils_factors import (
     add_size_factor,
     add_tail_ranking_features,
     add_mined_factors,
-    add_time_signal_v2,
+    add_proper_time_signals,
     add_seasonality_factors,
     add_short_interest_factors,
     add_institutional_factors,
@@ -210,8 +210,8 @@ def build_daily_features(prices: pd.DataFrame,
     print("  Cat 16: mined factors...")
     prices = add_mined_factors(prices)
 
-    print("  Cat 17: time-signal v2 factors...")
-    prices = add_time_signal_v2(prices)
+    print("  Cat 17: proper per-stock time-signal factors (TSMOM, MA regime, 52w, volume, earnings, serial corr)...")
+    prices = add_proper_time_signals(prices)
 
     print("  Cat 18: seasonality factors...")
     prices = add_seasonality_factors(prices)
@@ -438,6 +438,15 @@ def main():
     for cal_col in ["turn_of_month", "january_dummy"]:
         if cal_col in panel.columns:
             TAIL_COLS.add(cal_col)
+    # Cat 17 proper time signals: binary {0,1} or signed {+1,-1} per stock
+    # These are already absolute signals — CS-ranking would destroy their meaning
+    for ts_col in [
+        "above_ma_200", "above_ma_50", "new_52w_high", "new_52w_low",
+        "tsmom_sign_12m", "tsmom_sign_6m", "vol_above_avg", "high_vol_week",
+        "serial_corr_sign",
+    ]:
+        if ts_col in panel.columns:
+            TAIL_COLS.add(ts_col)
 
     # Identify all feature columns
     always_exclude = {"date", "ticker", "fwd_ret_1m"}
