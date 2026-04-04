@@ -1290,3 +1290,144 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
     added = [c for c in new_cols if c in prices.columns]
     print(f"  Cat 16: {len(added)} mined factors added: {added}")
     return prices
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CAT 17 — TIME-SIGNAL FACTORS (WHEN to apply a signal)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def add_time_signal_v2(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cat 17: Regime-conditional (time-signal) factors computed at stock level.
+    These answer "WHEN is this stock's signal reliable?" — not "what is the signal?"
+
+    Unlike macro regime factors (Cat 10, same for all stocks), these vary
+    cross-sectionally because they capture each stock's OWN regime state.
+
+    Key distinction from Cat 11 (first time-signal batch):
+      Cat 11 captures signal QUALITY metrics (IR, R², consistency).
+      Cat 17 captures regime TIMING — when is the stock in a state where
+      a given signal class is known to work or fail.
+
+    NEW COLUMNS:
+      adx_14             Average Directional Index (14-day). ADX > 25 = strong trend.
+                         Momentum factors work best when ADX is high; reversal when low.
+      adx_regime         1 if adx_14 > 25 (trending), 0 otherwise. Binary timing flag.
+      roll_spread        Roll (1984) liquidity proxy: 2 * sqrt(max(-autocov, 0)).
+                         Implicit bid-ask spread — higher = illiquid = larger reversal.
+      autocorr_ret_21d   1-lag autocorrelation of daily returns over 21d.
+                         Positive = momentum state; negative = mean-reversion state.
+      vol_expansion      1 if vol_21d > vol_126d * 1.20 = vol expanding = risk-off.
+                         Risk factors predictive in this regime; momentum often fails.
+      trend_strength     Slope of OLS regression of close on time / vol — normalised
+                         price trend strength. Directional + magnitude signal.
+      cum_vol_ratio      Cumulative upvol / cumulative downvol over 63d.
+                         > 1 = bullish microstructure; < 1 = distribution pattern.
+      high_low_range_21d Daily (high - low) / close, mean over 21 days.
+                         Proxy for intraday uncertainty / ambiguity regime.
+    """
+    prices = prices.copy()
+
+    for tk, grp in prices.groupby("ticker", sort=False):
+        idx   = grp.index
+        close = grp["close"].values
+        ret_d = grp["ret_d"].values if "ret_d" in grp.columns else np.full(len(grp), np.nan)
+        n     = len(grp)
+
+        # ── ADX (Average Directional Index, 14-day) ──────────────────────────
+        # Using simplified ADX from high/low if available, else from close only
+        if "high" in grp.columns and "low" in grp.columns:
+            high = grp["high"].values
+            low  = grp["low"].values
+            # True Range
+            tr = np.maximum(high[1:] - low[1:],
+                 np.maximum(np.abs(high[1:] - close[:-1]),
+                            np.abs(low[1:]  - close[:-1])))
+            tr = np.concatenate([[np.nan], tr])
+            # Directional movement
+            dm_pos = np.where((high[1:] - high[:-1]) > (low[:-1] - low[1:]),
+                              np.maximum(high[1:] - high[:-1], 0), 0)
+            dm_neg = np.where((low[:-1] - low[1:]) > (high[1:] - high[:-1]),
+                              np.maximum(low[:-1] - low[1:], 0), 0)
+            dm_pos = np.concatenate([[np.nan], dm_pos])
+            dm_neg = np.concatenate([[np.nan], dm_neg])
+            period = 14
+            atr14  = pd.Series(tr).ewm(span=period, min_periods=period//2).mean().values
+            pdi    = 100 * pd.Series(dm_pos).ewm(span=period, min_periods=period//2).mean().values / np.where(atr14 > 1e-10, atr14, np.nan)
+            mdi    = 100 * pd.Series(dm_neg).ewm(span=period, min_periods=period//2).mean().values / np.where(atr14 > 1e-10, atr14, np.nan)
+            dx     = 100 * np.abs(pdi - mdi) / np.where((pdi + mdi) > 1e-10, pdi + mdi, np.nan)
+            adx    = pd.Series(dx).ewm(span=period, min_periods=period//2).mean().values
+        else:
+            # Fallback: ADX proxy from close-only (trend R² scaled)
+            close_s = pd.Series(close)
+            adx = close_s.rolling(14, min_periods=7).apply(
+                lambda x: 100 * np.corrcoef(np.arange(len(x)), x)[0, 1] ** 2
+                if len(x) > 3 else np.nan, raw=True
+            ).values
+
+        prices.loc[idx, "adx_14"]     = adx
+        prices.loc[idx, "adx_regime"] = (adx > 25).astype(np.float32)
+
+        # ── Roll (1984) implicit spread ───────────────────────────────────────
+        # Spread = 2 * sqrt(max(-Cov(r_t, r_{t-1}), 0))
+        ret_s   = pd.Series(ret_d)
+        ret_lag = ret_s.shift(1)
+        cov_roll = (
+            (ret_s - ret_s.rolling(21, min_periods=10).mean()) *
+            (ret_lag - ret_lag.rolling(21, min_periods=10).mean())
+        ).rolling(21, min_periods=10).mean()
+        roll_sp  = 2 * np.sqrt(np.maximum(-cov_roll.values, 0))
+        prices.loc[idx, "roll_spread"] = roll_sp
+
+        # ── Autocorrelation of returns (21d) ─────────────────────────────────
+        prices.loc[idx, "autocorr_ret_21d"] = (
+            ret_s.rolling(21, min_periods=10)
+                 .apply(lambda x: x.autocorr(lag=1) if len(x) > 5 else np.nan, raw=False)
+                 .values
+        )
+
+        # ── Vol expansion signal ──────────────────────────────────────────────
+        vol_21  = ret_s.rolling(21,  min_periods=10).std().values
+        vol_126 = ret_s.rolling(126, min_periods=63).std().values
+        prices.loc[idx, "vol_expansion"] = (
+            (vol_21 > vol_126 * 1.20).astype(np.float32)
+        )
+
+        # ── Normalised trend strength ─────────────────────────────────────────
+        # OLS slope of log(close) on time / std(log(close)), rolling 63d
+        log_close = np.log(np.where(close > 0, close, np.nan))
+        def _trend_strength(x):
+            x = x[~np.isnan(x)]
+            if len(x) < 10:
+                return np.nan
+            t = np.arange(len(x))
+            slope = np.polyfit(t, x, 1)[0]
+            return slope / (np.std(x) + 1e-10)
+        prices.loc[idx, "trend_strength"] = (
+            pd.Series(log_close)
+              .rolling(63, min_periods=21)
+              .apply(_trend_strength, raw=True)
+              .values
+        )
+
+        # ── Cumulative up/down vol ratio (63d) ───────────────────────────────
+        upvol_63 = ret_s.where(ret_s > 0, 0).rolling(63, min_periods=21).std().values
+        dnvol_63 = ret_s.where(ret_s < 0, 0).rolling(63, min_periods=21).std().values
+        with np.errstate(divide="ignore", invalid="ignore"):
+            cum_vr = np.where(dnvol_63 > 1e-10, upvol_63 / dnvol_63, np.nan)
+        prices.loc[idx, "cum_vol_ratio"] = cum_vr
+
+        # ── High-low range mean (21d) ─────────────────────────────────────────
+        if "high" in grp.columns and "low" in grp.columns:
+            hl_ratio = (grp["high"].values - grp["low"].values) / np.where(close > 0, close, np.nan)
+            prices.loc[idx, "high_low_range_21d"] = (
+                pd.Series(hl_ratio).rolling(21, min_periods=10).mean().values
+            )
+
+    new_cols = [
+        "adx_14", "adx_regime", "roll_spread", "autocorr_ret_21d",
+        "vol_expansion", "trend_strength", "cum_vol_ratio", "high_low_range_21d",
+    ]
+    added = [c for c in new_cols if c in prices.columns]
+    print(f"  Cat 17: {len(added)} time-signal v2 factors added: {added}")
+    return prices

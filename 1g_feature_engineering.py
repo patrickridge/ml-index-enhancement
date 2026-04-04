@@ -61,6 +61,7 @@ from utils_factors import (
     add_size_factor,
     add_tail_ranking_features,
     add_mined_factors,
+    add_time_signal_v2,
 )
 from config import MACRO_COLS
 import time as _time; _t0 = _time.time()
@@ -205,6 +206,9 @@ def build_daily_features(prices: pd.DataFrame,
 
     print("  Cat 16: mined factors...")
     prices = add_mined_factors(prices)
+
+    print("  Cat 17: time-signal v2 factors...")
+    prices = add_time_signal_v2(prices)
 
     # Carry month-end close for market cap computation (Cat 14).
     # Named close_me — not in exclude_cols so it survives sample_at_month_end.

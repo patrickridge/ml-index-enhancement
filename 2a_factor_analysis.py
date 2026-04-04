@@ -153,6 +153,9 @@ def quintile_backtest(panel: pd.DataFrame, factor: str) -> pd.DataFrame:
         if f"Q{N_QUINTILES}" in row and "Q1" in row:
             row["spread"] = row[f"Q{N_QUINTILES}"] - row["Q1"]
         records.append(row)
+    if not records:
+        cols = ["date"] + [f"Q{q}" for q in range(1, N_QUINTILES + 1)] + ["spread"]
+        return pd.DataFrame(columns=cols).set_index("date")
     return pd.DataFrame(records).set_index("date")
 
 
