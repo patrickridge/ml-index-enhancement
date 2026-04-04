@@ -62,6 +62,7 @@ from utils_factors import (
     add_tail_ranking_features,
     add_mined_factors,
     add_time_signal_v2,
+    add_seasonality_factors,
 )
 from config import MACRO_COLS
 import time as _time; _t0 = _time.time()
@@ -210,6 +211,9 @@ def build_daily_features(prices: pd.DataFrame,
     print("  Cat 17: time-signal v2 factors...")
     prices = add_time_signal_v2(prices)
 
+    print("  Cat 18: seasonality factors...")
+    prices = add_seasonality_factors(prices)
+
     # Carry month-end close for market cap computation (Cat 14).
     # Named close_me — not in exclude_cols so it survives sample_at_month_end.
     prices["close_me"] = prices["close"]
@@ -348,6 +352,29 @@ def main():
     else:
         print("  Macro data unavailable — skipping Cat 10 and Cat 13.")
 
+    # Cat 21: prediction market / Fed expectations (macro-level, TS z-scored)
+    PRED_IN = DATA_DIR / "prediction_markets.parquet"
+    if PRED_IN.exists():
+        print("\nAdding Cat 21: prediction market factors...")
+        pred_df = pd.read_parquet(PRED_IN)
+        pred_df["date"] = pd.to_datetime(pred_df["date"]).astype("datetime64[us]")
+        pred_sorted = pred_df.sort_values("date")
+        panel_sorted = panel.sort_values("date")
+        panel_sorted["date"] = panel_sorted["date"].astype("datetime64[us]")
+        # merge_asof: each month-end gets the latest prediction market data
+        pred_cols = [c for c in pred_df.columns if c != "date"]
+        panel = pd.merge_asof(
+            panel_sorted,
+            pred_sorted,
+            on="date",
+            direction="backward",
+            tolerance=pd.Timedelta("35 days"),
+        )
+        found_pred = [c for c in pred_cols if c in panel.columns]
+        print(f"  Prediction market columns added: {found_pred}")
+    else:
+        print(f"\n{PRED_IN} not found — skipping Cat 21 prediction market factors.")
+
     # Cat 14: size factor — log(market cap) = log(shares × close_me)
     mktcap_cache = str(DATA_DIR / "mktcap_shares.parquet")
     all_tickers  = panel["ticker"].unique().tolist()
@@ -384,6 +411,11 @@ def main():
             col = f"{f}{suffix}"
             if col in panel.columns:
                 TAIL_COLS.add(col)
+    # Calendar dummies have zero CS variance (same for all stocks on a date)
+    # Keep as binary {0,1} — no CS-ranking or TS z-scoring
+    for cal_col in ["turn_of_month", "january_dummy"]:
+        if cal_col in panel.columns:
+            TAIL_COLS.add(cal_col)
 
     # Identify all feature columns
     always_exclude = {"date", "ticker", "fwd_ret_1m"}

@@ -80,6 +80,9 @@ MACRO_COLS = [
     # SPX-level stats — same value for all stocks per month, must be time-series z-scored
     # (cross-sectional ranking makes these constants → useless as CS factors)
     "spx_ret_1m", "spx_ret_3m", "spx_ret_6m", "spx_ret_12m", "spx_vol_63d",
+    # Prediction market / forward-looking macro (Cat 21)
+    "fed_hike_prob", "fed_cut_prob", "recession_prob",
+    "policy_uncertainty", "vix_term_structure", "pred_market_sentiment",
 ]
 
 # Cross-sectional transformer (2c_cs_transformer.py)

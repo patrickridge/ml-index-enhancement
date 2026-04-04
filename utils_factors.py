@@ -1431,3 +1431,103 @@ def add_time_signal_v2(prices: pd.DataFrame) -> pd.DataFrame:
     added = [c for c in new_cols if c in prices.columns]
     print(f"  Cat 17: {len(added)} time-signal v2 factors added: {added}")
     return prices
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CAT 18 — SEASONALITY FACTORS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def add_seasonality_factors(prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cat 18: Calendar seasonality factors.
+
+    Academic basis:
+      Heston & Sadka (2008) "Seasonality in the Cross-Section of Stock Returns"
+        — A stock's return in calendar month M last year predicts its return in
+          month M this year. IC ~2-4%, persistent OOS across decades.
+      Ariel (1990) turn-of-month effect — returns concentrate in last 1 + first 3
+        trading days of each month.
+      Keim (1983) January effect — small caps outperform in January.
+
+    NEW COLUMNS:
+      ret_same_month_1y   Total return for same calendar month, 1 year ago.
+      ret_same_month_2y   Same, 2 years ago.
+      ret_same_month_avg  Mean of same-calendar-month returns over prior 5 years.
+      turn_of_month       1 if observation is in last 1 or first 3 trading days of month.
+      january_dummy       1 if January.
+
+    Note: turn_of_month and january_dummy have zero cross-sectional variance on
+    any given date (all stocks share the date). They are flagged for TS z-scoring
+    or use as interaction terms, not CS-ranking.
+    """
+    prices = prices.copy()
+
+    # ── Per-ticker: same-month returns from prior years ──────────────────────
+    # Step 1: Compute monthly returns per ticker (total return over each month)
+    prices["_year"]  = prices["date"].dt.year
+    prices["_month"] = prices["date"].dt.month
+
+    # Monthly close = last close of each (ticker, year, month)
+    monthly_close = (
+        prices.groupby(["ticker", "_year", "_month"])["close"]
+        .last()
+        .reset_index()
+        .rename(columns={"close": "_mc"})
+    )
+    # Monthly return = pct_change within each ticker, sorted by (year, month)
+    monthly_close = monthly_close.sort_values(["ticker", "_year", "_month"])
+    monthly_close["_mret"] = monthly_close.groupby("ticker")["_mc"].pct_change()
+
+    # Step 2: For each (ticker, year, month), look up same-month return from 1y, 2y ago
+    # Build lookup: (ticker, month) → {year: return}
+    for lag_years, col_name in [(1, "ret_same_month_1y"),
+                                 (2, "ret_same_month_2y")]:
+        lagged = monthly_close[["ticker", "_year", "_month", "_mret"]].copy()
+        lagged["_year"] = lagged["_year"] + lag_years  # shift forward so merge picks up lag
+        lagged = lagged.rename(columns={"_mret": col_name})
+        monthly_close = monthly_close.merge(
+            lagged[["ticker", "_year", "_month", col_name]],
+            on=["ticker", "_year", "_month"],
+            how="left",
+        )
+
+    # Step 3: 5-year average same-month return
+    # For each (ticker, year, month), average the same-month returns from years -1 to -5
+    avg_records = []
+    for (tk, m), grp in monthly_close.groupby(["ticker", "_month"]):
+        grp = grp.sort_values("_year")
+        # Rolling mean of _mret over prior 5 years (shift 1 to exclude current)
+        grp["ret_same_month_avg"] = (
+            grp["_mret"].shift(1).rolling(5, min_periods=2).mean()
+        )
+        avg_records.append(grp[["ticker", "_year", "_month", "ret_same_month_avg"]])
+    avg_df = pd.concat(avg_records, ignore_index=True)
+    monthly_close = monthly_close.merge(
+        avg_df, on=["ticker", "_year", "_month"], how="left"
+    )
+
+    # Step 4: Merge monthly seasonality back to daily prices
+    season_cols = ["ret_same_month_1y", "ret_same_month_2y", "ret_same_month_avg"]
+    merge_key = monthly_close[["ticker", "_year", "_month"] + season_cols].drop_duplicates()
+    prices = prices.merge(merge_key, on=["ticker", "_year", "_month"], how="left")
+
+    # ── Calendar dummies (same for all stocks on a given day) ────────────────
+    # Turn of month: last 1 trading day of prev month + first 3 of current
+    # Since we observe at month-end, the month-end date IS in the "turn" zone
+    # We mark: is this date within 3 days of month start or 1 day of month end?
+    prices["_dom"] = prices["date"].dt.day
+    prices["_days_in_month"] = prices["date"].dt.days_in_month
+    prices["turn_of_month"] = (
+        (prices["_dom"] <= 3) | (prices["_dom"] >= prices["_days_in_month"] - 0)
+    ).astype(np.float32)
+
+    prices["january_dummy"] = (prices["_month"] == 1).astype(np.float32)
+
+    # Clean up temp columns
+    prices = prices.drop(columns=["_year", "_month", "_dom", "_days_in_month"],
+                         errors="ignore")
+
+    new_cols = season_cols + ["turn_of_month", "january_dummy"]
+    added = [c for c in new_cols if c in prices.columns]
+    print(f"  Cat 18: {len(added)} seasonality factors added: {added}")
+    return prices
