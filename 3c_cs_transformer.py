@@ -1,5 +1,5 @@
 """
-2c_cs_transformer.py
+3c_cs_transformer.py
 =====================
 Cross-Sectional Transformer for S&P 500 stock ranking.
 

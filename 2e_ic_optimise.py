@@ -1,5 +1,5 @@
 """
-5e_ic_optimise.py — Differentiable IC Optimisation of Factor Weights
+2e_ic_optimise.py — Differentiable IC Optimisation of Factor Weights
 =====================================================================
 Finds the optimal linear combination of the 43 selected factors that
 maximises mean cross-sectional IC on the training set (2010–2020).
@@ -26,7 +26,7 @@ Outputs:
   figures/factor_weights_optimised.png — bar chart: current vs optimised weights
 
 Usage:
-  python 5e_ic_optimise.py
+  python 2e_ic_optimise.py
 """
 
 import time as _time

@@ -1,5 +1,5 @@
 """
-5d_factor_weights.py — Factor Selection, Weighting & Partial Signal Flags
+2d_factor_weights.py — Factor Selection, Weighting & Partial Signal Flags
 ==========================================================================
 Combines all factor analysis outputs into a single clean table for use
 in model training and portfolio construction.

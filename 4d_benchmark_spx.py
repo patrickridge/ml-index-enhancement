@@ -1,5 +1,5 @@
 """
-4_benchmark_spx.py
+4d_benchmark_spx.py
 ==================
 Compares all strategy returns against S&P 500 (^GSPC).
 

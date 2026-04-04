@@ -1,5 +1,5 @@
 """
-2b_nn_backtest.py
+3a_ft_transformer.py
 =================
 Feature Tokenizer + Transformer (FT-Transformer) stock-ranking model.
 

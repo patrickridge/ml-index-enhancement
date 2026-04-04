@@ -1,5 +1,5 @@
 """
-1e_rebuild_base_panel.py — Rebuild panel_monthly.parquet from prices.parquet
+1g_rebuild_panel.py — Rebuild panel_monthly.parquet from prices.parquet
 =============================================================================
 The original panel_monthly.parquet was built from data.xlsx (Kieran's platform
 data), which has been deleted. This script recreates it directly from

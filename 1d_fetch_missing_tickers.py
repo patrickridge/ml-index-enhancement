@@ -1,5 +1,5 @@
 """
-1f_fetch_missing_tickers.py — Recover Price Data for Failed Historical Tickers
+1d_fetch_missing_tickers.py — Recover Price Data for Failed Historical Tickers
 ===============================================================================
 Script 1d_fetch_historical_constituents.py fetched ~440 historical S&P 500
 members but ~252 tickers failed, typically due to a yfinance timezone bug

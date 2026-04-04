@@ -1,5 +1,5 @@
 """
-1b_orthogonalize.py
+1i_orthogonalize.py
 ====================
 PCA residualization of the factor panel.
 

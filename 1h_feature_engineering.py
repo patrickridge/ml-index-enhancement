@@ -1,5 +1,5 @@
 """
-1_feature_engineering.py  (v2 — 100+ factors)
+1h_feature_engineering.py  (v2 — 100+ factors)
 ===============================================
 Reads daily OHLCV prices and the existing monthly panel, engineers 100+ factors
 across 10 categories, and saves the enriched panel.

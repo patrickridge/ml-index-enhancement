@@ -24,7 +24,7 @@ wait $PID_2H && echo "  [2h] Done ✓" || echo "  [2h] FAILED — check logs/2h.
 # ── Step 2: Rebuild panel with Cat 16 + Cat 17 ────────────────────────
 echo ""
 echo "Step 2: Rebuilding panel with Cat 16 (mined) + Cat 17 (time-signal v2)..."
-$PY 1g_feature_engineering.py 2>&1 | tee logs/1g_cat16_17.log
+$PY 1h_feature_engineering.py 2>&1 | tee logs/1g_cat16_17.log
 if [ $? -ne 0 ]; then
     echo "  [1g] FAILED — check logs/1g_cat16_17.log"
     exit 1

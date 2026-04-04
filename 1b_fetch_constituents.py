@@ -1,5 +1,5 @@
 """
-1d_fetch_historical_constituents.py — Fix Survivorship Bias
+1b_fetch_constituents.py — Fix Survivorship Bias
 ============================================================
 Downloads the full historical S&P 500 constituent list (1996–present) from
 a free GitHub dataset, finds which tickers are missing from our prices.parquet,

@@ -1,5 +1,5 @@
 """
-5c_ic_decay_daily.py — Daily IC Decay (1–90 trading days)
+2c_ic_decay_daily.py — Daily IC Decay (1–90 trading days)
 ==========================================================
 Tests how long each factor's predictive signal lasts at daily resolution.
 Complements 5b_ic_decay_all.py (which uses monthly lags).

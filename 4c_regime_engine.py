@@ -1,5 +1,5 @@
 """
-8_regime_engine.py — Per-Regime Backtest Breakdown
+4c_regime_engine.py — Per-Regime Backtest Breakdown
 ====================================================
 Loads existing index enhancement backtest results and breaks performance
 out by market regime to answer: does the strategy hold up in bear markets,
@@ -18,8 +18,8 @@ Outputs:
   figures/ie_regime_breakdown.png  — IR bar chart per model × regime
 
 Usage:
-  python 8_regime_engine.py          # rule-based regimes
-  python 8_regime_engine.py --hmm    # HMM-detected regimes
+  python 4c_regime_engine.py          # rule-based regimes
+  python 4c_regime_engine.py --hmm    # HMM-detected regimes
 """
 
 import time as _time

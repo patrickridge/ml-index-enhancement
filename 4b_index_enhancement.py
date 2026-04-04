@@ -1,5 +1,5 @@
 """
-6_index_enhancement.py — Index Enhancement Portfolio Construction
+4b_index_enhancement.py — Index Enhancement Portfolio Construction
 =================================================================
 Builds an index-enhanced portfolio by tilting S&P 500 market-cap weights
 using ML model scores (LGBM, FT-Transformer, CS-Transformer).

@@ -1,5 +1,5 @@
 """
-6b_factor_combo_baseline.py — Factor-Combo IE Baseline (No ML)
+4a_factor_combo_baseline.py — Factor-Combo IE Baseline (No ML)
 ===============================================================
 Uses the optimised factor weights from 5e_ic_optimise.py to create
 stock scores directly (weighted sum of z-scored factors) and runs

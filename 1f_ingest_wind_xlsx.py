@@ -1,5 +1,5 @@
 """
-1h_ingest_wind_xlsx.py — Ingest Wind platform XLSX exports into prices.parquet
+1f_ingest_wind_xlsx.py — Ingest Wind platform XLSX exports into prices.parquet
 ==============================================================================
 Kieran's Wind platform can export historical OHLCV data for any S&P 500
 constituent (including delisted stocks). This script reads all XLSX files
@@ -17,7 +17,7 @@ Wind export format (from 工作表1):
 Usage:
   1. Kieran exports missing tickers from Wind (one file per ticker, or multiple)
   2. Place all XLSX files in  data/wind_exports/
-  3. Run:  python 1h_ingest_wind_xlsx.py
+  3. Run:  python 1f_ingest_wind_xlsx.py
   4. Then: python 1e_rebuild_base_panel.py
            python 1_feature_engineering.py
 
@@ -167,7 +167,7 @@ def main():
         if candidate not in xlsx_files and candidate.name != "factor data.xlsx":
             xlsx_files.append(candidate)
 
-    # Command-line override: python 1h_ingest_wind_xlsx.py path/to/file.xlsx
+    # Command-line override: python 1f_ingest_wind_xlsx.py path/to/file.xlsx
     if len(sys.argv) > 1:
         extra = Path(sys.argv[1])
         if extra.exists() and extra not in xlsx_files:
@@ -176,7 +176,7 @@ def main():
     if not xlsx_files:
         print(f"\nNo XLSX files found.")
         print(f"  Place Wind exports in:  {WIND_DIR}/")
-        print(f"  Or run:  python 1h_ingest_wind_xlsx.py path/to/file.xlsx")
+        print(f"  Or run:  python 1f_ingest_wind_xlsx.py path/to/file.xlsx")
         return
 
     print(f"\nFound {len(xlsx_files)} XLSX file(s):")

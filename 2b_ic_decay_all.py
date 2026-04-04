@@ -1,5 +1,5 @@
 """
-5b_ic_decay_all.py — IC Decay Grid for ALL Factors
+2b_ic_decay_all.py — IC Decay Grid for ALL Factors
 ===================================================
 Generates a grid plot showing IC decay curves (0-60 months) for every factor.
 Used for meeting review to visually identify short-term vs long-term factors.

@@ -1,5 +1,5 @@
 """
-7_factor_diagnostics.py
+2f_factor_diagnostics.py
 ========================
 READ-ONLY diagnostic script — does NOT modify any model inputs or pipeline data.
 

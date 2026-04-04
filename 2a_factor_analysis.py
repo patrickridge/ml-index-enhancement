@@ -1,5 +1,5 @@
 """
-5_factor_analysis.py — Per-Factor IC Analysis and Quantile Backtests
+2a_factor_analysis.py — Per-Factor IC Analysis and Quantile Backtests
 =====================================================================
 Evaluates how predictive each of the 80 features is vs next-month returns.
 This is about PREDICTIVE POWER, not feature redundancy (that's 7_factor_diagnostics.py).
