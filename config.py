@@ -91,4 +91,31 @@ TRANSFORMER_CS_PARAMS = dict(
     n_heads_s2=4, n_layers_s2=2,
     dropout=0.1, lr=5e-4, weight_decay=1e-4,
     epochs=100, patience=15, max_stocks=520,
+    # Feature tokenizer penalties — let model learn which features matter
+    l1_lambda=1e-4,   # sparsity: drives useless feature embeddings to zero
+    l2_lambda=1e-4,   # shrinkage: prevents any single feature from dominating
+)
+
+# ── RL Fine-Tuning (Stage 2: GRPO/DAPO after MSE pre-train) ─────────────────
+# Methods: "grpo" (KL-penalised), "dapo" (asymmetric clip, no KL), "hybrid"
+# Patterns from 5e_dapo_agent.py adapted for CS-Transformer monthly cross-sections
+RL_FINETUNE_PARAMS = dict(
+    method="grpo",              # "grpo", "dapo", or "hybrid"
+    epochs=30,                  # RL fine-tuning epochs
+    lr=1e-5,                    # lower LR for fine-tuning
+    top_k=100,                  # long portfolio: top K stocks
+    bottom_k=100,               # short portfolio: bottom K stocks
+    # GRPO params
+    grpo_G=4,                   # group size (samples per month)
+    grpo_clip_epsilon=0.2,      # PPO-style clipping
+    grpo_kl_beta=0.01,          # KL penalty coefficient (GRPO only)
+    # DAPO params
+    dapo_clip_low=0.20,         # symmetric clip for negative advantages
+    dapo_clip_high=0.28,        # higher clip for positive advantages
+    dapo_G_min=4,               # dynamic group size min
+    dapo_G_max=8,               # dynamic group size max
+    # Shared
+    patience=10,                # early stopping on validation Rank IC
+    freeze_backbone=False,      # True = only train score_head + noise_head
+    sigmoid_temperature=0.5,    # for differentiable top-K portfolio
 )

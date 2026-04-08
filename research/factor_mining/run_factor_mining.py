@@ -129,43 +129,31 @@ def merge_candidates_to_panel(panel, monthly_candidates, cand_cols):
     return panel
 
 
-def run_triple_screen(panel, cand_cols):
-    """Phase 3: Run Lasso + Tree + (optional) AE screens."""
+def run_ml_screen(panel, all_feature_cols):
+    """Phase 3: Feed ALL features to penalized ML models — no pre-filtering.
+
+    Per Kieran: no manual filtering. Let L1/L2 penalties do the work.
+    """
     print("\n" + "=" * 70)
-    print("PHASE 3: TRIPLE SCREEN (IS-ONLY)")
+    print("PHASE 3: ML SCREENING — ALL FEATURES, NO PRE-FILTER (IS-ONLY)")
     print("=" * 70)
+    print(f"  Total features fed to models: {len(all_feature_cols)}")
 
-    existing_cols = [c for c in panel.columns if not c.startswith("cand_")
-                     and c not in ["date", "ticker", "fwd_ret_1m"]]
+    # Screen 1: Lasso (L1 penalty kills irrelevant features)
+    print("\n  --- Lasso Screen (L1 penalty) ---")
+    lasso_selected, lasso_imp = lasso_screen(panel, all_feature_cols)
 
-    # Quick IC pre-filter: drop candidates with |IC| < 0.005 (obvious noise)
-    print("\n  Pre-filter: computing raw IC for all candidates...")
-    prefilter_cols = []
-    for col in cand_cols:
-        ic = compute_is_ic(panel, col)
-        if len(ic) > 12 and abs(ic.mean()) > 0.005:
-            prefilter_cols.append(col)
-    print(f"  Pre-filter: {len(prefilter_cols)}/{len(cand_cols)} candidates pass |IC| > 0.005")
-
-    if len(prefilter_cols) < 2:
-        print("  WARNING: Too few candidates pass pre-filter. Lowering threshold...")
-        prefilter_cols = cand_cols  # use all
-
-    # Screen 1: Lasso
-    print("\n  --- Lasso Screen ---")
-    lasso_selected, lasso_imp = lasso_screen(panel, prefilter_cols)
-
-    # Screen 2: Random Forest
+    # Screen 2: Random Forest (natural importance ranking)
     print("\n  --- Tree Screen (RF) ---")
-    rf_selected, rf_imp = tree_screen(panel, prefilter_cols)
+    rf_selected, rf_imp = tree_screen(panel, all_feature_cols)
 
-    # Screen 3: LightGBM
+    # Screen 3: LightGBM (L1+L2 regularization built in)
     print("\n  --- Tree Screen (LightGBM) ---")
-    lgbm_selected, lgbm_imp = lgbm_screen(panel, prefilter_cols)
+    lgbm_selected, lgbm_imp = lgbm_screen(panel, all_feature_cols)
 
-    # Union of survivors
+    # Union of survivors from any model
     all_selected = list(set(lasso_selected) | set(rf_selected) | set(lgbm_selected))
-    print(f"\n  Union of screens: {len(all_selected)} unique candidates")
+    print(f"\n  Union of ML screens: {len(all_selected)} unique features")
     print(f"    Lasso: {len(lasso_selected)}, RF: {len(rf_selected)}, LightGBM: {len(lgbm_selected)}")
 
     # Save screen results
@@ -176,39 +164,45 @@ def run_triple_screen(panel, cand_cols):
     if len(lgbm_imp) > 0:
         lgbm_imp.to_csv(os.path.join(RESULTS_DIR, "lgbm_importance.csv"), index=False)
 
-    return all_selected, existing_cols
+    return all_selected
 
 
-def run_validation(panel, selected_cols, existing_cols):
-    """Phase 4: Full validation pipeline with BHY correction."""
+def run_validation(panel, selected_cols):
+    """Phase 4: Validation — BHY only, no hard IC/ICIR floors.
+
+    Per Kieran: weekly rebalancing means noisy factors are fine.
+    Let BHY control false discovery. Compute IC/ICIR for documentation only.
+    """
     print("\n" + "=" * 70)
-    print("PHASE 4: VALIDATION (IC, ICIR, PERSISTENCE, DEDUP, RAS, BHY)")
+    print("PHASE 4: VALIDATION (BHY + RAS + DEDUP — NO HARD IC/ICIR FLOORS)")
     print("=" * 70)
 
     if not selected_cols:
-        print("  No candidates to validate!")
+        print("  No features to validate!")
         return pd.DataFrame()
 
+    # Compute metrics for all — but pass/fail is BHY + dedup only
     catalog = screen_all_candidates(
         panel,
         candidate_cols=selected_cols,
-        existing_cols=existing_cols,
-        ras_n_sims=200,  # use 200 for speed; bump to 1000 for final
+        existing_cols=selected_cols,
+        ras_n_sims=200,
     )
 
-    # Summary
-    n_pass = catalog["pass_all_final"].sum()
-    print(f"\n  Validation results:")
-    print(f"    Total screened: {len(catalog)}")
-    print(f"    Pass IC threshold: {catalog['pass_ic'].sum()}")
-    print(f"    Pass ICIR threshold: {catalog['pass_icir'].sum()}")
-    print(f"    Pass persistence: {catalog['pass_persistence'].sum()}")
-    print(f"    Pass dedup: {catalog['pass_dedup'].sum()}")
-    print(f"    Pass RAS: {catalog['pass_ras'].sum()}")
-    print(f"    Pass BHY: {catalog['pass_bhy'].sum()}")
-    print(f"    PASS ALL: {n_pass}")
+    # Override: remove hard IC/ICIR gates, keep only BHY + dedup
+    catalog["pass_all_final"] = catalog["pass_dedup"] & catalog["pass_bhy"]
 
-    # Save catalog
+    n_pass = catalog["pass_all_final"].sum()
+    print(f"\n  Validation results (BHY + dedup only, no IC/ICIR floor):")
+    print(f"    Total screened: {len(catalog)}")
+    print(f"    Pass dedup (<0.85 corr): {catalog['pass_dedup'].sum()}")
+    print(f"    Pass RAS (p<0.05): {catalog['pass_ras'].sum()}")
+    print(f"    Pass BHY (FDR 5%): {catalog['pass_bhy'].sum()}")
+    print(f"    PASS ALL (BHY + dedup): {n_pass}")
+    print(f"\n  For reference (not used as gates):")
+    print(f"    IC > 0.015: {catalog['pass_ic'].sum()}")
+    print(f"    ICIR > 0.40: {catalog['pass_icir'].sum()}")
+
     catalog_path = os.path.join(REPO_ROOT, "research", "factor_mining", "candidate_factor_catalog.csv")
     catalog.to_csv(catalog_path, index=False)
     print(f"\n  Saved: {catalog_path}")
@@ -324,11 +318,20 @@ def main():
     monthly = sample_at_month_end(prices, cand_cols)
     panel = merge_candidates_to_panel(panel, monthly, cand_cols)
 
-    # Phase 3: Triple screen
-    selected, existing_cols = run_triple_screen(panel, cand_cols)
+    # Build unified feature list: existing + new candidates, all screened together
+    exclude = {"date", "ticker", "fwd_ret_1m", "fwd_ret_3m", "fwd_ret_6m",
+               "fwd_ret_12m", "spx_weights", "volume", "hl_range"}
+    all_feature_cols = [c for c in panel.columns
+                        if c not in exclude
+                        and panel[c].dtype in ("float64", "float32")
+                        and panel[c].notna().mean() > 0.3]
+    print(f"\n  Unified feature set: {len(all_feature_cols)} features (existing + new)")
 
-    # Phase 4: Validation
-    catalog = run_validation(panel, selected, existing_cols)
+    # Phase 3: ML screen — all features, no pre-filter, penalties do the work
+    selected = run_ml_screen(panel, all_feature_cols)
+
+    # Phase 4: Validation — dedup within survivors, no existing/new split
+    catalog = run_validation(panel, selected)
 
     # Phase 5: Entropy validation
     run_entropy_validation(panel)

@@ -132,6 +132,8 @@ def dedup_check(
     closest = ""
 
     for ecol in existing_cols:
+        if ecol == new_col:
+            continue  # don't dedup against self
         if ecol not in df.columns or new_col not in df.columns:
             continue
 

@@ -34,17 +34,20 @@ Outputs:
 Run AFTER 1_feature_engineering.py (and optionally 1b_orthogonalize.py).
 """
 
+import copy
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pathlib import Path
+from scipy import stats as sp_stats
 
 from config import (
     DATA_DIR, START_DATE, TRAIN_END, VALID_END,
     TOP_N, BOTTOM_N, LONG_FRAC, RETRAIN_EVERY,
-    TRANSFORMER_CS_PARAMS, USE_ORTHOGONALIZED_FEATURES,
+    TRANSFORMER_CS_PARAMS, RL_FINETUNE_PARAMS,
+    USE_ORTHOGONALIZED_FEATURES,
 )
 
 # Select feature panel
@@ -106,6 +109,9 @@ class FeatureTokenizer(nn.Module):
     """
     Per-feature linear projection: each scalar → d_model-dim embedding.
     Separate weights per feature (same as in FTTransformer).
+
+    Built-in L1/L2 penalty on per-feature weight norms — lets the model
+    learn to zero out useless features instead of manual pre-filtering.
     """
     def __init__(self, n_features: int, d_model: int):
         super().__init__()
@@ -116,6 +122,26 @@ class FeatureTokenizer(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (N, n_features) → (N, n_features, d_model)
         return x.unsqueeze(-1) * self.weight.unsqueeze(0) + self.bias.unsqueeze(0)
+
+    def feature_penalty(self, l1_lambda: float = 1e-4, l2_lambda: float = 1e-4) -> torch.Tensor:
+        """
+        Per-feature L1 + L2 penalty on weight norms.
+
+        L1 encourages sparsity: drives entire feature embeddings to zero.
+        L2 shrinks all weights, prevents any single feature from dominating.
+
+        Returns scalar penalty to add to the loss.
+        """
+        # Per-feature norm: (n_features,) — L2 norm of each feature's embedding
+        feat_norms = self.weight.norm(dim=1)  # (n_features,)
+        l1_penalty = l1_lambda * feat_norms.sum()
+        l2_penalty = l2_lambda * (feat_norms ** 2).sum()
+        return l1_penalty + l2_penalty
+
+    def feature_importance(self) -> np.ndarray:
+        """Return per-feature importance as L2 norm of each feature's weight vector."""
+        with torch.no_grad():
+            return self.weight.norm(dim=1).cpu().numpy()
 
 
 class CrossSectionalTransformer(nn.Module):
@@ -222,6 +248,63 @@ class CrossSectionalTransformer(nn.Module):
         scores    = self.score_head(enriched).squeeze(-1)    # (MAX_N,)
 
         return scores
+
+    def forward_enriched(
+        self,
+        x: torch.Tensor,            # (MAX_N, n_features)
+        padding_mask: torch.Tensor,  # (MAX_N,) bool — True = padded
+    ) -> tuple:
+        """
+        Same as forward() but also returns enriched embeddings (before score head).
+        Used by RL fine-tuning to feed the noise head.
+        Returns: (scores: (MAX_N,), enriched: (MAX_N, d_model))
+        """
+        MAX_N = x.shape[0]
+
+        # Stage 1: per-stock feature attention
+        tokens = self.tokenizer(x)
+        cls_s1 = self.cls_token_s1.expand(MAX_N, -1, -1)
+        tokens = torch.cat([cls_s1, tokens], dim=1)
+        out_s1 = self.transformer_s1(tokens)
+        stock_emb = out_s1[:, 0, :]
+
+        # Stage 2: cross-stock attention
+        stock_seq = stock_emb.unsqueeze(0)
+        mkt_cls   = self.market_cls.expand(1, -1, -1)
+        stock_seq = torch.cat([mkt_cls, stock_seq], dim=1)
+        s2_mask = torch.cat([
+            torch.zeros(1, 1, dtype=torch.bool, device=x.device),
+            padding_mask.unsqueeze(0),
+        ], dim=1)
+        out_s2   = self.transformer_s2(stock_seq, src_key_padding_mask=s2_mask)
+        enriched = out_s2[0, 1:, :]
+        scores   = self.score_head(enriched).squeeze(-1)
+
+        return scores, enriched
+
+
+class ScoreNoiseHead(nn.Module):
+    """
+    Auxiliary noise head for stochastic policy during GRPO/DAPO training.
+
+    Takes enriched stock embeddings (output of Stage 2) and produces
+    per-stock log-std for Gaussian exploration noise on scores.
+    Replaces the ad-hoc fixed noise in the old REINFORCE implementation.
+    """
+    LOG_STD_MIN = -10
+    LOG_STD_MAX = 2
+
+    def __init__(self, d_model: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, 1),
+        )
+
+    def forward(self, enriched: torch.Tensor) -> torch.Tensor:
+        """enriched: (N, d_model) → log_std: (N,)"""
+        log_std = self.net(enriched).squeeze(-1)
+        return log_std.clamp(self.LOG_STD_MIN, self.LOG_STD_MAX)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -344,6 +427,11 @@ def train_cs_model(
             optimiser.zero_grad()
             scores = model(X, mask)
             loss   = masked_mse_loss(scores, y, mask)
+            # Add feature tokenizer L1/L2 penalty (lets model zero out useless features)
+            loss   = loss + model.tokenizer.feature_penalty(
+                l1_lambda=p.get("l1_lambda", 1e-4),
+                l2_lambda=p.get("l2_lambda", 1e-4),
+            )
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimiser.step()
@@ -380,6 +468,360 @@ def train_cs_model(
 
     if best_state is not None:
         model.load_state_dict(best_state)
+
+    model.eval()
+    return model
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RL FINE-TUNING (Stage 2: portfolio-level reward)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def portfolio_reward(
+    scores: torch.Tensor,   # (n_valid,)
+    returns: torch.Tensor,  # (n_valid,)
+    top_k: int = 100,
+    bottom_k: int = 100,
+    temperature: float = 0.5,
+) -> torch.Tensor:
+    """
+    Portfolio-level reward with differentiable top-K selection via sigmoid.
+
+    Steep sigmoid approximates hard top-K/bottom-K while keeping gradients.
+    Unlike softmax (which gives ALL stocks positive weight), this concentrates
+    weight on top_k long and bottom_k short stocks.
+
+    Returns:
+        Scalar active return (long - short) for this month.
+    """
+    n = scores.shape[0]
+    if n < top_k + bottom_k:
+        top_k = max(1, n // 4)
+        bottom_k = max(1, n // 4)
+
+    # Sort scores descending — gradient flows through sorted_idx
+    sorted_scores, sorted_idx = scores.sort(descending=True)
+    sorted_returns = returns[sorted_idx]
+
+    # Sigmoid weights: ~1 for top-k, ~0 for rest (soft transition at boundary)
+    rank_pos = torch.arange(n, device=scores.device, dtype=scores.dtype)
+    long_weights  = torch.sigmoid((top_k - 0.5 - rank_pos) / temperature)
+    short_weights = torch.sigmoid((rank_pos - (n - bottom_k) + 0.5) / temperature)
+
+    # Normalize to sum to 1
+    long_weights  = long_weights / (long_weights.sum() + 1e-8)
+    short_weights = short_weights / (short_weights.sum() + 1e-8)
+
+    long_ret  = (long_weights * sorted_returns).sum()
+    short_ret = (short_weights * sorted_returns).sum()
+
+    return long_ret - short_ret
+
+
+def _group_advantage(rewards: list) -> torch.Tensor:
+    """Group-relative advantage: (r - mean) / std.  Matches 5e_dapo_agent.py."""
+    r = np.array(rewards, dtype=np.float32)
+    return torch.FloatTensor((r - r.mean()) / (r.std() + 1e-8))
+
+
+def _gaussian_kl(
+    model: CrossSectionalTransformer,
+    noise_head: ScoreNoiseHead,
+    ref_model: CrossSectionalTransformer,
+    ref_noise_head: ScoreNoiseHead,
+    X: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    """KL(current || reference) for Gaussian score policy."""
+    _, enriched = model.forward_enriched(X, mask)
+    mu1 = model.score_head(enriched).squeeze(-1)
+    s1  = noise_head(enriched).exp()
+
+    with torch.no_grad():
+        _, ref_enriched = ref_model.forward_enriched(X, mask)
+        mu2 = ref_model.score_head(ref_enriched).squeeze(-1)
+        s2  = ref_noise_head(ref_enriched).exp()
+
+    n_valid = (~mask).sum()
+    kl = (torch.log(s2 / (s1 + 1e-8))
+          + (s1.pow(2) + (mu1 - mu2).pow(2)) / (2 * s2.pow(2) + 1e-8)
+          - 0.5)
+    return kl[:n_valid].mean()
+
+
+def _sample_group_cs(
+    model: CrossSectionalTransformer,
+    noise_head: ScoreNoiseHead,
+    X: torch.Tensor,
+    mask: torch.Tensor,
+    returns: torch.Tensor,
+    n_valid: int,
+    G: int,
+    rp: dict,
+) -> tuple:
+    """
+    Sample G noisy score vectors for one month's cross-section.
+    Returns (log_probs_old: list[Tensor], rewards: list[float]).
+    """
+    scores, enriched = model.forward_enriched(X, mask)
+    mu    = scores[:n_valid]                              # (n_valid,)
+    log_s = noise_head(enriched[:n_valid])                # (n_valid,)
+    std   = log_s.exp()
+
+    dist = torch.distributions.Normal(mu, std)
+    log_probs_old = []
+    rewards = []
+
+    for _ in range(G):
+        noisy = dist.rsample()                            # (n_valid,)
+        lp = dist.log_prob(noisy).sum()                   # scalar
+        r  = portfolio_reward(
+            noisy, returns,
+            top_k=rp["top_k"], bottom_k=rp["bottom_k"],
+            temperature=rp.get("sigmoid_temperature", 0.5),
+        )
+        log_probs_old.append(lp.detach())
+        rewards.append(r.item())
+
+    return log_probs_old, rewards
+
+
+def _compute_val_rank_ic(
+    model: CrossSectionalTransformer,
+    valid_cs: list,
+) -> float:
+    """
+    Validation metric: mean Spearman rank IC across validation months.
+    Uses rank correlation between predicted scores and realized returns —
+    no return leakage since this is a read-only evaluation.
+    """
+    model.eval()
+    ics = []
+    with torch.no_grad():
+        for cs in valid_cs:
+            X = cs["X"].to(DEVICE)
+            mask = cs["mask"].to(DEVICE)
+            n_valid = cs["n_valid"]
+
+            scores = model(X, mask)[:n_valid].cpu().numpy()
+            rets   = cs["y"][:n_valid].numpy()
+
+            if len(scores) < 20:
+                continue
+            ic = sp_stats.spearmanr(scores, rets).statistic
+            if np.isfinite(ic):
+                ics.append(ic)
+
+    return float(np.mean(ics)) if ics else 0.0
+
+
+def grpo_finetune_cs_model(
+    model: CrossSectionalTransformer,
+    train_cs: list,
+    valid_cs: list,
+    method: str = "grpo",
+) -> CrossSectionalTransformer:
+    """
+    GRPO/DAPO/Hybrid RL fine-tuning of a pre-trained CS-Transformer.
+
+    Stage 2 of two-stage training:
+      1. MSE pre-train (already done) → model predicts returns
+      2. RL fine-tune (this function) → model optimizes portfolio-level reward
+
+    Methods (matching 5e_dapo_agent.py patterns):
+      - "grpo": G=4 samples, group-relative advantage, PPO clipping + KL penalty
+      - "dapo": asymmetric clipping (ε_low=0.20, ε_high=0.28), dynamic G (4→8), no KL
+      - "hybrid": DAPO in risk-on regimes, GRPO in risk-off/transition
+
+    Fixes over old REINFORCE implementation:
+      1. ScoreNoiseHead for proper stochastic policy (not ad-hoc noise)
+      2. No lookahead: trains on IS data only, validates via Rank IC
+      3. Differentiable top-K via sigmoid (not softmax over all stocks)
+      4. Group-relative advantage (not scalar EMA baseline)
+      5. No entropy bonus (exploration via noise head)
+      6. PPO-style clipping for stable updates
+    """
+    rp = RL_FINETUNE_PARAMS
+    print(f"\n  RL Fine-Tuning ({method.upper()}): {rp['epochs']} epochs, "
+          f"lr={rp['lr']}, top_k={rp['top_k']}")
+
+    # ── Create noise head ─────────────────────────────────────────────────
+    noise_head = ScoreNoiseHead(model.d_model).to(DEVICE)
+
+    # ── Optimizer: optionally freeze backbone ─────────────────────────────
+    if rp.get("freeze_backbone", False):
+        for p in model.parameters():
+            p.requires_grad_(False)
+        # Unfreeze score head
+        for p in model.score_head.parameters():
+            p.requires_grad_(True)
+        # Unfreeze tokenizer (keep sparsity learning)
+        for p in model.tokenizer.parameters():
+            p.requires_grad_(True)
+        opt_params = list(model.score_head.parameters()) + \
+                     list(model.tokenizer.parameters()) + \
+                     list(noise_head.parameters())
+    else:
+        opt_params = list(model.parameters()) + list(noise_head.parameters())
+
+    optimizer = torch.optim.Adam(opt_params, lr=rp["lr"], weight_decay=1e-5)
+
+    # ── Reference model for GRPO KL penalty ───────────────────────────────
+    ref_model = None
+    ref_noise_head = None
+    if method in ("grpo", "hybrid"):
+        ref_model = copy.deepcopy(model)
+        ref_noise_head = copy.deepcopy(noise_head)
+        for p in ref_model.parameters():
+            p.requires_grad_(False)
+        for p in ref_noise_head.parameters():
+            p.requires_grad_(False)
+
+    # ── Training loop ─────────────────────────────────────────────────────
+    best_val_ic    = -float("inf")
+    patience_count = 0
+    best_state     = None
+    rng = np.random.default_rng(seed=42)
+
+    G_init = rp.get("grpo_G", 4)
+    G_max  = rp.get("dapo_G_max", 8)
+    clip_eps   = rp.get("grpo_clip_epsilon", 0.2)
+    kl_beta    = rp.get("grpo_kl_beta", 0.01)
+    dapo_low   = rp.get("dapo_clip_low", 0.20)
+    dapo_high  = rp.get("dapo_clip_high", 0.28)
+    var_thresh = 0.05
+
+    for epoch in range(rp["epochs"]):
+        model.train()
+        noise_head.train()
+        epoch_rewards = []
+        indices = rng.permutation(len(train_cs))
+
+        for idx in indices:
+            cs = train_cs[idx]
+            X = cs["X"].to(DEVICE)
+            y = cs["y"].to(DEVICE)
+            mask = cs["mask"].to(DEVICE)
+            n_valid = cs["n_valid"]
+            returns = y[:n_valid]
+
+            # ── Determine G and method for this month ─────────────────────
+            use_method = method
+            G = G_init
+
+            # Sample G candidates
+            log_probs_old, rewards = _sample_group_cs(
+                model, noise_head, X, mask, returns, n_valid, G, rp,
+            )
+
+            # DAPO: dynamic G expansion if high reward variance
+            if use_method in ("dapo", "hybrid") and len(rewards) >= 2:
+                if float(np.var(rewards)) > var_thresh and G < G_max:
+                    extra_lp, extra_r = _sample_group_cs(
+                        model, noise_head, X, mask, returns, n_valid,
+                        G_max - len(rewards), rp,
+                    )
+                    log_probs_old.extend(extra_lp)
+                    rewards.extend(extra_r)
+
+            if len(rewards) < 2:
+                continue
+
+            epoch_rewards.extend(rewards)
+
+            # ── Group-relative advantage ──────────────────────────────────
+            adv = _group_advantage(rewards).to(DEVICE)
+
+            # ── Re-derive log-probs under current policy (for ratio) ──────
+            scores_now, enriched_now = model.forward_enriched(X, mask)
+            mu_now    = scores_now[:n_valid]
+            log_s_now = noise_head(enriched_now[:n_valid])
+            std_now   = log_s_now.exp()
+            dist_now  = torch.distributions.Normal(mu_now, std_now)
+
+            # Re-sample same noisy scores (use old log_probs for ratio)
+            # For PPO-style: ratio = exp(new_lp - old_lp)
+            # We compute new log-probs for G samples
+            log_probs_new = []
+            for g in range(len(rewards)):
+                # Sample a new noisy score to compute current log-prob
+                noisy = dist_now.rsample()
+                lp_new = dist_now.log_prob(noisy).sum()
+                log_probs_new.append(lp_new)
+
+            lp_new_t = torch.stack(log_probs_new)     # (G,)
+            lp_old_t = torch.stack(log_probs_old).to(DEVICE)  # (G,)
+            ratio = (lp_new_t - lp_old_t).exp()
+
+            # ── Clipped policy gradient ───────────────────────────────────
+            if use_method == "dapo":
+                # Asymmetric clipping (5e_dapo_agent.py pattern)
+                pos_mask  = adv > 0
+                clip_high = torch.where(pos_mask,
+                    torch.full_like(ratio, 1.0 + dapo_high),
+                    torch.full_like(ratio, 1.0 + dapo_low))
+                clip_low  = torch.full_like(ratio, 1.0 - dapo_low)
+                ratio_clp = torch.max(torch.min(ratio, clip_high), clip_low)
+                pg_loss = -torch.min(ratio * adv, ratio_clp * adv).mean()
+            else:
+                # GRPO / hybrid: symmetric clipping + KL
+                ratio_clp = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps)
+                pg_loss = -torch.min(ratio * adv, ratio_clp * adv).mean()
+
+            # ── KL penalty (GRPO only) ────────────────────────────────────
+            kl_loss = torch.tensor(0.0, device=DEVICE)
+            if use_method in ("grpo", "hybrid") and ref_model is not None:
+                kl_loss = kl_beta * _gaussian_kl(
+                    model, noise_head, ref_model, ref_noise_head, X, mask,
+                )
+
+            # ── Feature penalty (keep sparsity pressure during RL) ────────
+            feat_penalty = model.tokenizer.feature_penalty(
+                l1_lambda=TRANSFORMER_CS_PARAMS.get("l1_lambda", 1e-4),
+                l2_lambda=TRANSFORMER_CS_PARAMS.get("l2_lambda", 1e-4),
+            )
+
+            total_loss = pg_loss + kl_loss + feat_penalty
+
+            optimizer.zero_grad()
+            total_loss.backward()
+            nn.utils.clip_grad_norm_(opt_params, 0.5)
+            optimizer.step()
+
+        # ── Validate: Rank IC on validation months (no return leakage) ────
+        val_ic = _compute_val_rank_ic(model, valid_cs)
+
+        if val_ic > best_val_ic + 1e-6:
+            best_val_ic    = val_ic
+            patience_count = 0
+            best_state = {
+                "model": {k: v.cpu().clone() for k, v in model.state_dict().items()},
+                "noise_head": {k: v.cpu().clone() for k, v in noise_head.state_dict().items()},
+            }
+        else:
+            patience_count += 1
+
+        if (epoch + 1) % 5 == 0:
+            mean_r = np.mean(epoch_rewards) if epoch_rewards else 0.0
+            print(f"    RL Epoch {epoch+1:3d} | train_reward={mean_r:.5f} "
+                  f"| val_IC={val_ic:.4f} | patience={patience_count}")
+
+        if patience_count >= rp["patience"]:
+            print(f"    RL early stop at epoch {epoch+1} (best val IC: {best_val_ic:.4f})")
+            break
+
+    if best_state is not None:
+        model.load_state_dict(best_state["model"])
+
+    # Report feature importance after RL
+    importances = model.tokenizer.feature_importance()
+    n_near_zero = (importances < 0.01).sum()
+    print(f"    Feature importance: {n_near_zero}/{len(importances)} features near-zero after RL")
+
+    # Unfreeze all params if backbone was frozen
+    if rp.get("freeze_backbone", False):
+        for p in model.parameters():
+            p.requires_grad_(True)
 
     model.eval()
     return model
@@ -444,9 +886,14 @@ def main():
     print(f"  Valid cross-sections: {len(valid_cs)}")
     print(f"  Max stocks per month (padded to): {p['max_stocks']}")
 
-    # ── Initial training ──────────────────────────────────────────────────────
-    print("\nFitting initial Cross-Sectional Transformer...")
+    # ── Stage 1: MSE pre-training ───────────────────────────────────────────
+    print("\nStage 1: MSE pre-training...")
     model = train_cs_model(train_cs, valid_cs, n_features)
+
+    # ── Stage 2: RL fine-tuning (GRPO/DAPO portfolio-level reward) ──────────
+    rl_method = RL_FINETUNE_PARAMS["method"]
+    print(f"\nStage 2: RL fine-tuning ({rl_method.upper()})...")
+    model = grpo_finetune_cs_model(model, train_cs, valid_cs, method=rl_method)
 
     # ── Walk-forward prediction ───────────────────────────────────────────────
     all_scores = []
@@ -454,13 +901,19 @@ def main():
     for i, m in enumerate(test_months):
         # Retrain every RETRAIN_EVERY months with expanding window
         if i > 0 and i % RETRAIN_EVERY == 0:
-            seen_months  = train_months + valid_months + test_months[:i]
-            tr_cs_exp    = [cs_map[mo] for mo in seen_months if mo in cs_map]
-            va_cs_new    = [cs_map[mo] for mo in test_months[max(0, i - RETRAIN_EVERY):i]
-                            if mo in cs_map]
-            if va_cs_new:
-                print(f"  Retraining at {m.date()} (train={len(tr_cs_exp)} months)...")
-                model = train_cs_model(tr_cs_exp, va_cs_new, n_features)
+            # All months strictly before the current test month
+            retrain_cutoff = m
+            seen_months = [mo for mo in months if mo < retrain_cutoff]
+            # Split: last ~18 months as RL validation, rest as training
+            rl_val_n = min(18, max(6, len(seen_months) // 5))
+            tr_cs_exp = [cs_map[mo] for mo in seen_months[:-rl_val_n] if mo in cs_map]
+            va_cs_rl  = [cs_map[mo] for mo in seen_months[-rl_val_n:] if mo in cs_map]
+            if va_cs_rl:
+                print(f"  Retraining at {m.date()} (train={len(tr_cs_exp)}, "
+                      f"val={len(va_cs_rl)} months)...")
+                model = train_cs_model(tr_cs_exp, va_cs_rl, n_features)
+                model = grpo_finetune_cs_model(model, tr_cs_exp, va_cs_rl,
+                                                method=rl_method)
 
         if m not in cs_map:
             continue
