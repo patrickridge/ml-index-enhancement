@@ -88,6 +88,22 @@ python 5d_algorithm_comparison.py      # SAC vs PPO vs GRPO walk-forward compari
 python 5e_dapo_agent.py                # DAPO vs GRPO — clip-higher + dynamic sampling + no KL
 ```
 
+### Research — Factor Mining (IS-only discovery)
+
+```bash
+python research/factor_mining/run_factor_mining.py   # full pipeline: candidates → ML screen → BHY validation → catalog
+```
+
+Pipeline: ~70 new OHLCV candidates + entropy regime overlay → screen ALL features (existing 205 + new ~70) together through Lasso/RF/LightGBM with no pre-filter (L1/L2 penalties do the work) → BHY + dedup validation → `candidate_factor_catalog.csv`
+
+### CS-Transformer Two-Stage Training (MSE + RL)
+
+`3c_cs_transformer.py` now runs two-stage training:
+1. **MSE pre-train** — standard masked MSE with L1/L2 feature tokenizer penalties
+2. **RL fine-tune** — GRPO/DAPO portfolio-level reward (configurable via `config.py: RL_FINETUNE_PARAMS["method"]`)
+
+Methods: `"grpo"` (KL-penalised, default), `"dapo"` (asymmetric clip, no KL), `"hybrid"` (regime-aware switching)
+
 ---
 
 ## Factor Categories (21 total, ~190 features)
@@ -211,10 +227,18 @@ IR > 0.5 is institutional-grade. IR > 1.0 is top-quartile.
 | `5c_walk_forward.py` | Walk-forward RL backtest — 5 folds, 95 OOS months |
 | `5d_algorithm_comparison.py` | SAC vs PPO vs GRPO walk-forward comparison |
 | `5e_dapo_agent.py` | DAPO vs GRPO — clip-higher + dynamic sampling + no KL |
+| `5f_dynamic_portfolio_rl.py` | 2D asymmetric tilt (alpha_long, alpha_short) |
 | `config.py` | All shared parameters and hyperparameters |
 | `utils_factors.py` | 190+ factor functions across 21 categories |
 | `utils_rmt.py` | Random Matrix Theory covariance denoising |
 | `run_pipeline.sh` | Automated: fetch data → rebuild panel → analyse → diagnostics |
+| `research/factor_mining/run_factor_mining.py` | Master factor mining orchestrator |
+| `research/factor_mining/candidate_factory.py` | ~70 OHLCV candidate features (9 families) |
+| `research/factor_mining/validation_engine.py` | IS-only screening: IC, ICIR, RAS, BHY, dedup |
+| `research/factor_mining/screen_lasso.py` | Lasso/Elastic Net with purged time-series CV |
+| `research/factor_mining/screen_trees.py` | RF + LightGBM feature importance screening |
+| `research/factor_mining/screen_autoencoder.py` | Autoencoder latent features from OHLCV windows |
+| `research/factor_mining/regime_entropy.py` | Singha-inspired entropy vol regime detector |
 
 ---
 

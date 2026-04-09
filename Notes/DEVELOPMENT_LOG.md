@@ -1125,3 +1125,70 @@ New script auditing CS-Transformer signal quality:
 Fold 5 (2022–2025) shows weaker IR than earlier folds for all agents. Likely cause: 2024 AI bull market driven by narrow mega-cap tech (Magnificent 7), which cross-sectional factor models struggle to capture. The regime detector classifies most of 2024 as Transition (moderate vol, modest broad-market momentum). 
 
 Action needed: audit per-year active returns in fold 5, consider sector concentration or large-cap divergence features.
+
+---
+
+## Phase 17 — Factor Mining Pipeline (6–8 Apr 2026)
+
+**Goal:** Extend the 205-feature library with genuinely new signals via rigorous IS-only discovery. Two parallel tracks: algorithmic OHLCV mining + recent literature review.
+
+**Kieran constraints (captured incrementally):**
+- All factor selection IS-only (2010–2022). OOS frozen for final evaluation only.
+- No need to separate existing and new factors — screen everything together through one pipeline.
+- Weekly rebalancing → noisy factors are fine. Drop hard ICIR/IC floors. Use BHY only as gatekeeper.
+- No pre-filtering for ML — feed ALL features to models, let L1/L2 penalties do the work.
+- Explore RL inside the large model (CS-Transformer) — two-stage MSE pre-train → RL fine-tune.
+
+### 17.1 — Factor Mining Infrastructure
+
+New directory: `research/factor_mining/`
+
+**Scripts created:**
+- `candidate_factory.py` — ~70 candidate features across 9 families (path-dependent, trend efficiency, drawdown, vol shape, volume-price, gap, alt momentum, nonlinear interactions, microstructure proxies). All prefixed `cand_`.
+- `validation_engine.py` — IS-only screening: `compute_is_ic()`, `compute_icir()`, `ic_persistence()`, `ras_test_fast()`, `bhy_correction()`, `dedup_check()`, `screen_all_candidates()`. Thresholds: IC>0.015, ICIR>0.40 (diagnostic only, not gates per Kieran), dedup<0.85.
+- `screen_lasso.py` — Lasso/Elastic Net with purged time-series CV (5-fold, 3-month gap).
+- `screen_trees.py` — RF permutation importance + LightGBM screening.
+- `screen_autoencoder.py` — Autoencoder latent features from 63d rolling OHLCV windows.
+- `regime_entropy.py` — Singha-inspired entropy-based vol regime detector (rolling 21d Shannon entropy, binary low-entropy signal, transition detector, regime interactions).
+- `run_factor_mining.py` — Master orchestrator: load data → compute candidates → entropy overlay → month-end sample → merge to panel → ML screen (all features, no pre-filter) → validation (BHY + dedup only) → entropy validation → summary.
+
+**Documentation:**
+- `feature_audit.md` — Audit of existing 205 features grouped by category, gap analysis.
+- `validation_protocol.md` — Anti-leakage framework (temporal split, screening pipeline, leakage checklist).
+- `literature_factor_shortlist.md` — Literature review: Tier 1 (implementable), Tier 2 (proxy needed), Tier 3 (needs external data).
+
+### 17.2 — CS-Transformer RL Rewrite (GRPO/DAPO, 8–9 Apr 2026)
+
+**Problem:** Original `rl_finetune_cs_model()` had 6 critical issues:
+1. REINFORCE gradient wrong — `log_prob.sum()` scales with n_stocks
+2. Lookahead bias — used realized `fwd_ret_1m` during RL training
+3. Softmax allocation — all stocks get positive weight (not top-K ranking)
+4. Weak EMA baseline — high variance, slow convergence
+5. Walk-forward leak — RL fine-tuned on future test months
+6. Entropy bonus inverted — pushed toward uniform scores
+
+**Fix:** Complete rewrite using GRPO/DAPO patterns from `5e_dapo_agent.py`:
+
+**New classes/functions in `3c_cs_transformer.py`:**
+- `ScoreNoiseHead` — learned per-stock log-std for Gaussian exploration policy
+- `forward_enriched()` — returns (scores, enriched_embeddings) for noise head
+- `_group_advantage()` — group-relative advantage: `(r - mean) / std`
+- `_gaussian_kl()` — KL divergence between current and frozen reference policy
+- `_sample_group_cs()` — samples G noisy score vectors per month
+- `_compute_val_rank_ic()` — Spearman rank IC for validation (no return leakage)
+- `grpo_finetune_cs_model()` — full GRPO/DAPO/Hybrid RL training loop
+
+**Three methods available (selectable via `config.py`):**
+- **GRPO:** G=4 samples, symmetric PPO clipping (ε=0.2), KL penalty (β=0.01) vs frozen reference
+- **DAPO:** Asymmetric clipping (ε_low=0.20, ε_high=0.28), dynamic G (4→8 on high reward variance), no KL
+- **Hybrid:** DAPO in risk-on, GRPO in risk-off/transition
+
+**`config.py` changes:**
+- `RL_FINETUNE_PARAMS` expanded with GRPO/DAPO hyperparameters
+- `TRANSFORMER_CS_PARAMS` already had `l1_lambda`/`l2_lambda` for FeatureTokenizer sparsity
+
+**Walk-forward fix:** Retrain split now uses `seen_months < retrain_cutoff` with last ~18 months as RL validation (all strictly before current test month). No future data leakage.
+
+**Portfolio reward fix:** Differentiable sigmoid top-K replaces softmax. Steep sigmoid approximates hard top-K/bottom-K while keeping gradients flowing.
+
+**Status:** Code complete, syntax verified. Not yet run (needs panel data + GPU for reasonable speed).

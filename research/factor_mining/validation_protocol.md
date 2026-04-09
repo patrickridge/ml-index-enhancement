@@ -26,15 +26,15 @@ Each candidate factor passes through this sequential funnel:
 ### Stage 1: Basic IS IC
 - Compute monthly Spearman rank-IC: `corr(rank(factor), rank(fwd_ret_1m))` per month
 - Restrict to IS months (≤ 2022-12-31)
-- Require: `|mean(IC)| > 0.015` (weak but nonzero signal)
+- Threshold: `|mean(IC)| > 0.015` — **diagnostic only, not a gate** (per Kieran: weekly rebalancing means noisy factors are fine)
 
 ### Stage 2: IS ICIR
 - ICIR = mean(IC) / std(IC)
-- Require: `|ICIR| > 0.40` (consistent signal, not just one lucky month)
+- Threshold: `|ICIR| > 0.40` — **diagnostic only, not a gate** (same reasoning)
 
 ### Stage 3: IC Persistence
 - Compute IC at lags 1, 2, 3, 6 months
-- Require: `|IC_lag1| > 0.5 × |IC_lag0|` (signal doesn't instantly decay)
+- Threshold: `|IC_lag1| > 0.5 × |IC_lag0|` — **diagnostic only, not a gate**
 
 ### Stage 4: Deduplication
 - Compute cross-sectional correlation of candidate vs ALL existing 205 features + all other candidates, within each month
@@ -56,8 +56,11 @@ Each candidate factor passes through this sequential funnel:
   - With ~100 candidates, Bonferroni would reject almost everything
 
 ### Stage 7: Final IS Validation
-- Survivors must pass ALL of: IC threshold, ICIR threshold, persistence, dedup, RAS, BHY
+- **Pass/fail gates (binding):** BHY correction + dedup only
+- **Diagnostic metrics (logged, not gates):** IC, ICIR, persistence, RAS p-value
 - Compute additional IS diagnostics for survivors: turnover, sector neutrality, regime stability
+
+> **Kieran (7 Apr 2026):** "We rebalance every week so noisy factor should be fine." IC/ICIR thresholds removed as hard gates. BHY controls false discovery; dedup prevents redundancy. All features fed to ML models with L1/L2 penalties — no manual pre-filtering.
 
 ---
 
@@ -109,7 +112,29 @@ Per Kieran's constraint: time signal factors must be per-stock binary or directi
 
 ---
 
-## 7. Implementation Notes
+## 7. ML Screening (No Pre-Filter)
+
+Per Kieran: no manual filtering before ML. Feed ALL features (existing 205 + new candidates) to penalised models:
+
+1. **Lasso (L1)** — drives irrelevant feature coefficients to exactly zero. Purged 5-fold time-series CV.
+2. **Random Forest** — permutation importance (not impurity-based, to avoid bias).
+3. **LightGBM** — built-in L1+L2 regularisation. Gain-based importance.
+
+Union of survivors from all three screens → BHY + dedup validation.
+
+The CS-Transformer also has built-in feature selection via `FeatureTokenizer` L1/L2 penalties (`l1_lambda`, `l2_lambda` in `TRANSFORMER_CS_PARAMS`). This learns to zero out useless feature embeddings during training.
+
+## 8. Two-Stage CS-Transformer Training
+
+1. **MSE pre-train** — standard masked MSE + FeatureTokenizer L1/L2 penalty. Learns feature interactions and stock embeddings.
+2. **RL fine-tune (GRPO/DAPO)** — portfolio-level reward. Differentiable sigmoid top-K allocation. Group-relative advantage with G=4-8 samples. Three methods:
+   - GRPO: symmetric PPO clipping + KL penalty vs frozen reference (conservative)
+   - DAPO: asymmetric clipping (ε_low=0.20, ε_high=0.28), dynamic G, no KL (aggressive)
+   - Hybrid: regime-aware switching
+
+Validation during RL uses Rank IC (Spearman correlation of predicted vs actual ranks) — no return leakage.
+
+## 9. Implementation Notes
 
 - All validation functions live in `research/factor_mining/validation_engine.py`
 - Screening results saved to `research/factor_mining/results/`
