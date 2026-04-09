@@ -306,33 +306,71 @@ def write_summary(catalog):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--revalidate-only", action="store_true",
+                        help="Skip Phase 2-3 (candidate computation + ML screen). "
+                             "Re-run Phase 4 validation using the ML survivors from "
+                             "the previous run's candidate_factor_catalog.csv.")
+    args = parser.parse_args()
+
     t_start = time.time()
 
     # Phase 1: Load data
     prices, panel = load_data()
 
-    # Phase 2: Compute candidates
-    prices, cand_cols = compute_candidates(prices)
-    prices = add_entropy(prices)
+    merged_panel_path = os.path.join(REPO_ROOT, "research", "factor_mining",
+                                      "results", "panel_merged.parquet")
 
-    # Update cand_cols to include entropy
-    cand_cols = get_candidate_columns(prices)
+    if args.revalidate_only:
+        # Fast path: reload previous ML screen results + saved merged panel
+        catalog_path = os.path.join(REPO_ROOT, "research", "factor_mining",
+                                     "candidate_factor_catalog.csv")
+        prev_catalog = pd.read_csv(catalog_path)
+        selected = prev_catalog["factor"].tolist()
+        print(f"\n  --revalidate-only: loaded {len(selected)} factors from previous run")
 
-    # Sample at month-end and merge
-    monthly = sample_at_month_end(prices, cand_cols)
-    panel = merge_candidates_to_panel(panel, monthly, cand_cols)
+        if os.path.exists(merged_panel_path):
+            print(f"  Loading saved merged panel from {merged_panel_path}...")
+            panel = pd.read_parquet(merged_panel_path)
+            panel["date"] = pd.to_datetime(panel["date"])
+            print(f"  Merged panel: {panel.shape[0]:,} rows × {panel.shape[1]} columns")
+        else:
+            print("  No saved merged panel — recomputing candidates...")
+            prices, cand_cols = compute_candidates(prices)
+            prices = add_entropy(prices)
+            cand_cols = get_candidate_columns(prices)
+            monthly = sample_at_month_end(prices, cand_cols)
+            panel = merge_candidates_to_panel(panel, monthly, cand_cols)
+    else:
+        # Full path: compute candidates + ML screen
+        # Phase 2: Compute candidates
+        prices, cand_cols = compute_candidates(prices)
+        prices = add_entropy(prices)
 
-    # Build unified feature list: existing + new candidates, all screened together
-    exclude = {"date", "ticker", "fwd_ret_1m", "fwd_ret_3m", "fwd_ret_6m",
-               "fwd_ret_12m", "spx_weights", "volume", "hl_range"}
-    all_feature_cols = [c for c in panel.columns
-                        if c not in exclude
-                        and panel[c].dtype in ("float64", "float32")
-                        and panel[c].notna().mean() > 0.3]
-    print(f"\n  Unified feature set: {len(all_feature_cols)} features (existing + new)")
+        # Update cand_cols to include entropy
+        cand_cols = get_candidate_columns(prices)
 
-    # Phase 3: ML screen — all features, no pre-filter, penalties do the work
-    selected = run_ml_screen(panel, all_feature_cols)
+        # Sample at month-end and merge
+        monthly = sample_at_month_end(prices, cand_cols)
+        panel = merge_candidates_to_panel(panel, monthly, cand_cols)
+
+        # Build unified feature list: existing + new candidates, all screened together
+        exclude = {"date", "ticker", "fwd_ret_1m", "fwd_ret_3m", "fwd_ret_6m",
+                   "fwd_ret_12m", "spx_weights", "volume", "hl_range"}
+        all_feature_cols = [c for c in panel.columns
+                            if c not in exclude
+                            and panel[c].dtype in ("float64", "float32")
+                            and panel[c].notna().mean() > 0.3]
+        print(f"\n  Unified feature set: {len(all_feature_cols)} features (existing + new)")
+
+        # Phase 3: ML screen — all features, no pre-filter, penalties do the work
+        selected = run_ml_screen(panel, all_feature_cols)
+
+        # Save merged panel for fast --revalidate-only reruns
+        os.makedirs(os.path.dirname(merged_panel_path), exist_ok=True)
+        panel.to_parquet(merged_panel_path, index=False)
+        print(f"\n  Saved merged panel: {merged_panel_path}")
 
     # Phase 4: Validation — dedup within survivors, no existing/new split
     catalog = run_validation(panel, selected)
