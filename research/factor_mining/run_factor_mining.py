@@ -125,6 +125,10 @@ def merge_candidates_to_panel(panel, monthly_candidates, cand_cols):
         on=["date", "ticker"],
         how="left",
     )
+    # Clean inf values across entire panel (some existing features may have extreme values)
+    import numpy as np
+    numeric_cols = panel.select_dtypes(include=[np.number]).columns
+    panel[numeric_cols] = panel[numeric_cols].replace([np.inf, -np.inf], np.nan)
     print(f"  Merged panel: {panel.shape[0]:,} rows × {panel.shape[1]} columns")
     return panel
 

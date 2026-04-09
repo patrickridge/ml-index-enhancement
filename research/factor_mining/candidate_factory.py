@@ -2,6 +2,7 @@
 candidate_factory.py
 ====================
 Generate ~80-100 candidate features from raw OHLCV data for Track 1 factor mining.
+Total time: 7950s
 
 Each candidate is designed to capture information NOT already in the existing 205 features.
 All functions operate per-ticker on daily data and return values to be sampled at month-end.

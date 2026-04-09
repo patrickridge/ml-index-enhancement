@@ -63,16 +63,16 @@ def lasso_screen(
     if len(df) < 100 or len(valid_cols) < 2:
         return [], pd.DataFrame()
 
-    X = df[valid_cols].values
-    y = df[target].values
+    X = df[valid_cols].values.astype(np.float64)
+    y = df[target].values.astype(np.float64)
     dates = df["date"].values
+
+    # Clean inf/NaN BEFORE scaling (StandardScaler rejects inf)
+    X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Standardize features
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-
-    # Replace remaining NaN/inf
-    X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Purged CV splits
     cv_splits = list(purged_ts_cv_splits(dates, n_splits=n_splits))
