@@ -57,13 +57,24 @@ SEC_HEADERS = {
 }
 SEC_RATE_LIMIT = 0.11  # 10 req/sec → sleep 0.11s between requests
 
-# Load S&P 500 tickers
-try:
-    constit = pd.read_parquet(DATA_DIR / "constituents.parquet")
-    tickers = sorted(constit["ticker"].unique().tolist())
-    print(f"Loaded {len(tickers)} tickers from constituents.parquet")
-except FileNotFoundError:
-    print("[WARN] constituents.parquet not found — using fallback ticker list")
+# Load S&P 500 tickers from panel (most reliable source)
+_ticker_src = None
+for _f in ["panel_monthly_enriched.parquet", "panel_monthly.parquet", "prices.parquet"]:
+    if (DATA_DIR / _f).exists():
+        _ticker_src = _f
+        break
+
+if _ticker_src:
+    _df = pd.read_parquet(DATA_DIR / _ticker_src, columns=["ticker"])
+    # Strip exchange suffix (.N, .O, etc.) for SEC lookup
+    raw_tickers = sorted(_df["ticker"].unique().tolist())
+    tickers = [t.split(".")[0] for t in raw_tickers]
+    # Deduplicate after stripping
+    tickers = sorted(set(tickers))
+    print(f"Loaded {len(tickers)} tickers from {_ticker_src}")
+    del _df
+else:
+    print("[WARN] No panel/prices parquet found — cannot get ticker list")
     tickers = []
 
 
