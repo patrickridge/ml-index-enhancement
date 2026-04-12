@@ -82,85 +82,98 @@ else:
 # FETCH FORM 4 FILINGS FROM SEC EDGAR
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_cik_for_ticker(ticker: str) -> str:
-    """Look up CIK number for a ticker via SEC EDGAR company search."""
-    url = f"https://efts.sec.gov/LATEST/search-index?q=%22{ticker}%22&dateRange=custom&startdt=2020-01-01&enddt=2020-12-31&forms=10-K"
-    try:
-        resp = requests.get(
-            f"https://efts.sec.gov/LATEST/search-index?q={ticker}&forms=10-K",
-            headers=SEC_HEADERS, timeout=10,
-        )
-        if resp.ok:
-            data = resp.json()
-            if data.get("hits", {}).get("hits"):
-                return data["hits"]["hits"][0]["_source"].get("entity_id")
-    except Exception:
-        pass
-    return None
+def load_ticker_cik_map() -> dict:
+    """
+    Download SEC's official ticker→CIK mapping.
+    Returns dict: { "AAPL": "0000320193", ... }
+    """
+    url = "https://www.sec.gov/files/company_tickers.json"
+    resp = requests.get(url, headers=SEC_HEADERS, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    # Format: { "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc"}, ... }
+    mapping = {}
+    for entry in data.values():
+        tk = entry["ticker"].upper()
+        cik = str(entry["cik_str"]).zfill(10)  # zero-pad to 10 digits
+        mapping[tk] = cik
+    return mapping
 
 
 def fetch_insider_filings_bulk() -> pd.DataFrame:
     """
-    Fetch insider trading data from SEC EDGAR XBRL API.
-    Uses the bulk company-concept API for insider ownership.
+    Fetch insider trading data via SEC EDGAR submissions API.
 
-    Falls back to the EDGAR full-text search if bulk fails.
+    For each ticker:
+    1. Look up CIK from SEC's official ticker map
+    2. Fetch filing history from https://data.sec.gov/submissions/CIK{cik}.json
+    3. Extract Form 4 filing dates
     """
-    print("\nFetching insider trading data from SEC EDGAR...")
-    print("  Using EDGAR full-text search API for Form 4 filings...")
+    print("\nStep 1: Loading SEC ticker→CIK mapping...")
+    try:
+        cik_map = load_ticker_cik_map()
+        print(f"  Loaded {len(cik_map):,} ticker→CIK mappings from SEC")
+    except Exception as e:
+        print(f"  [ERROR] Failed to load CIK mapping: {e}")
+        return pd.DataFrame(columns=["ticker", "filing_date", "form_type"])
 
+    print("\nStep 2: Fetching Form 4 filings per ticker...")
     all_records = []
     n_tickers = len(tickers)
+    n_matched = 0
     n_success = 0
     n_fail = 0
+    start_ts = pd.Timestamp(start)
 
     for i, ticker in enumerate(tickers):
         if (i + 1) % 50 == 0:
             print(f"  Progress: {i+1}/{n_tickers} tickers "
-                  f"({n_success} OK, {n_fail} failed)...")
+                  f"({n_success} with filings, {n_matched} CIK matched, "
+                  f"{n_fail} no CIK)...")
+
+        # Look up CIK
+        cik = cik_map.get(ticker.upper())
+        if cik is None:
+            n_fail += 1
+            continue
+        n_matched += 1
 
         try:
-            # Use EDGAR company search to find Form 4 filings
-            url = (f"https://efts.sec.gov/LATEST/search-index?"
-                   f"q=%22{ticker}%22&forms=4&dateRange=custom"
-                   f"&startdt={start}&enddt={pd.Timestamp.today().strftime('%Y-%m-%d')}")
-
+            url = f"https://data.sec.gov/submissions/CIK{cik}.json"
             resp = requests.get(url, headers=SEC_HEADERS, timeout=15)
             _time.sleep(SEC_RATE_LIMIT)
 
             if not resp.ok:
-                n_fail += 1
                 continue
 
             data = resp.json()
-            hits = data.get("hits", {}).get("hits", [])
+            recent = data.get("filings", {}).get("recent", {})
+            forms = recent.get("form", [])
+            dates = recent.get("filingDate", [])
 
-            for hit in hits:
-                src = hit.get("_source", {})
-                filing_date = src.get("file_date")
-                if not filing_date:
+            ticker_count = 0
+            for form, date_str in zip(forms, dates):
+                if form not in ("4", "4/A"):
                     continue
-
-                # Extract transaction type from filing metadata
-                # Form 4 filings have "P" (purchase) or "S" (sale) codes
-                form_type = src.get("form_type", "")
-                if "4" not in str(form_type):
+                fdate = pd.Timestamp(date_str)
+                if fdate < start_ts:
                     continue
-
                 all_records.append({
                     "ticker": ticker,
-                    "filing_date": pd.Timestamp(filing_date),
-                    "form_type": form_type,
+                    "filing_date": fdate,
+                    "form_type": form,
                 })
+                ticker_count += 1
 
-            n_success += 1
+            if ticker_count > 0:
+                n_success += 1
 
-        except Exception as e:
-            n_fail += 1
+        except Exception:
             continue
 
-    print(f"\n  Completed: {n_success} tickers OK, {n_fail} failed")
-    print(f"  Total filings found: {len(all_records):,}")
+    print(f"\n  CIK matched: {n_matched}/{n_tickers} | "
+          f"Tickers with Form 4s: {n_success} | No CIK: {n_fail}")
+    print(f"  Total Form 4 filings found: {len(all_records):,}")
 
     if not all_records:
         print("[WARN] No insider filings retrieved — returning empty DataFrame")
