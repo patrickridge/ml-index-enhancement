@@ -47,7 +47,7 @@ from config import (
     DATA_DIR, START_DATE, TRAIN_END, VALID_END,
     TOP_N, BOTTOM_N, LONG_FRAC, RETRAIN_EVERY,
     TRANSFORMER_CS_PARAMS, RL_FINETUNE_PARAMS,
-    USE_ORTHOGONALIZED_FEATURES,
+    USE_ORTHOGONALIZED_FEATURES, MACRO_COLS,
 )
 
 # Select feature panel
@@ -144,6 +144,107 @@ class FeatureTokenizer(nn.Module):
             return self.weight.norm(dim=1).cpu().numpy()
 
 
+class MacroEncoder(nn.Module):
+    """
+    Encode macro state (VIX, yields, SPX returns, etc.) into a dense embedding.
+    Macro features are the same for all stocks in a given month.
+
+    Input:  (n_macro,)
+    Output: (d_macro,)
+    """
+    def __init__(self, n_macro: int, d_macro: int = 64, dropout: float = 0.1):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_macro, d_macro),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_macro, d_macro),
+            nn.LayerNorm(d_macro),
+        )
+
+    def forward(self, macro: torch.Tensor) -> torch.Tensor:
+        return self.net(macro)
+
+
+class MacroFiLMLayer(nn.Module):
+    """
+    Feature-wise Linear Modulation conditioned on macro state.
+
+    Given macro embedding and per-stock feature tokens, produces per-feature
+    (gamma, beta) and modulates: tokens_out = gamma * tokens + beta.
+
+    This creates implicit n_features × n_macro interactions — the model learns
+    which factors to trust/distrust under each macro regime.
+
+    Identity-initialized (gamma=1, beta=0) so pre-trained weights still work.
+    """
+    def __init__(self, n_stock_features: int, d_model: int, d_macro: int):
+        super().__init__()
+        self.film_gen = nn.Linear(d_macro, n_stock_features * 2)
+        self.n_f = n_stock_features
+        # Identity init: gamma=1, beta=0 → no modulation at start
+        nn.init.zeros_(self.film_gen.weight)
+        nn.init.zeros_(self.film_gen.bias)
+        with torch.no_grad():
+            self.film_gen.bias[:n_stock_features] = 1.0
+
+    def forward(self, tokens: torch.Tensor, macro_emb: torch.Tensor) -> torch.Tensor:
+        """tokens: (N, F, d), macro_emb: (d_macro,) → (N, F, d)"""
+        params = self.film_gen(macro_emb)           # (2*F,)
+        gamma = params[:self.n_f].unsqueeze(0).unsqueeze(-1)   # (1, F, 1)
+        beta  = params[self.n_f:].unsqueeze(0).unsqueeze(-1)   # (1, F, 1)
+        return gamma * tokens + beta
+
+
+class CorrelationAttentionBias(nn.Module):
+    """
+    Inject pre-computed factor correlation matrix as attention bias in Stage 1.
+
+    Learns per-head scalar weights on the F×F correlation matrix, added to
+    attention logits so the model knows which features are correlated.
+    """
+    def __init__(self, n_features: int, n_heads: int):
+        super().__init__()
+        self.head_weights = nn.Parameter(torch.zeros(n_heads))
+        self.n_features = n_features
+
+    def forward(self, corr_matrix: torch.Tensor) -> torch.Tensor:
+        """corr_matrix: (F, F) → bias: (n_heads, F+1, F+1) with CLS padding"""
+        F = self.n_features
+        padded = torch.zeros(F + 1, F + 1, device=corr_matrix.device)
+        padded[1:, 1:] = corr_matrix
+        # (n_heads,) → (n_heads, 1, 1) × (F+1, F+1) → (n_heads, F+1, F+1)
+        return self.head_weights.unsqueeze(-1).unsqueeze(-1) * padded.unsqueeze(0)
+
+
+class Stage1AttentionLayer(nn.Module):
+    """
+    Custom transformer encoder layer that accepts additive attention bias.
+    Pre-norm architecture matching the existing norm_first=True setting.
+    Used only when use_corr_bias=True (otherwise standard TransformerEncoder).
+    """
+    def __init__(self, d_model: int, n_heads: int, dim_feedforward: int, dropout: float):
+        super().__init__()
+        self.self_attn = nn.MultiheadAttention(
+            d_model, n_heads, dropout=dropout, batch_first=True,
+        )
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, dim_feedforward),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(dim_feedforward, d_model),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x: torch.Tensor, attn_bias: torch.Tensor = None) -> torch.Tensor:
+        x2 = self.norm1(x)
+        x = x + self.self_attn(x2, x2, x2, attn_mask=attn_bias)[0]
+        x = x + self.ffn(self.norm2(x))
+        return x
+
+
 class CrossSectionalTransformer(nn.Module):
     """
     Two-stage cross-sectional transformer for monthly stock ranking.
@@ -175,23 +276,42 @@ class CrossSectionalTransformer(nn.Module):
         n_layers_s2: int = 2,
         dropout: float = 0.1,
         max_stocks: int = 520,
+        n_macro: int = 0,
+        d_macro: int = 64,
+        use_macro_film: bool = True,
+        use_corr_bias: bool = False,
     ):
         super().__init__()
         self.d_model    = d_model
         self.max_stocks = max_stocks
+        self.use_macro_film = use_macro_film and n_macro > 0
+        self.use_corr_bias  = use_corr_bias
+
+        # ── Macro FiLM conditioning (modulates feature tokens by macro state) ─
+        if self.use_macro_film:
+            self.macro_encoder = MacroEncoder(n_macro, d_macro, dropout)
+            self.macro_film    = MacroFiLMLayer(n_features, d_model, d_macro)
 
         # ── Stage 1: per-stock feature attention ─────────────────────────────
         self.tokenizer    = FeatureTokenizer(n_features, d_model)
         self.cls_token_s1 = nn.Parameter(torch.zeros(1, 1, d_model))
 
-        s1_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=n_heads_s1,
-            dim_feedforward=d_model * 4, dropout=dropout,
-            batch_first=True, norm_first=True,
-        )
-        self.transformer_s1 = nn.TransformerEncoder(
-            s1_layer, num_layers=n_layers_s1, enable_nested_tensor=False
-        )
+        if use_corr_bias:
+            # Custom layers that accept additive attention bias
+            self.corr_bias = CorrelationAttentionBias(n_features, n_heads_s1)
+            self.s1_layers = nn.ModuleList([
+                Stage1AttentionLayer(d_model, n_heads_s1, d_model * 4, dropout)
+                for _ in range(n_layers_s1)
+            ])
+        else:
+            s1_layer = nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=n_heads_s1,
+                dim_feedforward=d_model * 4, dropout=dropout,
+                batch_first=True, norm_first=True,
+            )
+            self.transformer_s1 = nn.TransformerEncoder(
+                s1_layer, num_layers=n_layers_s1, enable_nested_tensor=False
+            )
 
         # ── Stage 2: cross-stock attention ───────────────────────────────────
         self.market_cls = nn.Parameter(torch.zeros(1, 1, d_model))
@@ -213,38 +333,54 @@ class CrossSectionalTransformer(nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor,            # (MAX_N, n_features)
-        padding_mask: torch.Tensor, # (MAX_N,) bool — True = padded/invalid stock
+        x: torch.Tensor,            # (MAX_N, n_features) — stock features only
+        padding_mask: torch.Tensor,  # (MAX_N,) bool — True = padded/invalid stock
+        x_macro: torch.Tensor = None,  # (n_macro,) — macro features (one per month)
+        corr_matrix: torch.Tensor = None,  # (F, F) — factor correlation matrix
     ) -> torch.Tensor:              # (MAX_N,) scores
         """
-        x:            (MAX_N, F)  — feature matrix for all stocks in one month (padded)
-        padding_mask: (MAX_N,)    — True for padded positions (ignored in attention)
+        x:            (MAX_N, F)  — stock feature matrix (padded)
+        padding_mask: (MAX_N,)    — True for padded positions
+        x_macro:      (n_macro,)  — macro features (same for all stocks in month)
+        corr_matrix:  (F, F)      — Spearman correlation matrix of stock features
         Returns:      (MAX_N,)    — scores; caller masks out padded positions
         """
         MAX_N = x.shape[0]
 
         # ── Stage 1: embed each stock's features independently ────────────────
-        # Treat all stocks as an independent batch (shared encoder weights)
         tokens = self.tokenizer(x)                           # (MAX_N, F, d)
+
+        # Macro FiLM: modulate feature tokens by macro state
+        if self.use_macro_film and x_macro is not None:
+            macro_emb = self.macro_encoder(x_macro)          # (d_macro,)
+            tokens = self.macro_film(tokens, macro_emb)      # (MAX_N, F, d)
+
         cls_s1 = self.cls_token_s1.expand(MAX_N, -1, -1)    # (MAX_N, 1, d)
         tokens = torch.cat([cls_s1, tokens], dim=1)          # (MAX_N, F+1, d)
-        out_s1 = self.transformer_s1(tokens)                 # (MAX_N, F+1, d)
+
+        if self.use_corr_bias and corr_matrix is not None:
+            # Custom layers with correlation attention bias
+            attn_bias = self.corr_bias(corr_matrix)          # (n_heads, F+1, F+1)
+            for layer in self.s1_layers:
+                tokens = layer(tokens, attn_bias=attn_bias)
+            out_s1 = tokens
+        else:
+            out_s1 = self.transformer_s1(tokens)             # (MAX_N, F+1, d)
+
         stock_emb = out_s1[:, 0, :]                          # (MAX_N, d) — CLS output
 
         # ── Stage 2: cross-stock attention ────────────────────────────────────
-        # Treat the N stocks as a sequence (batch=1, seq_len=MAX_N)
         stock_seq = stock_emb.unsqueeze(0)                   # (1, MAX_N, d)
         mkt_cls   = self.market_cls.expand(1, -1, -1)        # (1, 1, d)
         stock_seq = torch.cat([mkt_cls, stock_seq], dim=1)   # (1, MAX_N+1, d)
 
-        # Mask: MARKET_CLS is never masked (False); padded stocks are masked (True)
         s2_mask = torch.cat([
-            torch.zeros(1, 1, dtype=torch.bool, device=x.device),  # MARKET_CLS
-            padding_mask.unsqueeze(0),                               # (1, MAX_N)
-        ], dim=1)   # (1, MAX_N+1)
+            torch.zeros(1, 1, dtype=torch.bool, device=x.device),
+            padding_mask.unsqueeze(0),
+        ], dim=1)
 
         out_s2    = self.transformer_s2(stock_seq, src_key_padding_mask=s2_mask)
-        enriched  = out_s2[0, 1:, :]                         # (MAX_N, d) — skip MARKET_CLS
+        enriched  = out_s2[0, 1:, :]                         # (MAX_N, d)
         scores    = self.score_head(enriched).squeeze(-1)    # (MAX_N,)
 
         return scores
@@ -253,6 +389,8 @@ class CrossSectionalTransformer(nn.Module):
         self,
         x: torch.Tensor,            # (MAX_N, n_features)
         padding_mask: torch.Tensor,  # (MAX_N,) bool — True = padded
+        x_macro: torch.Tensor = None,
+        corr_matrix: torch.Tensor = None,
     ) -> tuple:
         """
         Same as forward() but also returns enriched embeddings (before score head).
@@ -263,9 +401,22 @@ class CrossSectionalTransformer(nn.Module):
 
         # Stage 1: per-stock feature attention
         tokens = self.tokenizer(x)
+
+        if self.use_macro_film and x_macro is not None:
+            macro_emb = self.macro_encoder(x_macro)
+            tokens = self.macro_film(tokens, macro_emb)
+
         cls_s1 = self.cls_token_s1.expand(MAX_N, -1, -1)
         tokens = torch.cat([cls_s1, tokens], dim=1)
-        out_s1 = self.transformer_s1(tokens)
+
+        if self.use_corr_bias and corr_matrix is not None:
+            attn_bias = self.corr_bias(corr_matrix)
+            for layer in self.s1_layers:
+                tokens = layer(tokens, attn_bias=attn_bias)
+            out_s1 = tokens
+        else:
+            out_s1 = self.transformer_s1(tokens)
+
         stock_emb = out_s1[:, 0, :]
 
         # Stage 2: cross-stock attention
@@ -313,16 +464,24 @@ class ScoreNoiseHead(nn.Module):
 
 def build_monthly_cross_sections(
     panel: pd.DataFrame,
-    feat_cols: list,
+    stock_feat_cols: list,
     max_stocks: int = 520,
+    macro_cols: list = None,
 ) -> list:
     """
     Convert panel (long format) into list of monthly cross-section dicts.
     Each dict contains padded tensors ready for CrossSectionalTransformer.
 
+    Args:
+        stock_feat_cols: stock-level feature columns (cross-sectionally ranked)
+        macro_cols: macro feature columns (same value for all stocks per month)
+
     Returns: list of dicts:
-      { date, X:(MAX_N,F), y:(MAX_N,), mask:(MAX_N,), tickers:[str], n_valid:int }
+      { date, X:(MAX_N,F_stock), X_macro:(n_macro,), y:(MAX_N,),
+        mask:(MAX_N,), tickers:[str], n_valid:int }
     """
+    if macro_cols is None:
+        macro_cols = []
     months = sorted(panel["date"].unique())
     cross_sections = []
 
@@ -334,26 +493,32 @@ def build_monthly_cross_sections(
             continue
 
         if n > max_stocks:
-            # Very rare: truncate (sorted by ticker for reproducibility)
             sub = sub.sort_values("ticker").iloc[:max_stocks]
             n   = max_stocks
 
-        X_vals = sub[feat_cols].fillna(0.0).values.astype(np.float32)   # (n, F)
-        y_vals = sub["fwd_ret_1m"].values.astype(np.float32)             # (n,)
+        X_vals = sub[stock_feat_cols].fillna(0.0).values.astype(np.float32)   # (n, F_stock)
+        y_vals = sub["fwd_ret_1m"].values.astype(np.float32)
+
+        # Macro: take from first row (identical for all stocks in a month)
+        if macro_cols:
+            x_macro = sub[macro_cols].iloc[0].fillna(0.0).values.astype(np.float32)
+        else:
+            x_macro = np.zeros(0, dtype=np.float32)
 
         # Pad to max_stocks
-        F      = len(feat_cols)
-        X_pad  = np.zeros((max_stocks, F), dtype=np.float32)
-        y_pad  = np.zeros(max_stocks, dtype=np.float32)
-        mask   = np.ones(max_stocks, dtype=bool)    # True = padded
+        F_stock = len(stock_feat_cols)
+        X_pad   = np.zeros((max_stocks, F_stock), dtype=np.float32)
+        y_pad   = np.zeros(max_stocks, dtype=np.float32)
+        mask    = np.ones(max_stocks, dtype=bool)
 
         X_pad[:n] = X_vals
         y_pad[:n] = y_vals
-        mask[:n]  = False   # valid stocks: not padded
+        mask[:n]  = False
 
         cross_sections.append({
             "date":    m,
             "X":       torch.from_numpy(X_pad),
+            "X_macro": torch.from_numpy(x_macro),
             "y":       torch.from_numpy(y_pad),
             "mask":    torch.from_numpy(mask),
             "tickers": sub["ticker"].tolist(),
@@ -384,6 +549,8 @@ def train_cs_model(
     train_cs:   list,
     valid_cs:   list,
     n_features: int,
+    n_macro: int = 0,
+    corr_matrix: torch.Tensor = None,
 ) -> CrossSectionalTransformer:
     """
     Train CrossSectionalTransformer on monthly cross-sections.
@@ -392,14 +559,18 @@ def train_cs_model(
     """
     p = TRANSFORMER_CS_PARAMS
     model = CrossSectionalTransformer(
-        n_features  = n_features,
-        d_model     = p["d_model"],
-        n_heads_s1  = p["n_heads_s1"],
-        n_layers_s1 = p["n_layers_s1"],
-        n_heads_s2  = p["n_heads_s2"],
-        n_layers_s2 = p["n_layers_s2"],
-        dropout     = p["dropout"],
-        max_stocks  = p["max_stocks"],
+        n_features     = n_features,
+        d_model        = p["d_model"],
+        n_heads_s1     = p["n_heads_s1"],
+        n_layers_s1    = p["n_layers_s1"],
+        n_heads_s2     = p["n_heads_s2"],
+        n_layers_s2    = p["n_layers_s2"],
+        dropout        = p["dropout"],
+        max_stocks     = p["max_stocks"],
+        n_macro        = n_macro,
+        d_macro        = p.get("d_macro", 64),
+        use_macro_film = p.get("use_macro_film", True),
+        use_corr_bias  = p.get("use_corr_bias", False),
     ).to(DEVICE)
 
     optimiser = torch.optim.Adam(
@@ -419,15 +590,15 @@ def train_cs_model(
         indices     = rng.permutation(len(train_cs))   # shuffle months
 
         for idx in indices:
-            cs   = train_cs[idx]
-            X    = cs["X"].to(DEVICE)      # (MAX_N, F)
-            y    = cs["y"].to(DEVICE)      # (MAX_N,)
-            mask = cs["mask"].to(DEVICE)   # (MAX_N,)
+            cs      = train_cs[idx]
+            X       = cs["X"].to(DEVICE)
+            y       = cs["y"].to(DEVICE)
+            mask    = cs["mask"].to(DEVICE)
+            x_macro = cs["X_macro"].to(DEVICE) if n_macro > 0 else None
 
             optimiser.zero_grad()
-            scores = model(X, mask)
+            scores = model(X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
             loss   = masked_mse_loss(scores, y, mask)
-            # Add feature tokenizer L1/L2 penalty (lets model zero out useless features)
             loss   = loss + model.tokenizer.feature_penalty(
                 l1_lambda=p.get("l1_lambda", 1e-4),
                 l2_lambda=p.get("l2_lambda", 1e-4),
@@ -444,10 +615,12 @@ def train_cs_model(
         val_losses = []
         with torch.no_grad():
             for cs in valid_cs:
-                X    = cs["X"].to(DEVICE)
-                y    = cs["y"].to(DEVICE)
-                mask = cs["mask"].to(DEVICE)
-                val_losses.append(masked_mse_loss(model(X, mask), y, mask).item())
+                X       = cs["X"].to(DEVICE)
+                y       = cs["y"].to(DEVICE)
+                mask    = cs["mask"].to(DEVICE)
+                x_macro = cs["X_macro"].to(DEVICE) if n_macro > 0 else None
+                scores  = model(X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
+                val_losses.append(masked_mse_loss(scores, y, mask).item())
 
         val_loss = float(np.mean(val_losses)) if val_losses else float("inf")
 
@@ -531,14 +704,16 @@ def _gaussian_kl(
     ref_noise_head: ScoreNoiseHead,
     X: torch.Tensor,
     mask: torch.Tensor,
+    x_macro: torch.Tensor = None,
+    corr_matrix: torch.Tensor = None,
 ) -> torch.Tensor:
     """KL(current || reference) for Gaussian score policy."""
-    _, enriched = model.forward_enriched(X, mask)
+    _, enriched = model.forward_enriched(X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
     mu1 = model.score_head(enriched).squeeze(-1)
     s1  = noise_head(enriched).exp()
 
     with torch.no_grad():
-        _, ref_enriched = ref_model.forward_enriched(X, mask)
+        _, ref_enriched = ref_model.forward_enriched(X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
         mu2 = ref_model.score_head(ref_enriched).squeeze(-1)
         s2  = ref_noise_head(ref_enriched).exp()
 
@@ -558,12 +733,14 @@ def _sample_group_cs(
     n_valid: int,
     G: int,
     rp: dict,
+    x_macro: torch.Tensor = None,
+    corr_matrix: torch.Tensor = None,
 ) -> tuple:
     """
     Sample G noisy score vectors for one month's cross-section.
     Returns (log_probs_old: list[Tensor], rewards: list[float]).
     """
-    scores, enriched = model.forward_enriched(X, mask)
+    scores, enriched = model.forward_enriched(X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
     mu    = scores[:n_valid]                              # (n_valid,)
     log_s = noise_head(enriched[:n_valid])                # (n_valid,)
     std   = log_s.exp()
@@ -589,6 +766,8 @@ def _sample_group_cs(
 def _compute_val_rank_ic(
     model: CrossSectionalTransformer,
     valid_cs: list,
+    n_macro: int = 0,
+    corr_matrix: torch.Tensor = None,
 ) -> float:
     """
     Validation metric: mean Spearman rank IC across validation months.
@@ -601,9 +780,10 @@ def _compute_val_rank_ic(
         for cs in valid_cs:
             X = cs["X"].to(DEVICE)
             mask = cs["mask"].to(DEVICE)
+            x_macro = cs["X_macro"].to(DEVICE) if n_macro > 0 else None
             n_valid = cs["n_valid"]
 
-            scores = model(X, mask)[:n_valid].cpu().numpy()
+            scores = model(X, mask, x_macro=x_macro, corr_matrix=corr_matrix)[:n_valid].cpu().numpy()
             rets   = cs["y"][:n_valid].numpy()
 
             if len(scores) < 20:
@@ -620,6 +800,8 @@ def grpo_finetune_cs_model(
     train_cs: list,
     valid_cs: list,
     method: str = "grpo",
+    n_macro: int = 0,
+    corr_matrix: torch.Tensor = None,
 ) -> CrossSectionalTransformer:
     """
     GRPO/DAPO/Hybrid RL fine-tuning of a pre-trained CS-Transformer.
@@ -702,6 +884,7 @@ def grpo_finetune_cs_model(
             X = cs["X"].to(DEVICE)
             y = cs["y"].to(DEVICE)
             mask = cs["mask"].to(DEVICE)
+            x_macro = cs["X_macro"].to(DEVICE) if n_macro > 0 else None
             n_valid = cs["n_valid"]
             returns = y[:n_valid]
 
@@ -712,6 +895,7 @@ def grpo_finetune_cs_model(
             # Sample G candidates
             log_probs_old, rewards = _sample_group_cs(
                 model, noise_head, X, mask, returns, n_valid, G, rp,
+                x_macro=x_macro, corr_matrix=corr_matrix,
             )
 
             # DAPO: dynamic G expansion if high reward variance
@@ -720,6 +904,7 @@ def grpo_finetune_cs_model(
                     extra_lp, extra_r = _sample_group_cs(
                         model, noise_head, X, mask, returns, n_valid,
                         G_max - len(rewards), rp,
+                        x_macro=x_macro, corr_matrix=corr_matrix,
                     )
                     log_probs_old.extend(extra_lp)
                     rewards.extend(extra_r)
@@ -733,7 +918,8 @@ def grpo_finetune_cs_model(
             adv = _group_advantage(rewards).to(DEVICE)
 
             # ── Re-derive log-probs under current policy (for ratio) ──────
-            scores_now, enriched_now = model.forward_enriched(X, mask)
+            scores_now, enriched_now = model.forward_enriched(
+                X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
             mu_now    = scores_now[:n_valid]
             log_s_now = noise_head(enriched_now[:n_valid])
             std_now   = log_s_now.exp()
@@ -773,6 +959,7 @@ def grpo_finetune_cs_model(
             if use_method in ("grpo", "hybrid") and ref_model is not None:
                 kl_loss = kl_beta * _gaussian_kl(
                     model, noise_head, ref_model, ref_noise_head, X, mask,
+                    x_macro=x_macro, corr_matrix=corr_matrix,
                 )
 
             # ── Feature penalty (keep sparsity pressure during RL) ────────
@@ -789,7 +976,8 @@ def grpo_finetune_cs_model(
             optimizer.step()
 
         # ── Validate: Rank IC on validation months (no return leakage) ────
-        val_ic = _compute_val_rank_ic(model, valid_cs)
+        val_ic = _compute_val_rank_ic(model, valid_cs, n_macro=n_macro,
+                                       corr_matrix=corr_matrix)
 
         if val_ic > best_val_ic + 1e-6:
             best_val_ic    = val_ic
@@ -830,6 +1018,8 @@ def grpo_finetune_cs_model(
 def predict_cs(
     model: CrossSectionalTransformer,
     cs:    dict,
+    n_macro: int = 0,
+    corr_matrix: torch.Tensor = None,
 ) -> np.ndarray:
     """
     Predict scores for one cross-section.
@@ -837,9 +1027,10 @@ def predict_cs(
     """
     model.eval()
     with torch.no_grad():
-        X    = cs["X"].to(DEVICE)
-        mask = cs["mask"].to(DEVICE)
-        scores = model(X, mask).cpu().numpy()   # (MAX_N,)
+        X       = cs["X"].to(DEVICE)
+        mask    = cs["mask"].to(DEVICE)
+        x_macro = cs["X_macro"].to(DEVICE) if n_macro > 0 else None
+        scores  = model(X, mask, x_macro=x_macro, corr_matrix=corr_matrix).cpu().numpy()
     return scores[:cs["n_valid"]]
 
 
@@ -855,11 +1046,16 @@ def main():
     panel["date"] = pd.to_datetime(panel["date"])
     panel = panel[panel["date"] >= START_DATE].reset_index(drop=True)
 
+    # ── Separate stock vs macro features ─────────────────────────────────────
     exclude   = {"date", "ticker", "fwd_ret_1m"}
-    feat_cols = [c for c in panel.columns if c not in exclude]
-    n_features = len(feat_cols)
+    all_feat_cols = [c for c in panel.columns if c not in exclude]
+    macro_cols = [c for c in MACRO_COLS if c in panel.columns]
+    stock_feat_cols = [c for c in all_feat_cols if c not in macro_cols]
+    n_stock_features = len(stock_feat_cols)
+    n_macro = len(macro_cols)
 
-    print(f"Features: {n_features} | Rows: {len(panel):,} | Tickers: {panel['ticker'].nunique()}")
+    print(f"Stock features: {n_stock_features} | Macro features: {n_macro} | "
+          f"Rows: {len(panel):,} | Tickers: {panel['ticker'].nunique()}")
 
     p = TRANSFORMER_CS_PARAMS
 
@@ -877,7 +1073,9 @@ def main():
 
     # ── Build all monthly cross-sections once ─────────────────────────────────
     print("\nBuilding monthly cross-sections...")
-    all_cs = build_monthly_cross_sections(panel, feat_cols, max_stocks=p["max_stocks"])
+    all_cs = build_monthly_cross_sections(
+        panel, stock_feat_cols, max_stocks=p["max_stocks"], macro_cols=macro_cols,
+    )
     cs_map = {cs["date"]: cs for cs in all_cs}
 
     train_cs = [cs_map[m] for m in train_months if m in cs_map]
@@ -885,15 +1083,27 @@ def main():
     print(f"  Train cross-sections: {len(train_cs)}")
     print(f"  Valid cross-sections: {len(valid_cs)}")
     print(f"  Max stocks per month (padded to): {p['max_stocks']}")
+    if n_macro > 0:
+        print(f"  Macro FiLM: {n_macro} macro features → per-feature modulation")
+
+    # ── Correlation matrix (computed from IS training data only) ──────────────
+    corr_matrix = None
+    if p.get("use_corr_bias", False):
+        train_panel = panel[panel["date"] <= train_end]
+        corr_np = train_panel[stock_feat_cols].corr(method="spearman").values
+        corr_matrix = torch.FloatTensor(corr_np).to(DEVICE)
+        print(f"  Correlation bias: {corr_matrix.shape[0]}x{corr_matrix.shape[1]} Spearman matrix")
 
     # ── Stage 1: MSE pre-training ───────────────────────────────────────────
     print("\nStage 1: MSE pre-training...")
-    model = train_cs_model(train_cs, valid_cs, n_features)
+    model = train_cs_model(train_cs, valid_cs, n_stock_features,
+                           n_macro=n_macro, corr_matrix=corr_matrix)
 
     # ── Stage 2: RL fine-tuning (GRPO/DAPO portfolio-level reward) ──────────
     rl_method = RL_FINETUNE_PARAMS["method"]
     print(f"\nStage 2: RL fine-tuning ({rl_method.upper()})...")
-    model = grpo_finetune_cs_model(model, train_cs, valid_cs, method=rl_method)
+    model = grpo_finetune_cs_model(model, train_cs, valid_cs, method=rl_method,
+                                    n_macro=n_macro, corr_matrix=corr_matrix)
 
     # ── Walk-forward prediction ───────────────────────────────────────────────
     all_scores = []
@@ -901,25 +1111,34 @@ def main():
     for i, m in enumerate(test_months):
         # Retrain every RETRAIN_EVERY months with expanding window
         if i > 0 and i % RETRAIN_EVERY == 0:
-            # All months strictly before the current test month
             retrain_cutoff = m
             seen_months = [mo for mo in months if mo < retrain_cutoff]
-            # Split: last ~18 months as RL validation, rest as training
             rl_val_n = min(18, max(6, len(seen_months) // 5))
             tr_cs_exp = [cs_map[mo] for mo in seen_months[:-rl_val_n] if mo in cs_map]
             va_cs_rl  = [cs_map[mo] for mo in seen_months[-rl_val_n:] if mo in cs_map]
+
+            # Recompute correlation matrix on expanded training data
+            retrain_corr = None
+            if p.get("use_corr_bias", False):
+                retrain_panel = panel[panel["date"] < retrain_cutoff]
+                corr_np = retrain_panel[stock_feat_cols].corr(method="spearman").values
+                retrain_corr = torch.FloatTensor(corr_np).to(DEVICE)
+
             if va_cs_rl:
                 print(f"  Retraining at {m.date()} (train={len(tr_cs_exp)}, "
                       f"val={len(va_cs_rl)} months)...")
-                model = train_cs_model(tr_cs_exp, va_cs_rl, n_features)
+                model = train_cs_model(tr_cs_exp, va_cs_rl, n_stock_features,
+                                       n_macro=n_macro, corr_matrix=retrain_corr)
                 model = grpo_finetune_cs_model(model, tr_cs_exp, va_cs_rl,
-                                                method=rl_method)
+                                                method=rl_method, n_macro=n_macro,
+                                                corr_matrix=retrain_corr)
+                corr_matrix = retrain_corr  # use updated corr for predictions
 
         if m not in cs_map:
             continue
 
         cs     = cs_map[m]
-        scores = predict_cs(model, cs)   # (n_valid,)
+        scores = predict_cs(model, cs, n_macro=n_macro, corr_matrix=corr_matrix)
 
         # Match scores back to valid stock rows in the panel
         sub = (panel[panel["date"] == m]

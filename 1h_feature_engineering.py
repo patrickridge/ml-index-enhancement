@@ -66,7 +66,7 @@ from utils_factors import (
     add_short_interest_factors,
     add_institutional_factors,
 )
-from config import MACRO_COLS
+from config import MACRO_COLS, USE_CANDIDATE_FEATURES
 import time as _time; _t0 = _time.time()
 
 DATA_DIR  = Path("data")
@@ -215,6 +215,16 @@ def build_daily_features(prices: pd.DataFrame,
 
     print("  Cat 18: seasonality factors...")
     prices = add_seasonality_factors(prices)
+
+    # Cat 22: candidate factors from factor mining (69 OHLCV-derived signals)
+    if USE_CANDIDATE_FEATURES:
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "research", "factor_mining"))
+        from candidate_factory import build_all_candidates
+        from regime_entropy import add_entropy_regime_signals
+        print("  Cat 22: factor mining candidates (9 families, ~69 features)...")
+        prices = build_all_candidates(prices)
+        prices = add_entropy_regime_signals(prices)
 
     # Carry month-end close for market cap computation (Cat 14).
     # Named close_me — not in exclude_cols so it survives sample_at_month_end.

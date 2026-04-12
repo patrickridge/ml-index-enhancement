@@ -67,6 +67,7 @@ LGBM_PARAMS = dict(
 # ── 100+ Factor Pipeline additions ───────────────────────────────────────────
 # Feature variants
 USE_ORTHOGONALIZED_FEATURES = False   # True → load panel_monthly_orthogonalized.parquet
+USE_CANDIDATE_FEATURES      = True    # True → include 69 factor mining candidates in panel
 PCA_VARIANCE_THRESHOLD      = 0.80    # variance explained threshold for 1b_orthogonalize.py
 
 # RMT covariance denoising (fixes beta=2.07 in 3_pca_rp_backtest.py)
@@ -94,6 +95,11 @@ TRANSFORMER_CS_PARAMS = dict(
     # Feature tokenizer penalties — let model learn which features matter
     l1_lambda=1e-4,   # sparsity: drives useless feature embeddings to zero
     l2_lambda=1e-4,   # shrinkage: prevents any single feature from dominating
+    # Macro FiLM conditioning — macro state modulates per-feature trust
+    use_macro_film=True,  # FiLM layer: macro → (gamma, beta) per stock feature
+    d_macro=64,           # macro embedding dimension
+    # Factor correlation attention bias — inject F×F correlation into Stage 1
+    use_corr_bias=False,  # disabled by default; enable after FiLM is validated
 )
 
 # ── RL Fine-Tuning (Stage 2: GRPO/DAPO after MSE pre-train) ─────────────────

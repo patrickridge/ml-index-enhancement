@@ -140,3 +140,23 @@ Validation during RL uses Rank IC (Spearman correlation of predicted vs actual r
 - Screening results saved to `research/factor_mining/results/`
 - Candidate catalog: `research/factor_mining/candidate_factor_catalog.csv`
 - Each candidate gets a row with: factor_name, track, family, IC_IS, ICIR_IS, IC_persistence, dedup_pass, RAS_pvalue, BHY_adjusted_pvalue, selected
+
+## 10. Macro FiLM Conditioning
+
+The CS-Transformer now separates macro features (16 `MACRO_COLS`: VIX, yields, spreads, SPX stats, prediction market signals) from stock features:
+
+- **Stock features** → FeatureTokenizer → per-feature d_model embeddings
+- **Macro features** → MacroEncoder MLP → 64-dim macro embedding → MacroFiLMLayer
+- FiLM modulation: `tokens_out = gamma * tokens + beta` (per-feature gamma/beta generated from macro state)
+- Identity-initialized (gamma=1, beta=0) — backward-compatible with existing pre-trained weights
+- Creates implicit ~247 stock × 16 macro = ~3,950 feature-macro interactions
+
+This implements Kieran's directive: "macro indicators as another layer, doing weightings" — the model learns which stock factors to trust/distrust under each macro regime.
+
+## 11. Factor Correlation Awareness
+
+Optional `CorrelationAttentionBias` injects the pre-computed F×F Spearman correlation matrix as additive attention bias in Stage 1 feature attention. Each attention head learns a scalar weight on the correlation matrix.
+
+- Correlation matrix computed from IS training data only (no future leakage)
+- Recomputed at each walk-forward retrain point
+- Disabled by default (`use_corr_bias=False`); enable after FiLM is validated

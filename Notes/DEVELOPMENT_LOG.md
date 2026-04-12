@@ -1192,3 +1192,48 @@ New directory: `research/factor_mining/`
 **Portfolio reward fix:** Differentiable sigmoid top-K replaces softmax. Steep sigmoid approximates hard top-K/bottom-K while keeping gradients flowing.
 
 **Status:** Code complete, syntax verified. Not yet run (needs panel data + GPU for reasonable speed).
+
+### 17.3 — Macro FiLM + Correlation Bias + Sentiment Data (10–12 Apr 2026)
+
+**Kieran directives:**
+- "Aside from our 2xx factors, do macro indicators, so we will have 2xx * 1x characteristics. And make macro indicator another layer, doing weightings"
+- "Give transformers the concept of correlation between factors"
+- "Have a look on the github called AI hedge fund. We need the AI analyst and some sentimental data"
+- No factor filtering — feed ALL candidates directly to transformer
+
+**Architecture changes in `3c_cs_transformer.py`:**
+
+**Macro FiLM (Feature-wise Linear Modulation):**
+- `MacroEncoder`: 16 macro features → MLP → 64-dim macro embedding
+- `MacroFiLMLayer`: macro embedding → per-feature (gamma, beta) → `tokens_out = gamma * tokens + beta`
+- Identity-initialized (gamma=1, beta=0) so pre-trained weights still work at start
+- Creates implicit ~247 stock features × 16 macro features = ~3,950 interactions
+- Applied after FeatureTokenizer, before Stage 1 attention
+- `MACRO_COLS` (16 columns: VIX, yields, spreads, SPX stats, prediction market signals) separated from stock features and fed through dedicated path
+
+**Factor Correlation Attention Bias:**
+- `CorrelationAttentionBias`: pre-computed F×F Spearman correlation matrix → per-head learned scalar weights → additive attention bias in Stage 1
+- `Stage1AttentionLayer`: custom pre-norm transformer layer that accepts additive `attn_mask` (standard `nn.TransformerEncoder` doesn't support this)
+- Correlation matrix computed from IS training data only, recomputed at each walk-forward retrain
+- Disabled by default (`use_corr_bias=False`); enable after FiLM is validated
+
+**Data pipeline changes:**
+- `build_monthly_cross_sections()` now separates stock features (`X`) from macro features (`X_macro`)
+- Each cross-section dict carries `X_macro: (n_macro,)` tensor
+- All training, RL, and prediction functions updated to pass `x_macro` and `corr_matrix` through
+
+**Candidate integration in `1h_feature_engineering.py`:**
+- Added `USE_CANDIDATE_FEATURES` flag (default True)
+- When enabled, imports `candidate_factory.build_all_candidates()` and `regime_entropy.add_entropy_regime_signals()` from `research/factor_mining/`
+- All 69 `cand_` features computed alongside existing features, cross-sectionally ranked
+- Panel grows from ~208 to ~277 columns
+
+**New data scripts:**
+- `1n_fetch_insider_trades.py` — SEC EDGAR Form 4 insider trading filings → `data/insider_trades.parquet` (filing frequency features: 30d/90d activity)
+- `1o_fetch_sentiment.py` — Finnhub company news + VADER sentiment scoring → `data/sentiment.parquet` (sentiment mean/std/momentum + news volume)
+
+**Config changes (`config.py`):**
+- `TRANSFORMER_CS_PARAMS` expanded: `use_macro_film=True`, `d_macro=64`, `use_corr_bias=False`
+- `USE_CANDIDATE_FEATURES = True` flag added
+
+**Status:** Code complete, all syntax verified. Ready to run pipeline (rebuild panel → train on Kaggle GPU).

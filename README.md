@@ -30,8 +30,10 @@ python 1j_fetch_simfin.py              # quarterly fundamentals via Simfin/yfina
 python 1k_fetch_short_interest.py      # short interest snapshot via yfinance → data/short_interest.parquet
 python 1l_fetch_13f.py                 # institutional ownership snapshot → data/institutional_ownership.parquet
 python 1m_fetch_prediction_markets.py  # Fed/VIX/yield prediction market signals → data/prediction_markets.parquet
+python 1n_fetch_insider_trades.py      # SEC EDGAR Form 4 insider activity → data/insider_trades.parquet
+FINNHUB_API_KEY=xxx python 1o_fetch_sentiment.py  # Finnhub news + VADER sentiment → data/sentiment.parquet
 
-python 1h_feature_engineering.py       # compute 190+ factors across 21 categories → data/panel_monthly_enriched.parquet
+python 1h_feature_engineering.py       # compute 270+ factors across 23 categories → data/panel_monthly_enriched.parquet
 python 1i_orthogonalize.py             # PCA residualization (run after finalising feature set)
 ```
 
@@ -104,9 +106,13 @@ Pipeline: ~70 new OHLCV candidates + entropy regime overlay → screen ALL featu
 
 Methods: `"grpo"` (KL-penalised, default), `"dapo"` (asymmetric clip, no KL), `"hybrid"` (regime-aware switching)
 
+**Macro FiLM conditioning:** 16 macro features (VIX, yields, spreads, SPX stats, prediction market signals) are separated from stock features and fed through a dedicated MLP → per-feature (gamma, beta) modulation layer. This lets the model learn which stock factors to trust/distrust under each macro regime.
+
+**Factor correlation bias:** Optionally inject pre-computed F×F Spearman correlation matrix as additive attention bias in Stage 1 (disabled by default, enable via `use_corr_bias=True` in config).
+
 ---
 
-## Factor Categories (21 total, ~190 features)
+## Factor Categories (24 total, ~270+ features)
 
 | Cat | Name | Description |
 |-----|------|-------------|
@@ -131,6 +137,9 @@ Methods: `"grpo"` (KL-penalised, default), `"dapo"` (asymmetric clip, no KL), `"
 | 19 | Short Interest | short % of float, days-to-cover, short change, squeeze risk (from `1k`) |
 | 20 | Institutional | inst. ownership %, change, # holders, concentration HHI (from `1l`) |
 | 21 | Prediction Markets | Fed hike/cut probability, recession probability, VIX term structure, policy uncertainty (from `1m`) |
+| 22 | Factor Mining Candidates | ~69 features: path-dependent, trend efficiency, drawdown, vol shape, volume-price, gap, alt momentum, nonlinear interactions, microstructure proxies + entropy regime signals (from `candidate_factory.py`) |
+| 23 | Insider Trading | Filing frequency 30d/90d, log activity (from `1n`, SEC EDGAR Form 4) |
+| 24 | News Sentiment | VADER sentiment mean/std/momentum, news volume (from `1o`, Finnhub + VADER) |
 
 **Crowding/selection rules (Kieran):**
 - Correlation filter applied **after** backtest, not before training
@@ -200,12 +209,14 @@ IR > 0.5 is institutional-grade. IR > 1.0 is top-quartile.
 | `1e_parse_wind_prices.py` | Parse Missing data.xlsx → merge ~179 historical tickers |
 | `1f_ingest_wind_xlsx.py` | Ingest Wind platform XLSX exports |
 | `1g_rebuild_panel.py` | Rebuild monthly panel from prices.parquet |
-| `1h_feature_engineering.py` | Build 190+ factors (21 categories) → panel_monthly_enriched.parquet |
+| `1h_feature_engineering.py` | Build 270+ factors (24 categories) → panel_monthly_enriched.parquet |
 | `1i_orthogonalize.py` | PCA residualization for factor orthogonality |
 | `1j_fetch_simfin.py` | Quarterly fundamentals via Simfin or yfinance fallback |
 | `1k_fetch_short_interest.py` | Short interest snapshot (yfinance, run periodically) |
 | `1l_fetch_13f.py` | Institutional ownership snapshot (yfinance, run quarterly) |
 | `1m_fetch_prediction_markets.py` | Fed/VIX/yield prediction market signals (daily, 2010–present) |
+| `1n_fetch_insider_trades.py` | SEC EDGAR Form 4 insider trading activity → insider_trades.parquet |
+| `1o_fetch_sentiment.py` | Finnhub news + VADER sentiment → sentiment.parquet |
 | `2a_factor_analysis.py` | IC, quintile, regime stability — IS diagnostic only |
 | `2b_ic_decay_all.py` | IC decay grid for all factors |
 | `2c_ic_decay_daily.py` | Daily IC decay (1–90 trading days) |
@@ -252,6 +263,8 @@ IR > 0.5 is institutional-grade. IR > 1.0 is top-quartile.
 | `data/short_interest.parquet` | Short interest snapshot — % float, days-to-cover, etc. (from 1k) |
 | `data/institutional_ownership.parquet` | Institutional ownership — % owned, # holders, HHI (from 1l) |
 | `data/prediction_markets.parquet` | Daily Fed/VIX/yield signals — 6 factors, 2010–2026 (from 1m) |
+| `data/insider_trades.parquet` | Monthly insider trading features per stock (from 1n) |
+| `data/sentiment.parquet` | Monthly news sentiment features per stock (from 1o) |
 | `data/factor_selected_optimised.csv` | Selected factors with IC-optimised weights |
 | `data/scores_transformer.parquet` | FT-Transformer scores (test period) |
 | `data/scores_cs_transformer.parquet` | CS-Transformer scores (from Kaggle) |
