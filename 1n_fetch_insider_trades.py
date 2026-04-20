@@ -1,29 +1,39 @@
 """
-1n_fetch_insider_trades.py — Fetch SEC EDGAR Form 4 Insider Trading Data
-==========================================================================
-Downloads insider trading filings (Form 4) from SEC EDGAR for S&P 500 stocks.
+1n_fetch_insider_trades.py — SEC EDGAR Form 4 insider filings
+===============================================================
+For each S&P 500 ticker, looks up the SEC CIK from the official
+ticker-to-CIK mapping, then pulls the filing history from the EDGAR
+submissions API and counts Form 4 (insider transaction) filings per
+month.
 
-Uses the SEC EDGAR full-text search API (EFTS) to fetch Form 4 filings,
-then parses XML to extract transaction details.
+The output is filing-frequency only, not buy/sell dollars — the EDGAR
+submissions endpoint doesn't return transaction amounts, just form
+metadata. Frequency has been used as a stand-in in the literature
+(more filings roughly = more insider activity around a name).
 
-Features produced (per stock per month):
-  - insider_net_buy_30d:  net shares bought (buys - sells) in last 30 days
-  - insider_net_buy_90d:  net shares bought in last 90 days
-  - insider_txn_count_90d: total insider transactions in last 90 days
-  - insider_buy_ratio_90d: buy transactions / total transactions (90d)
+Features produced (per stock per month)
+---------------------------------------
+  insider_filings_30d   raw filing count in last 30 days
+  insider_filings_90d   raw filing count in last 90 days
+  insider_activity_30d  log1p of the 30-day count
+  insider_activity_90d  log1p of the 90-day count
 
-Academic basis:
+References
+----------
   Lakonishok & Lee (2001) — insider purchases predict abnormal returns
-  Jeng, Metrick & Zeckhauser (2003) — insider portfolio beats market by 6%/yr
+  Jeng, Metrick & Zeckhauser (2003) — insider portfolio beats market
   Seyhun (1998) — aggregate insider trading predicts market returns
 
-Output:
-  data/insider_trades.parquet — monthly panel of insider trading features
+Output: data/insider_trades.parquet.
+Rate limits: SEC allows 10 req/sec with a proper User-Agent.
+Run time: ~15-30 min for ~500 tickers.
 
-Rate limits: SEC EDGAR allows 10 requests/sec with User-Agent identification.
-Run time: ~15-30 min (depends on date range and rate limiting).
+Environment
+-----------
+  SEC_USER_AGENT="Your Name your_email@example.com"   (required)
 """
 
+import os
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -50,11 +60,20 @@ try:
 except ImportError:
     start = "2010-01-01"
 
-# SEC requires a User-Agent header with contact info
+# SEC EDGAR requires a User-Agent header formatted as "Name Email".
+# Set SEC_USER_AGENT in your environment, e.g.
+#   export SEC_USER_AGENT="Your Name your_email@example.com"
+_sec_ua = os.environ.get("SEC_USER_AGENT")
+if not _sec_ua:
+    print("[WARN] SEC_USER_AGENT not set — SEC EDGAR may return 403.")
+    print("       Set it with: export SEC_USER_AGENT='Your Name your_email@example.com'")
+    _sec_ua = "Anonymous User anonymous@example.com"
+
 SEC_HEADERS = {
-    "User-Agent": "ResearchProject/1.0 (academic research)",
+    "User-Agent": _sec_ua,
     "Accept-Encoding": "gzip, deflate",
 }
+SEC_HEADERS_DATA = dict(SEC_HEADERS)
 SEC_RATE_LIMIT = 0.11  # 10 req/sec → sleep 0.11s between requests
 
 # Load S&P 500 tickers from panel (most reliable source)
@@ -140,7 +159,7 @@ def fetch_insider_filings_bulk() -> pd.DataFrame:
 
         try:
             url = f"https://data.sec.gov/submissions/CIK{cik}.json"
-            resp = requests.get(url, headers=SEC_HEADERS, timeout=15)
+            resp = requests.get(url, headers=SEC_HEADERS_DATA, timeout=15)
             _time.sleep(SEC_RATE_LIMIT)
 
             if not resp.ok:

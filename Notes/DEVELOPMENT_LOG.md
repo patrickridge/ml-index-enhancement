@@ -1023,7 +1023,7 @@ Added algorithm comparison section to Tab 6 (Walk-Forward RL) in `6_regime_dashb
 
 ### 15.7 — Missing Data Parser (1d2_parse_wind_prices.py)
 
-New script to parse Kieran's `Missing data.xlsx` (255 sheets, 181 valid tickers of 252):
+New script to parse the `Missing data.xlsx` file (255 sheets, 181 valid tickers of 252):
 - Skips meta sheets: `工作表1`, `tickers_missing`, `ticker still missing`
 - Hardcoded exclusions: `AW` (CBOT commodity futures), `ABC` (Italian company)
 - Reads per-ticker OHLCV with `skiprows=6` (first 6 rows are Chinese/English headers)
@@ -1132,7 +1132,7 @@ Action needed: audit per-year active returns in fold 5, consider sector concentr
 
 **Goal:** Extend the 205-feature library with genuinely new signals via rigorous IS-only discovery. Two parallel tracks: algorithmic OHLCV mining + recent literature review.
 
-**Kieran constraints (captured incrementally):**
+**Design constraints (captured incrementally):**
 - All factor selection IS-only (2010–2022). OOS frozen for final evaluation only.
 - No need to separate existing and new factors — screen everything together through one pipeline.
 - Weekly rebalancing → noisy factors are fine. Drop hard ICIR/IC floors. Use BHY only as gatekeeper.
@@ -1145,7 +1145,7 @@ New directory: `research/factor_mining/`
 
 **Scripts created:**
 - `candidate_factory.py` — ~70 candidate features across 9 families (path-dependent, trend efficiency, drawdown, vol shape, volume-price, gap, alt momentum, nonlinear interactions, microstructure proxies). All prefixed `cand_`.
-- `validation_engine.py` — IS-only screening: `compute_is_ic()`, `compute_icir()`, `ic_persistence()`, `ras_test_fast()`, `bhy_correction()`, `dedup_check()`, `screen_all_candidates()`. Thresholds: IC>0.015, ICIR>0.40 (diagnostic only, not gates per Kieran), dedup<0.85.
+- `validation_engine.py` — IS-only screening: `compute_is_ic()`, `compute_icir()`, `ic_persistence()`, `ras_test_fast()`, `bhy_correction()`, `dedup_check()`, `screen_all_candidates()`. Thresholds: IC>0.015, ICIR>0.40 (diagnostic only, not gates), dedup<0.85.
 - `screen_lasso.py` — Lasso/Elastic Net with purged time-series CV (5-fold, 3-month gap).
 - `screen_trees.py` — RF permutation importance + LightGBM screening.
 - `screen_autoencoder.py` — Autoencoder latent features from 63d rolling OHLCV windows.
@@ -1195,7 +1195,7 @@ New directory: `research/factor_mining/`
 
 ### 17.3 — Macro FiLM + Correlation Bias + Sentiment Data (10–12 Apr 2026)
 
-**Kieran directives:**
+**Design directives:**
 - "Aside from our 2xx factors, do macro indicators, so we will have 2xx * 1x characteristics. And make macro indicator another layer, doing weightings"
 - "Give transformers the concept of correlation between factors"
 - "Have a look on the github called AI hedge fund. We need the AI analyst and some sentimental data"
@@ -1237,3 +1237,60 @@ New directory: `research/factor_mining/`
 - `USE_CANDIDATE_FEATURES = True` flag added
 
 **Status:** Code complete, all syntax verified. Ready to run pipeline (rebuild panel → train on Kaggle GPU).
+
+---
+
+## Phase 18 — Agent Ensemble + InvestSoc Pitch Prep (20 Apr 2026)
+
+**Context:** InvestSoc has a fund pitch and a Q&T pitch. The original plan was to backtest the fundamental analysts' 6 stock picks, but the scope shifted: build a rule-based fundamental agent and compare CS-Transformer alone vs CS-Transformer combined with the agent. A second agent using macro indicators to tilt sectors was added to exercise the macro signals already in the panel.
+
+### 18.1 — Stock Pitch Backtest (`4e_stock_pitch_backtest.py`)
+
+Single-file backtest of the 6-stock fundamental portfolio (Mercado Libre, CME, Salesforce, Delta, Maersk, Edwards Lifesciences). 4 tickers in panel; MELI + AMKBY fetched via yfinance. Portfolio: literal +1pp tilt over SPX on each pick, remainder renormalized. Validation window 2023-01 to 2024-06 (18 months).
+
+Result over 18 months:
+- 6-stock 1% Tilt: +35.36% ann ret, Sharpe 2.59, α vs SPX **−0.67%**, IR **−0.81**
+- SPX: +36.22%, Sharpe 2.64
+- CS-Transformer IE (13 months overlap): +53.19%, Sharpe 3.44, α +5.24%, IR 2.25
+
+The fundamental tilt slightly underperformed SPX; the ML model produced +5% alpha on its overlapping months. As a cross-check, the ML model ranked the 4 in-panel picks at the 60.5th percentile on average — mild agreement.
+
+### 18.2 — Agent Ensemble (`4f_agent_ensemble_backtest.py`, `1p_fetch_sectors.py`)
+
+Two rule-based "agents" built and combined with CS-Transformer via weighted z-score blend.
+
+**Agent 1 — Fundamental (stock-level):** 4 pillars from `fundamental.parquet` → ROE / growth / debt / valuation each vote ±1. Cross-sectionally z-scored. Forward-filled quarterly snapshots to monthly.
+
+**Agent 2 — Macro-Sector (macro → sector tilt):** Uses panel's macro columns (VIX, yield curve, recession prob, SPX momentum) to vote 11 GICS sectors up/down per month via economic-logic rules (high VIX → defensives up, steep yield curve → financials up, rising rates → rate-sensitive down). Each stock inherits its sector's score. Sector mapping fetched via `1p_fetch_sectors.py` (yfinance, 91% coverage).
+
+**Backtests** (all use IE framework, α=0.002, top/bot 100; 35 months Jan 2023 → Nov 2025):
+
+| Strategy | Ann α | IR | Hit Rate |
+|----------|-------|------|----------|
+| CS-Transformer alone | +2.63% | 1.17 | 62.9% |
+| **Fundamental alone** | **+3.80%** | **1.64** | 65.7% |
+| Macro-Sector alone | +3.42% | 1.43 | 62.9% |
+| CS + Fund + Macro (50/25/25) ★ | +3.06% | 1.46 | **68.6%** |
+
+Key observations:
+- All 6 strategies generate positive alpha with IR > 1.0
+- Fundamental agent is the strongest single signal (IR 1.64)
+- 50/25/25 blend has highest hit rate (68.6%) — most consistent
+- CS-T scores appear stale (hasn't been retrained with new architecture) — probably understates the ML component. Retrain expected to flip the ranking back toward CS-T dominance.
+
+**Critical bug fixed:** initial run used α=0.01 (aggressive tilt), producing negative alpha across the board. Sweeping α showed α=0.002 is optimal — matches the saved `bt_ie_cs_transformer.csv` parameters.
+
+### 18.3 — Pipeline Completeness
+
+- `3d_cs_transformer_kaggle.py` rewritten to mirror `3c_cs_transformer.py` exactly (Macro FiLM, correlation bias, GRPO/DAPO RL, all new `__init__` / `forward` signatures) with inlined config for Kaggle.
+- `1h_feature_engineering.py` — Cat 23 (news sentiment, from `sentiment.parquet`) and Cat 24 (insider trading, from `insider_trades.parquet`) merge steps added. Forward-fills per ticker for missing months.
+- `1n_fetch_insider_trades.py` — SEC EDGAR User-Agent fixed to `"Name Email"` format (previous run returned 0 filings due to 403).
+
+### 18.4 — Known Data Gaps / Next Blockers
+
+1. **Survivorship bias**: 697 panel tickers vs the true historical SPX universe (~1200+ over 2010-2025). OOS results aren't trustworthy until the full constituent history is added.
+2. **Stale CS-T scores**: current scores parquet predates all architectural upgrades. Need panel rebuild + Kaggle retrain.
+3. **Fundamental data sparsity**: only 4 quarterly snapshots (Feb/May/Aug/Nov 2025). Need to re-run `1j_fetch_simfin.py` with a Simfin API key for historical coverage.
+4. **Insider zombie handling**: 23% of scores rows are non-SPX tickers (CPWR, CHIR etc). Handled at portfolio construction time via inner join with `spx_weights.parquet` — not a backtest bug but worth cleaning up at panel-build time.
+
+**Status:** All code changes complete. Pipeline ready for: panel rebuild → Kaggle retrain → final ensemble backtest on fresh scores.

@@ -371,6 +371,60 @@ def main():
     else:
         print(f"\n{IO_IN} not found — skipping Cat 20 institutional ownership factors.")
 
+    # Helper: merge a per-ticker external dataset that uses BASE ticker format
+    # (e.g. "AAPL") onto our panel which uses exchange-suffixed format (e.g. "AAPL.O").
+    def _merge_base_ticker_data(panel, ext_df, ext_cols, label):
+        ext_df = ext_df.copy()
+        ext_df["date"] = pd.to_datetime(ext_df["date"]) + pd.offsets.MonthEnd(0)
+        # Build base→panel ticker map (one base maps to one panel ticker in our universe)
+        panel_tickers = panel["ticker"].unique()
+        base_to_panel = {}
+        for t in panel_tickers:
+            base = str(t).split(".")[0]
+            if base not in base_to_panel:
+                base_to_panel[base] = t
+        ext_df["ticker"] = ext_df["ticker"].map(base_to_panel)
+        ext_df = ext_df.dropna(subset=["ticker"])
+
+        panel["date"] = pd.to_datetime(panel["date"]) + pd.offsets.MonthEnd(0)
+        panel = panel.merge(
+            ext_df[["date", "ticker"] + ext_cols],
+            on=["date", "ticker"], how="left",
+        )
+        # Forward-fill per ticker; 0-fill initial NaNs
+        panel = panel.sort_values(["ticker", "date"])
+        panel[ext_cols] = panel.groupby("ticker")[ext_cols].ffill().fillna(0.0)
+        n_merged = ext_df["ticker"].nunique()
+        print(f"  {label} columns added: {ext_cols}  "
+              f"(matched {n_merged}/{ext_df['ticker'].nunique()} tickers to panel)")
+        return panel
+
+    # Cat 23: news sentiment (optional — from 1o_fetch_sentiment.py)
+    SENT_IN = DATA_DIR / "sentiment.parquet"
+    if SENT_IN.exists():
+        sent_df = pd.read_parquet(SENT_IN)
+        if len(sent_df) > 0:
+            print(f"\nFound {SENT_IN} — adding Cat 23: news sentiment factors...")
+            sent_cols = [c for c in sent_df.columns if c not in ("date", "ticker")]
+            panel = _merge_base_ticker_data(panel, sent_df, sent_cols, "Sentiment")
+        else:
+            print(f"\n{SENT_IN} exists but is empty — skipping Cat 23.")
+    else:
+        print(f"\n{SENT_IN} not found — skipping Cat 23 sentiment factors.")
+
+    # Cat 24: insider trading (optional — from 1n_fetch_insider_trades.py)
+    INS_IN = DATA_DIR / "insider_trades.parquet"
+    if INS_IN.exists():
+        ins_df = pd.read_parquet(INS_IN)
+        if len(ins_df) > 0:
+            print(f"\nFound {INS_IN} — adding Cat 24: insider trading factors...")
+            ins_cols = [c for c in ins_df.columns if c not in ("date", "ticker")]
+            panel = _merge_base_ticker_data(panel, ins_df, ins_cols, "Insider")
+        else:
+            print(f"\n{INS_IN} exists but is empty — skipping Cat 24.")
+    else:
+        print(f"\n{INS_IN} not found — skipping Cat 24 insider trading factors.")
+
     # Cat 10: macro / regime
     print("\nFetching macro data (Cat 10)...")
     macro_daily = fetch_macro_data(start_str, end_str, spx_daily=spx_daily)

@@ -1,7 +1,7 @@
 """
 1e_parse_wind_prices.py — Parse Wind Missing Data & Merge into prices.parquet
 ==============================================================================
-Parses Kieran's Missing data.xlsx (historical S&P 500 constituents with
+Parses the Missing data.xlsx file (historical S&P 500 constituents with
 OHLCV data from Wind) and merges valid tickers into data/prices.parquet.
 
 This fixes survivorship bias: prices.parquet currently only covers tickers

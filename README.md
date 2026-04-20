@@ -1,286 +1,265 @@
-# Investsoc ML Project
+# S&P 500 Index Enhancement Pipeline
 
-ML-driven S&P 500 index enhancement pipeline. Three models (LightGBM, FT-Transformer, CS-Transformer) rank ~500 stocks monthly and tilt portfolio weights to beat the index with low tracking error. A two-layer Deep Reinforcement Learning (DRL) system then adaptively controls portfolio tilt each month.
+A research project that tries to beat the S&P 500 with small, controlled tilts away from cap weights.
+Three ML models rank the ~500 constituents each month; a portfolio layer turns the ranks into over-
+and underweights relative to the benchmark; a two-layer RL agent learns how aggressive to be given
+the market regime.
 
----
+Written as a working record of what was built and what the numbers actually show — not a marketing page.
 
-## Requirements
+## What the pipeline does
+
+1. **Data prep** (`1*` scripts): pull OHLCV, constituent history, fundamentals, short interest,
+   institutional ownership, prediction markets, insider trades, news sentiment, sector mappings.
+2. **Feature engineering** (`1h_feature_engineering.py`): compute ~270 factors across 24 categories
+   (momentum, volatility, fundamentals, macro, mined-alpha candidates, insider, sentiment, etc.).
+   Per-stock features are cross-sectionally ranked each month; macro features are kept at raw scale.
+3. **Factor diagnostics** (`2*` scripts): IC, IC decay, quintile returns, crowding/correlation,
+   IS-only screening of new candidates via Lasso / RF / LightGBM and BHY.
+4. **Models** (`3*` scripts):
+   - `3a_ft_transformer.py` — FT-Transformer (independent per-stock ranker)
+   - `3c_cs_transformer.py` / `3d_cs_transformer_kaggle.py` — Cross-Sectional Transformer with
+     Macro FiLM conditioning, optional correlation attention bias, and a GRPO/DAPO RL fine-tune
+     on portfolio return.
+5. **Portfolio construction** (`4*` scripts): tilt ±α around SPX cap weights based on scores,
+   sweep α to maximise information ratio within a 2–4 % tracking-error budget.
+6. **RL overlay** (`5*` scripts): a two-layer policy that adjusts the tilt size month-to-month
+   based on macro state.
+
+## Repository layout
 
 ```
+.
+├── config.py                       shared hyper-parameters + paths
+├── utils_factors.py                ~190 factor functions used by 1h
+├── utils_rmt.py                    Random Matrix Theory covariance denoising
+├── run_pipeline.sh                 end-to-end: fetch → panel → diagnostics
+│
+├── 1a–1p_*.py                      data fetch + feature engineering
+├── 2a–2h_*.py                      factor diagnostics
+├── 3a–3d_*.py                      ranking models
+├── 3e_cs_transformer_audit.py      post-hoc diagnostics on CS-T scores
+├── 4a–4f_*.py                      backtests + portfolio construction
+├── 5a–5f_*.py                      RL overlays
+├── 6_regime_dashboard.py           Streamlit regime analysis dashboard
+├── 7_synthetic_regimes.py          DDPM-based synthetic-regime stress test
+│
+├── research/
+│   └── factor_mining/              IS-only candidate discovery pipeline
+│       ├── run_factor_mining.py
+│       ├── candidate_factory.py    ~70 OHLCV candidate families
+│       ├── validation_engine.py    BHY, RAS, dedup
+│       ├── screen_*.py             Lasso / RF / LightGBM / autoencoder screens
+│       └── regime_entropy.py       vol-regime entropy detector
+│
+├── notes/                          development log, strategy notes
+└── data/                           (gitignored — regenerated from the scripts)
+```
+
+## How to reproduce the results
+
+### 1. Install
+
+```bash
 pip install -r requirements.txt
+
+# optional secrets
+export FINNHUB_API_KEY="..."                  # only needed for 1o_fetch_sentiment
+export SEC_USER_AGENT="Your Name you@mail"    # only needed for 1n_fetch_insider_trades
 ```
 
----
-
-## How to Run — Full Pipeline (in order)
-
-### Phase 1 — Data Prep
+### 2. Build the data panel
 
 ```bash
-python 1a_price_parquet.py             # parse OHLC source → data/prices.parquet
-python 1b_fetch_constituents.py        # historical S&P 500 constituent list
-python 1c_fetch_market_cap.py          # monthly SPX weights via yfinance
-python 1d_fetch_missing_tickers.py     # recover delisted/missing tickers via yfinance
-python 1e_parse_wind_prices.py         # parse Kieran's Missing data.xlsx → merge ~179 historical tickers
-python 1f_ingest_wind_xlsx.py          # ingest Wind fundamentals xlsx (PE, ROE etc → data/wind_exports/)
-python 1g_rebuild_panel.py             # build monthly panel from prices
+# One-time fetches
+python 1a_price_parquet.py              # OHLC → prices.parquet
+python 1b_fetch_constituents.py         # historical S&P 500 membership
+python 1c_fetch_market_cap.py           # monthly SPX cap weights
+python 1d_fetch_missing_tickers.py      # yfinance fallback for delisted tickers
+python 1e_parse_wind_prices.py          # merge Wind export if present
+python 1f_ingest_wind_xlsx.py           # same for multi-file Wind exports
+python 1g_rebuild_panel.py              # base monthly panel from prices
 
-# Optional external data fetches (run once; rebuild periodically)
-python 1j_fetch_simfin.py              # quarterly fundamentals via Simfin/yfinance → data/fundamental.parquet
-python 1k_fetch_short_interest.py      # short interest snapshot via yfinance → data/short_interest.parquet
-python 1l_fetch_13f.py                 # institutional ownership snapshot → data/institutional_ownership.parquet
-python 1m_fetch_prediction_markets.py  # Fed/VIX/yield prediction market signals → data/prediction_markets.parquet
-python 1n_fetch_insider_trades.py      # SEC EDGAR Form 4 insider activity → data/insider_trades.parquet
-FINNHUB_API_KEY=xxx python 1o_fetch_sentiment.py  # Finnhub news + VADER sentiment → data/sentiment.parquet
+# Optional data sources (run once; the panel handles missing ones gracefully)
+python 1j_fetch_simfin.py               # quarterly fundamentals
+python 1k_fetch_short_interest.py       # short interest
+python 1l_fetch_13f.py                  # institutional ownership
+python 1m_fetch_prediction_markets.py   # Fed/VIX/yield-curve signals
+python 1n_fetch_insider_trades.py       # SEC EDGAR Form 4
+python 1o_fetch_sentiment.py            # Finnhub news + VADER
+python 1p_fetch_sectors.py              # yfinance GICS sector map
 
-python 1h_feature_engineering.py       # compute 270+ factors across 23 categories → data/panel_monthly_enriched.parquet
-python 1i_orthogonalize.py             # PCA residualization (run after finalising feature set)
+# Build the ~270-factor enriched panel (~2 hours)
+python 1h_feature_engineering.py
 ```
 
-Or run everything at once:
-```bash
-bash run_pipeline.sh             # fetch data + rebuild panel + run diagnostics
-bash run_pipeline.sh --skip-fetch  # skip external data fetch (use existing files)
-```
-
-### Phase 2 — Factor Analysis & Diagnostics
+### 3. Train and backtest
 
 ```bash
-python 2a_factor_analysis.py           # IC, quintile, regime stability → data/factor_selected.csv
-python 2b_ic_decay_all.py              # IC decay grid for all factors → figures/
-python 2c_ic_decay_daily.py            # daily IC decay (1–90 trading days)
-python 2d_factor_weights.py            # IC-decay based weights → data/factor_selected.csv
-python 2e_ic_optimise.py               # gradient-optimised weights → data/factor_selected_optimised.csv
-python 2f_factor_diagnostics.py        # IC correlation, VIF, RMT eigenvalue analysis
-python 2g_factor_decay_report.py       # 7-day IC decay report (IS vs OOS)
-python 2h_factor_crowding.py           # correlation matrix, IC decay, contrarian & quintile audits
+# Diagnostics (optional — not required for the final model)
+python 2a_factor_analysis.py
+python 2f_factor_diagnostics.py
+
+# Models
+python 3a_ft_transformer.py             # local CPU, ~10-15 min
+# CS-Transformer runs on Kaggle — see below
+
+# Backtests
+python 4b_index_enhancement.py          # IE tilt, α-sweep per model
+python 4d_benchmark_spx.py              # summary vs S&P 500
 ```
 
-### Phase 3 — Models
+### 4. CS-Transformer on Kaggle
 
-```bash
-python 3a_ft_transformer.py            # FT-Transformer (CPU, ~10–15 min) → data/scores_transformer.parquet
-```
+The local `3c_cs_transformer.py` uses the same model code but is CPU-slow.
+For GPU runs, use the self-contained `3d_cs_transformer_kaggle.py`:
 
-CS-Transformer requires Kaggle GPU:
-```
-1. Upload data/panel_monthly_enriched.parquet to Kaggle Dataset "investsoc-ml-data"
-2. Create a Kaggle notebook, add that dataset, enable GPU T4
-3. Run 3d_cs_transformer_kaggle.py
-4. Download: scores_cs_transformer.parquet → copy to data/
-```
+1. Upload `data/panel_monthly_enriched.parquet` to a Kaggle Dataset called
+   `investsoc-ml-data`.
+2. Open a Kaggle notebook → Settings → Accelerator = GPU T4.
+3. Attach the dataset, paste `3d_cs_transformer_kaggle.py` into a cell, run.
+4. Download `scores_cs_transformer.parquet` back into `data/`.
 
-### Phase 4 — Evaluation
+Expected GPU time: ~60–90 min including the GRPO/DAPO RL fine-tune.
 
-```bash
-python 4a_factor_combo_baseline.py     # linear factor combo baseline (no ML)
-python 4b_index_enhancement.py         # IE portfolio construction → data/bt_ie_*.csv
-python 4c_regime_engine.py             # regime breakdown (rule-based) → figures/ie_regime_breakdown.png
-python 4c_regime_engine.py --hmm       # HMM 2-state regime breakdown
-python 4d_benchmark_spx.py             # full comparison vs S&P 500
-```
+## The CS-Transformer
 
-### Phase 5 — Deep Reinforcement Learning
+The main model. Two-stage attention:
 
-```bash
-python 5a_rl_factor_agent.py           # Layer 1 SAC — adaptive factor IC weighting
-python 5b_rl_portfolio_agent.py        # Layer 2 SAC — adaptive alpha tilt, 9-feature macro state
-python 5c_walk_forward.py              # Walk-forward backtest — 5 folds, no leakage, 95 OOS months
-python 5d_algorithm_comparison.py      # SAC vs PPO vs GRPO walk-forward comparison
-python 5e_dapo_agent.py                # DAPO vs GRPO — clip-higher + dynamic sampling + no KL
-```
+- **Stage 1 — per-stock feature attention.** Each stock's feature vector is tokenised and passed
+  through a transformer. A learned `[CLS]` token summarises the stock.
+- **Stage 2 — cross-stock attention.** All stocks for a month are treated as one sequence so each
+  stock's representation is informed by its peers.
 
-### Research — Factor Mining (IS-only discovery)
+Two additions on top of the base model:
 
-```bash
-python research/factor_mining/run_factor_mining.py   # full pipeline: candidates → ML screen → BHY validation → catalog
-```
+- **Macro FiLM.** 16 macro features (VIX, yields, spreads, SPX stats, prediction-market
+  probabilities) are encoded separately and produce per-feature `(gamma, beta)` that modulate the
+  Stage 1 tokens. Identity-initialised so pre-trained weights are preserved at the start of
+  training. This gives the model an explicit handle on "factor X matters more in regime Y".
+- **Factor correlation bias (optional).** An F×F Spearman correlation of the features is computed
+  on the training set and fed as additive attention bias in Stage 1, with a small per-head scalar
+  weight learned. Disabled by default — enable after FiLM has been validated.
 
-Pipeline: ~70 new OHLCV candidates + entropy regime overlay → screen ALL features (existing 205 + new ~70) together through Lasso/RF/LightGBM with no pre-filter (L1/L2 penalties do the work) → BHY + dedup validation → `candidate_factor_catalog.csv`
+Training is two-stage: a standard masked-MSE pre-train with L1/L2 feature-tokenizer penalties,
+followed by a portfolio-level RL fine-tune using GRPO (PPO-style clipping + KL penalty vs a frozen
+reference), DAPO (asymmetric clipping, dynamic group size, no KL), or a regime-aware hybrid.
+Method is selectable in `config.py: RL_FINETUNE_PARAMS["method"]`.
 
-### CS-Transformer Two-Stage Training (MSE + RL)
+## Factor categories (24 total, ~270 features)
 
-`3c_cs_transformer.py` now runs two-stage training:
-1. **MSE pre-train** — standard masked MSE with L1/L2 feature tokenizer penalties
-2. **RL fine-tune** — GRPO/DAPO portfolio-level reward (configurable via `config.py: RL_FINETUNE_PARAMS["method"]`)
+| Cat | Name | Source |
+|-----|------|--------|
+| 1 | Momentum | OHLC (1/3/6/12m + skip-month reversal) |
+| 2 | Volatility | realised, idiosyncratic, downside |
+| 3 | Tail risk | CVaR, max DD, skew, kurt |
+| 4 | Price trend | RSI, MACD, Bollinger, trend strength |
+| 5 | Volume / liquidity | Amihud, turnover, bid-ask proxy |
+| 6 | Beta / correlation | market / downside / rolling beta |
+| 7 | Microstructure | spread, price impact, autocorr |
+| 8 | Cross-sectional | SPX- and sector-relative moves |
+| 9 | Fundamentals | ROE, ROA, margins, growth, EQ (`1j`) |
+| 10 | Macro / regime | VIX, yield curve, credit, PMI |
+| 11 | Time-signal v1 | ADX, trend consistency |
+| 12 | Barra-style | value, growth, leverage, EY |
+| 13 | Macro × factor interactions | e.g. momentum × VIX |
+| 14 | Size | log market cap |
+| 15 | Tail ranking | top/bottom-decile dummies |
+| 16 | Mined alpha | 12 hand-mined price signals |
+| 17 | Time-signal v2 | ADX regime, roll spread, vol expansion |
+| 18 | Seasonality | same-month, turn-of-month, January |
+| 19 | Short interest | % float, days-to-cover (`1k`) |
+| 20 | Institutional | ownership %, HHI (`1l`) |
+| 21 | Prediction markets | Fed/VIX/policy uncertainty (`1m`) |
+| 22 | Factor-mining candidates | 9 families, ~69 features + entropy regime |
+| 23 | Insider trading | 30/90-day filing activity (`1n`) |
+| 24 | News sentiment | VADER mean / std / momentum / volume (`1o`) |
 
-Methods: `"grpo"` (KL-penalised, default), `"dapo"` (asymmetric clip, no KL), `"hybrid"` (regime-aware switching)
+**Selection rules.**
+Correlation pruning happens *after* training, not before.
+OOS IC is a diagnostic only — never a selection criterion (avoids lookahead).
+Prediction-market factors are used as *timing* signals at the portfolio level, not as cross-sectional
+stock signals.
 
-**Macro FiLM conditioning:** 16 macro features (VIX, yields, spreads, SPX stats, prediction market signals) are separated from stock features and fed through a dedicated MLP → per-feature (gamma, beta) modulation layer. This lets the model learn which stock factors to trust/distrust under each macro regime.
+## Headline results
 
-**Factor correlation bias:** Optionally inject pre-computed F×F Spearman correlation matrix as additive attention bias in Stage 1 (disabled by default, enable via `use_corr_bias=True` in config).
+### Index enhancement over the OOS test period (Jan 2023 – Nov 2025)
 
----
+| Model | Ann. alpha | Tracking error | IR | Hit rate |
+|---|---|---|---|---|
+| CS-Transformer | 4.16 % | 2.22 % | **1.87** | ~67 % |
+| FT-Transformer | ~0.9 % | ~2.6 % | 0.44 | — |
+| LightGBM | ~0.5 % | ~2.0 % | 0.38 | — |
+| Linear factor combo baseline | — | — | −0.05 | — |
 
-## Factor Categories (24 total, ~270+ features)
+For context: IR > 0.5 is institutional-grade, > 1.0 is top-quartile.
 
-| Cat | Name | Description |
-|-----|------|-------------|
-| 1 | Momentum | 1/3/6/12m returns, skip-month reversal |
-| 2 | Volatility | Realised vol, idiosyncratic vol, downside vol |
-| 3 | Tail Risk | CVaR, max drawdown, skewness, kurtosis |
-| 4 | Price Trend | RSI, MACD, Bollinger, trend strength |
-| 5 | Volume/Liquidity | Amihud illiquidity, turnover, Bid-Ask spread proxy |
-| 6 | Beta/Correlation | Market beta, rolling beta, downside beta |
-| 7 | Microstructure | Bid-ask spread, price impact, autocorrelation |
-| 8 | Cross-sectional | SPX-relative return, sector-relative vol |
-| 9 | Fundamentals | ROE, ROA, gross margin, debt/equity, growth, earnings quality (from `1j`) |
-| 10 | Macro/Regime | VIX, yield curve, credit spread, PMI (cross-ticker) |
-| 11 | Time-Signal v1 | Stock-level regime timing: ADX, trend consistency |
-| 12 | Barra Style | Value, growth, leverage, earnings variability |
-| 13 | Macro Interactions | Momentum × VIX, value × yield curve |
-| 14 | Size | log(market cap) |
-| 15 | Tail Ranking | Binary top/bottom decile dummies for base factors |
-| 16 | Mined Alpha | 12 novel price signals: nearness to 52w high, residual momentum, up/down vol ratio, co-skewness, vol contraction, etc. |
-| 17 | Time-Signal v2 | ADX regime, roll spread, autocorr, vol expansion, trend strength |
-| 18 | Seasonality | Same-month return (Heston & Sadka 2008), turn-of-month, January dummy |
-| 19 | Short Interest | short % of float, days-to-cover, short change, squeeze risk (from `1k`) |
-| 20 | Institutional | inst. ownership %, change, # holders, concentration HHI (from `1l`) |
-| 21 | Prediction Markets | Fed hike/cut probability, recession probability, VIX term structure, policy uncertainty (from `1m`) |
-| 22 | Factor Mining Candidates | ~69 features: path-dependent, trend efficiency, drawdown, vol shape, volume-price, gap, alt momentum, nonlinear interactions, microstructure proxies + entropy regime signals (from `candidate_factory.py`) |
-| 23 | Insider Trading | Filing frequency 30d/90d, log activity (from `1n`, SEC EDGAR Form 4) |
-| 24 | News Sentiment | VADER sentiment mean/std/momentum, news volume (from `1o`, Finnhub + VADER) |
+### RL walk-forward (95 OOS months, 2014–2025)
 
-**Crowding/selection rules (Kieran):**
-- Correlation filter applied **after** backtest, not before training
-- OOS IC is diagnostic only — never used for factor selection (lookahead bias)
-- Prediction market factors used as **when-to-trade** signals (time-signals), not cross-sectional stock signals
-
----
-
-## Out-of-Sample Results
-
-### Index Enhancement (Test Period Jan 2023 – Nov 2025)
-
-| Model | Ann. Alpha | Tracking Error | IR | Hit Rate |
-|-------|-----------|---------------|-----|----------|
-| CS-Transformer | 4.16% | 2.22% | **1.874** | ~67% |
-| FT-Transformer | ~0.9% | ~2.6% | 0.438 | — |
-| LGBM | ~0.5% | ~2.0% | 0.384 | — |
-| Linear Factor Combo (baseline) | — | — | −0.046 | — |
-
-IR > 0.5 is institutional-grade. IR > 1.0 is top-quartile.
-
-### RL Walk-Forward Backtest (95 out-of-sample months, 2014–2025)
-
-| | RL Agent (SAC) | Fixed α=1% |
+|  | RL (SAC) | Fixed α = 1 % |
 |---|---|---|
-| **Ann. Alpha** | **7.19%** | 1.87% |
-| **Tracking Error** | 8.18% | 6.77% |
-| **Info Ratio** | **0.879** | 0.276 |
-| **Hit Rate** | 50.5% | 48.4% |
-| **Max Active DD** | **−6.04%** | −10.50% |
+| Ann. alpha | **7.19 %** | 1.87 % |
+| Tracking error | 8.18 % | 6.77 % |
+| IR | **0.88** | 0.28 |
+| Hit rate | 50.5 % | 48.4 % |
+| Max active DD | **−6.04 %** | −10.50 % |
 
-| Fold | RL IR | Fixed IR |
-|------|-------|----------|
-| 2014–2015 | −0.755 | −1.659 ✓ |
-| 2016–2017 | 1.771 | 1.778 |
-| 2018–2019 | 0.042 | −0.073 ✓ |
-| 2020–2021 | 1.125 | 0.751 ✓ |
-| 2022–2025 | 1.188 | 0.380 ✓ |
-
-### Algorithm Comparison — SAC vs PPO vs GRPO
+### RL algorithm comparison
 
 | Algorithm | IR | Notes |
-|-----------|----|-------|
-| GRPO | **0.875** | DeepSeek-R1 method + KL penalty |
-| PPO | 0.870 | Critic baseline |
-| SAC | 0.788 | Twin Q-critics, entropy reg |
-| Fixed α=1% | 0.276 | No RL |
+|---|---|---|
+| GRPO | **0.88** | PPO clipping + KL penalty |
+| PPO | 0.87 | critic baseline |
+| SAC | 0.79 | twin Q-critics, entropy reg |
+| Fixed α = 1 % | 0.28 | no RL |
 
-### Data Splits
+### Data splits
 
 | Split | Period | Months |
-|-------|--------|--------|
-| Train | 2010–2020 | ~132 |
-| Valid | 2021–2022 | ~24 |
-| Test  | 2023–2025 | ~35+ |
+|---|---|---|
+| Train | 2010–2022 | ~156 |
+| Validation | 2023-01 to 2024-06 | 18 |
+| Test | 2024-07 onward | ~12+ |
 
----
+## Key output files
 
-## File Guide
-
-| File | Purpose |
-|------|---------|
-| `1a_price_parquet.py` | Parse OHLC data → prices.parquet |
-| `1b_fetch_constituents.py` | Download full historical S&P 500 constituent list |
-| `1c_fetch_market_cap.py` | Fetch monthly SPX constituent weights via yfinance |
-| `1d_fetch_missing_tickers.py` | Secondary yfinance fetch for missing/delisted tickers |
-| `1e_parse_wind_prices.py` | Parse Missing data.xlsx → merge ~179 historical tickers |
-| `1f_ingest_wind_xlsx.py` | Ingest Wind platform XLSX exports |
-| `1g_rebuild_panel.py` | Rebuild monthly panel from prices.parquet |
-| `1h_feature_engineering.py` | Build 270+ factors (24 categories) → panel_monthly_enriched.parquet |
-| `1i_orthogonalize.py` | PCA residualization for factor orthogonality |
-| `1j_fetch_simfin.py` | Quarterly fundamentals via Simfin or yfinance fallback |
-| `1k_fetch_short_interest.py` | Short interest snapshot (yfinance, run periodically) |
-| `1l_fetch_13f.py` | Institutional ownership snapshot (yfinance, run quarterly) |
-| `1m_fetch_prediction_markets.py` | Fed/VIX/yield prediction market signals (daily, 2010–present) |
-| `1n_fetch_insider_trades.py` | SEC EDGAR Form 4 insider trading activity → insider_trades.parquet |
-| `1o_fetch_sentiment.py` | Finnhub news + VADER sentiment → sentiment.parquet |
-| `2a_factor_analysis.py` | IC, quintile, regime stability — IS diagnostic only |
-| `2b_ic_decay_all.py` | IC decay grid for all factors |
-| `2c_ic_decay_daily.py` | Daily IC decay (1–90 trading days) |
-| `2d_factor_weights.py` | IC-decay based factor weights |
-| `2e_ic_optimise.py` | Gradient-optimised factor weights (PyTorch) |
-| `2f_factor_diagnostics.py` | IC correlation matrix, VIF, RMT eigenvalue analysis |
-| `2g_factor_decay_report.py` | 7-day IC decay IS vs OOS report |
-| `2h_factor_crowding.py` | Correlation matrix, IC decay, contrarian factors, quintile direction audit |
-| `3a_ft_transformer.py` | FT-Transformer walk-forward backtest (local CPU) |
-| `3b_ft_transformer_kaggle.py` | FT-Transformer (Kaggle GPU version) |
-| `3c_cs_transformer.py` | CS-Transformer (local, slow) |
-| `3d_cs_transformer_kaggle.py` | CS-Transformer (Kaggle GPU — primary) |
-| `4a_factor_combo_baseline.py` | Linear factor combo baseline (no ML) |
-| `4b_index_enhancement.py` | IE portfolio construction, alpha sweep |
-| `4c_regime_engine.py` | Per-regime IE performance breakdown (rule-based + HMM) |
-| `4d_benchmark_spx.py` | Compare all strategies vs S&P 500 |
-| `5a_rl_factor_agent.py` | Layer 1 SAC — adaptive factor IC weighting |
-| `5b_rl_portfolio_agent.py` | Layer 2 SAC — adaptive alpha tilt, 9-feature macro state |
-| `5c_walk_forward.py` | Walk-forward RL backtest — 5 folds, 95 OOS months |
-| `5d_algorithm_comparison.py` | SAC vs PPO vs GRPO walk-forward comparison |
-| `5e_dapo_agent.py` | DAPO vs GRPO — clip-higher + dynamic sampling + no KL |
-| `5f_dynamic_portfolio_rl.py` | 2D asymmetric tilt (alpha_long, alpha_short) |
-| `config.py` | All shared parameters and hyperparameters |
-| `utils_factors.py` | 190+ factor functions across 21 categories |
-| `utils_rmt.py` | Random Matrix Theory covariance denoising |
-| `run_pipeline.sh` | Automated: fetch data → rebuild panel → analyse → diagnostics |
-| `research/factor_mining/run_factor_mining.py` | Master factor mining orchestrator |
-| `research/factor_mining/candidate_factory.py` | ~70 OHLCV candidate features (9 families) |
-| `research/factor_mining/validation_engine.py` | IS-only screening: IC, ICIR, RAS, BHY, dedup |
-| `research/factor_mining/screen_lasso.py` | Lasso/Elastic Net with purged time-series CV |
-| `research/factor_mining/screen_trees.py` | RF + LightGBM feature importance screening |
-| `research/factor_mining/screen_autoencoder.py` | Autoencoder latent features from OHLCV windows |
-| `research/factor_mining/regime_entropy.py` | Singha-inspired entropy vol regime detector |
-
----
-
-## Key Output Files
+The data files are regenerated by the pipeline (gitignored):
 
 | File | Description |
-|------|-------------|
-| `data/prices.parquet` | Daily OHLC — 697 tickers, 2010–2025 |
-| `data/panel_monthly_enriched.parquet` | Monthly panel — 190+ factors, cross-sectionally ranked |
-| `data/fundamental.parquet` | Quarterly fundamentals — ROE, ROA, margins, growth (from 1j) |
-| `data/short_interest.parquet` | Short interest snapshot — % float, days-to-cover, etc. (from 1k) |
-| `data/institutional_ownership.parquet` | Institutional ownership — % owned, # holders, HHI (from 1l) |
-| `data/prediction_markets.parquet` | Daily Fed/VIX/yield signals — 6 factors, 2010–2026 (from 1m) |
-| `data/insider_trades.parquet` | Monthly insider trading features per stock (from 1n) |
-| `data/sentiment.parquet` | Monthly news sentiment features per stock (from 1o) |
-| `data/factor_selected_optimised.csv` | Selected factors with IC-optimised weights |
-| `data/scores_transformer.parquet` | FT-Transformer scores (test period) |
+|---|---|
+| `data/prices.parquet` | daily OHLC, ~697 tickers |
+| `data/panel_monthly_enriched.parquet` | monthly panel, ~270 ranked features |
+| `data/fundamental.parquet` | quarterly fundamentals |
+| `data/short_interest.parquet` | short interest snapshot |
+| `data/institutional_ownership.parquet` | institutional holdings snapshot |
+| `data/prediction_markets.parquet` | daily macro / policy signals |
+| `data/insider_trades.parquet` | monthly insider filing counts |
+| `data/sentiment.parquet` | monthly VADER sentiment aggregates |
+| `data/sectors.parquet` | GICS sector mapping |
 | `data/scores_cs_transformer.parquet` | CS-Transformer scores (from Kaggle) |
-| `data/bt_ie_cs_transformer.csv` | CS-Transformer IE backtest monthly returns |
-| `data/bt_wf_rl.csv` | Walk-forward RL monthly returns (95 OOS months) |
-| `data/algo_comparison.csv` | SAC vs PPO vs GRPO per-fold metrics |
+| `data/bt_ie_*.csv` | index-enhancement backtest monthly returns |
+| `data/bt_wf_rl.csv` | walk-forward RL monthly returns |
 
----
+## Config (`config.py`)
 
-## Shared Config (`config.py`)
+| Parameter | Default | Meaning |
+|---|---|---|
+| `START_DATE` | 2010-01-01 | post-GFC |
+| `TRAIN_END` | 2022-12-31 | model training cutoff |
+| `VALID_END` | 2024-06-30 | validation window end |
+| `TOP_N` | 100 | stocks overweighted each month |
+| `BOTTOM_N` | 100 | stocks underweighted |
+| `RETRAIN_EVERY` | 12 | months between retrains |
+| `TRANSFORMER_CS_PARAMS["use_macro_film"]` | True | Macro FiLM on Stage 1 tokens |
+| `TRANSFORMER_CS_PARAMS["use_corr_bias"]` | False | correlation attention bias |
+| `RL_FINETUNE_PARAMS["method"]` | `"grpo"` | `grpo`, `dapo`, or `hybrid` |
 
-| Parameter | Value | Meaning |
-|-----------|-------|---------|
-| `START_DATE` | 2010-01-01 | Post-GFC baseline |
-| `TRAIN_END` | 2020-12-31 | Factor analysis and model training cutoff |
-| `VALID_END` | 2022-12-31 | Validation window end |
-| `TOP_N` | 100 | Stocks overweighted each month |
-| `BOTTOM_N` | 100 | Stocks underweighted each month |
-| `RETRAIN_EVERY` | 12 | Model retrain frequency (months) |
+## Status / open work
+
+- Survivorship bias: the panel currently has 697 tickers vs the full ~1 200 that passed through
+  the S&P 500 between 2010 and 2025. OOS numbers are not fully trustworthy until the history is
+  filled in.
+- The CS-Transformer scores currently in `data/` predate the Macro FiLM + 69-candidate upgrade.
+  A fresh Kaggle retrain is the next step.
+- Fundamental data is only a handful of recent quarterly snapshots. A Simfin API key pulls the
+  full history in a few minutes.

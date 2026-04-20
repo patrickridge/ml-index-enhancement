@@ -1,7 +1,7 @@
 """
 1f_ingest_wind_xlsx.py — Ingest Wind platform XLSX exports into prices.parquet
 ==============================================================================
-Kieran's Wind platform can export historical OHLCV data for any S&P 500
+The Wind platform can export historical OHLCV data for any S&P 500
 constituent (including delisted stocks). This script reads all XLSX files
 from data/wind_exports/ and merges them into prices.parquet.
 
@@ -15,7 +15,7 @@ Wind export format (from 工作表1):
   Row 9+: data (Date, Open, High, Low, Close)
 
 Usage:
-  1. Kieran exports missing tickers from Wind (one file per ticker, or multiple)
+  1. Export the missing tickers from Wind (one file per ticker, or multiple)
   2. Place all XLSX files in  data/wind_exports/
   3. Run:  python 1f_ingest_wind_xlsx.py
   4. Then: python 1e_rebuild_base_panel.py
@@ -162,7 +162,7 @@ def main():
         xlsx_files.extend(sorted(WIND_DIR.glob("*.xlsx")))
         xlsx_files.extend(sorted(WIND_DIR.glob("*.xls")))
 
-    # Also check for "missing data.xlsx" in data/ (Kieran's ad-hoc export)
+    # Also check for "missing data.xlsx" in data/ (ad-hoc single-file export)
     for candidate in sorted(DATA_DIR.glob("*.xlsx")):
         if candidate not in xlsx_files and candidate.name != "factor data.xlsx":
             xlsx_files.append(candidate)
@@ -291,7 +291,7 @@ def main():
         n_still_missing = (log_df["status"] == "missing").sum()
         if n_still_missing > 0:
             print(f"\n  {n_still_missing} tickers still missing.")
-            print("  Ask Kieran to export these from Wind and place in data/wind_exports/")
+            print("  Export these from Wind and place in data/wind_exports/")
 
     print(f"\nNext steps:")
     print("  python 1e_rebuild_base_panel.py")

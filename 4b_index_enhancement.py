@@ -45,7 +45,7 @@ SCORE_FILES = {
 # ── Tilt strength sweep ────────────────────────────────────────────────────────
 # α controls how aggressively to overweight/underweight vs benchmark.
 # Higher α → higher potential alpha but higher tracking error.
-# Target tracking error: 2–4% annualised (Kieran's spec).
+# Target tracking error: 2–4% annualised.
 ALPHA_GRID = [0.002, 0.005, 0.01, 0.02, 0.03, 0.05]
 
 

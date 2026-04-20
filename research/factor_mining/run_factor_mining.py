@@ -136,7 +136,8 @@ def merge_candidates_to_panel(panel, monthly_candidates, cand_cols):
 def run_ml_screen(panel, all_feature_cols):
     """Phase 3: Feed ALL features to penalized ML models — no pre-filtering.
 
-    Per Kieran: no manual filtering. Let L1/L2 penalties do the work.
+    Design choice: no manual filtering. L1/L2 penalties inside the models
+    do the selection work, avoiding human-selection bias.
     """
     print("\n" + "=" * 70)
     print("PHASE 3: ML SCREENING — ALL FEATURES, NO PRE-FILTER (IS-ONLY)")
@@ -174,8 +175,9 @@ def run_ml_screen(panel, all_feature_cols):
 def run_validation(panel, selected_cols):
     """Phase 4: Validation — BHY only, no hard IC/ICIR floors.
 
-    Per Kieran: weekly rebalancing means noisy factors are fine.
-    Let BHY control false discovery. Compute IC/ICIR for documentation only.
+    Rationale: with weekly rebalancing, noisy factors are acceptable.
+    BHY controls false discovery across the whole candidate set.
+    IC/ICIR computed for documentation only, not as gates.
     """
     print("\n" + "=" * 70)
     print("PHASE 4: VALIDATION (BHY + RAS + DEDUP — NO HARD IC/ICIR FLOORS)")

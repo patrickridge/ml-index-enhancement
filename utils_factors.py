@@ -1081,11 +1081,11 @@ def add_tail_ranking_features(
     """
     Cat 15: Non-linear tail membership features.
 
-    Rationale (per Kieran):
-      "Use contrarian factors, use quantile test to make those tail ranking factors."
-      The CS-Transformer sees continuous ranks [0,1].  Explicit tail dummies give
-      it a hard signal: this stock is in the EXTREME TOP/BOTTOM decile — a regime
-      the model might under-weight with smooth inputs alone.
+    Rationale:
+      The CS-Transformer sees continuous ranks [0, 1]. Explicit tail dummies
+      give it a hard signal — "this stock is in the extreme top/bottom decile" —
+      which the model might under-weight from smooth inputs alone. Also lets us
+      capture contrarian / quintile-test effects cleanly.
 
     For each base factor we add:
       {f}_top  : 1 if CS-rank >= (1 - top_pct), else 0  (top decile long candidate)

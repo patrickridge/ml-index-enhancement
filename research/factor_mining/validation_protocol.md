@@ -26,7 +26,7 @@ Each candidate factor passes through this sequential funnel:
 ### Stage 1: Basic IS IC
 - Compute monthly Spearman rank-IC: `corr(rank(factor), rank(fwd_ret_1m))` per month
 - Restrict to IS months (≤ 2022-12-31)
-- Threshold: `|mean(IC)| > 0.015` — **diagnostic only, not a gate** (per Kieran: weekly rebalancing means noisy factors are fine)
+- Threshold: `|mean(IC)| > 0.015` — **diagnostic only, not a gate**. Rationale: weekly rebalancing makes noisy factors acceptable
 
 ### Stage 2: IS ICIR
 - ICIR = mean(IC) / std(IC)
@@ -60,7 +60,7 @@ Each candidate factor passes through this sequential funnel:
 - **Diagnostic metrics (logged, not gates):** IC, ICIR, persistence, RAS p-value
 - Compute additional IS diagnostics for survivors: turnover, sector neutrality, regime stability
 
-> **Kieran (7 Apr 2026):** "We rebalance every week so noisy factor should be fine." IC/ICIR thresholds removed as hard gates. BHY controls false discovery; dedup prevents redundancy. All features fed to ML models with L1/L2 penalties — no manual pre-filtering.
+> **Design decision (7 Apr 2026):** Weekly rebalancing tolerates noisier factors, so IC/ICIR thresholds are dropped as hard gates. BHY controls false discovery across the whole candidate set; dedup prevents redundancy. All features are fed to the ML screens with L1/L2 penalties — the model handles selection, not a manual pre-filter.
 
 ---
 
@@ -102,7 +102,7 @@ After the entire discovery pipeline is frozen (no more additions or removals):
 
 ## 6. Converting Factors to Time Signals
 
-Per Kieran's constraint: time signal factors must be per-stock binary or directional.
+Design constraint: time-signal factors must be per-stock binary or directional.
 
 **Conversion rules:**
 - **Binary (0/1):** Factor crosses a threshold calibrated on IS data only. Example: `vol_regime_high = 1 if entropy < IS_75th_percentile`
@@ -114,7 +114,7 @@ Per Kieran's constraint: time signal factors must be per-stock binary or directi
 
 ## 7. ML Screening (No Pre-Filter)
 
-Per Kieran: no manual filtering before ML. Feed ALL features (existing 205 + new candidates) to penalised models:
+No manual filtering before ML. All features (existing 205 + new candidates) are fed to penalised models:
 
 1. **Lasso (L1)** — drives irrelevant feature coefficients to exactly zero. Purged 5-fold time-series CV.
 2. **Random Forest** — permutation importance (not impurity-based, to avoid bias).
@@ -151,7 +151,7 @@ The CS-Transformer now separates macro features (16 `MACRO_COLS`: VIX, yields, s
 - Identity-initialized (gamma=1, beta=0) — backward-compatible with existing pre-trained weights
 - Creates implicit ~247 stock × 16 macro = ~3,950 feature-macro interactions
 
-This implements Kieran's directive: "macro indicators as another layer, doing weightings" — the model learns which stock factors to trust/distrust under each macro regime.
+The design goal is to treat macro indicators as a separate conditioning layer rather than packing them into the cross-sectional feature vector: the model learns which stock factors to trust or distrust under each macro regime.
 
 ## 11. Factor Correlation Awareness
 

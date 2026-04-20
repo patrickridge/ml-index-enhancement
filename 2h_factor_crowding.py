@@ -1,19 +1,19 @@
 """
 2h_factor_crowding.py — Factor Crowding, Decay & Contrarian Diagnostic
 =======================================================================
-Addresses Kieran's four concerns:
+Four diagnostic checks:
 
   1. FACTOR CROWDING — correlation matrix (IS data only), cluster highly
      correlated factors (r > 0.70), flag redundant pairs to prune before retraining.
 
   2. 7-DAY DECAY — within-month IC decay at days 1/3/7/10 from existing
-     factor_ic_decay_daily.csv.  "Do we need a 7-day refresh or monthly is fine?"
+     factor_ic_decay_daily.csv. Answers: do we need a 7-day refresh or is monthly fine?
 
   3. CONTRARIAN FACTORS — IS vs OOS for the sign-flip group.
      Are short-term reversal signals actually useful contrarian bets or noise?
 
   4. QUINTILE DIRECTION AUDIT — flag factors where Q5-Q1 sign contradicts IC_IS.
-     Shows the 'wrong direction' factors Kieran spotted.
+     Surfaces the "wrong direction" factors in the pipeline.
 
 STRICT IS / OOS SEPARATION:
   - All training metrics  → data ≤ TRAIN_END  (from config.py)
@@ -484,7 +484,7 @@ print("\n" + "─" * 65)
 print("SECTION 4 — Quintile Direction Audit")
 print("─" * 65)
 print("  Flag factors where Q5-Q1 spread sign contradicts IC_IS sign.")
-print("  These are the 'wrong direction' factors Kieran spotted.\n")
+print("  These factors likely need sign-flipping or removal.\n")
 
 quint_path = DATA_DIR / "factor_quintile_returns.csv"
 ic_sum_path = DATA_DIR / "factor_ic_summary.csv"

@@ -1,8 +1,8 @@
 """
 1g_rebuild_panel.py — Rebuild panel_monthly.parquet from prices.parquet
 =============================================================================
-The original panel_monthly.parquet was built from data.xlsx (Kieran's platform
-data), which has been deleted. This script recreates it directly from
+The original panel_monthly.parquet was built from data.xlsx (Wind platform
+export), which has been deleted. This script recreates it directly from
 prices.parquet, now containing 692 tickers including historical S&P 500
 members added by 1d_fetch_historical_constituents.py.
 
