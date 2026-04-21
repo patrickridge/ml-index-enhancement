@@ -586,8 +586,9 @@ def train_cs_model(
     for epoch in range(p["epochs"]):
         # ── Train ──
         model.train()
-        epoch_loss  = 0.0
-        indices     = rng.permutation(len(train_cs))   # shuffle months
+        epoch_mse     = 0.0
+        epoch_penalty = 0.0
+        indices       = rng.permutation(len(train_cs))   # shuffle months
 
         for idx in indices:
             cs      = train_cs[idx]
@@ -597,16 +598,18 @@ def train_cs_model(
             x_macro = cs["X_macro"].to(DEVICE) if n_macro > 0 else None
 
             optimiser.zero_grad()
-            scores = model(X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
-            loss   = masked_mse_loss(scores, y, mask)
-            loss   = loss + model.tokenizer.feature_penalty(
-                l1_lambda=p.get("l1_lambda", 1e-4),
-                l2_lambda=p.get("l2_lambda", 1e-4),
+            scores  = model(X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
+            mse     = masked_mse_loss(scores, y, mask)
+            penalty = model.tokenizer.feature_penalty(
+                l1_lambda=p.get("l1_lambda", 1e-6),
+                l2_lambda=p.get("l2_lambda", 1e-6),
             )
+            loss = mse + penalty
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimiser.step()
-            epoch_loss += loss.item()
+            epoch_mse     += mse.item()
+            epoch_penalty += penalty.item()
 
         scheduler.step()
 
@@ -631,9 +634,12 @@ def train_cs_model(
         else:
             patience_count += 1
 
-        if (epoch + 1) % 10 == 0:
-            print(f"    Epoch {epoch+1:3d} | train_loss={epoch_loss/len(train_cs):.5f} "
-                  f"| val_loss={val_loss:.5f} | patience={patience_count}")
+        if (epoch + 1) % 5 == 0 or epoch == 0:
+            n_batches = max(len(train_cs), 1)
+            print(f"    Epoch {epoch+1:3d} | "
+                  f"train_mse={epoch_mse/n_batches:.5f} "
+                  f"penalty={epoch_penalty/n_batches:.5f} "
+                  f"| val_mse={val_loss:.5f} | patience={patience_count}")
 
         if patience_count >= p["patience"]:
             print(f"    Early stop at epoch {epoch+1} (best val MSE: {best_val_loss:.6f})")
@@ -1045,6 +1051,21 @@ def main():
     panel = pd.read_parquet(PANEL_IN)
     panel["date"] = pd.to_datetime(panel["date"])
     panel = panel[panel["date"] >= START_DATE].reset_index(drop=True)
+
+    # ── Zombie-ticker filter: keep only point-in-time S&P 500 constituents ───
+    spx_weights_path = DATA_DIR / "spx_weights.parquet"
+    if spx_weights_path.exists():
+        spx_w = pd.read_parquet(spx_weights_path)
+        spx_w["date"] = pd.to_datetime(spx_w["date"]) + pd.offsets.MonthEnd(0)
+        panel["date"] = pd.to_datetime(panel["date"]) + pd.offsets.MonthEnd(0)
+        valid_keys = set(zip(spx_w["date"], spx_w["ticker"]))
+        pre_rows = len(panel)
+        mask = list(zip(panel["date"], panel["ticker"]))
+        panel = panel[[k in valid_keys for k in mask]].reset_index(drop=True)
+        print(f"Zombie filter: {pre_rows:,} → {len(panel):,} rows "
+              f"({pre_rows - len(panel):,} non-SPX pairs dropped)")
+    else:
+        print(f"[WARN] {spx_weights_path} not found — skipping zombie filter")
 
     # ── Separate stock vs macro features ─────────────────────────────────────
     exclude   = {"date", "ticker", "fwd_ret_1m"}

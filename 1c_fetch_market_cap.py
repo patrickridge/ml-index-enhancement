@@ -108,7 +108,7 @@ def build_monthly_close(prices: pd.DataFrame) -> pd.DataFrame:
         prices
         .set_index("date")
         .groupby("ticker")["close"]
-        .resample("M")
+        .resample("ME")
         .last()
         .unstack("ticker")
     )

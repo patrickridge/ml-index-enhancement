@@ -86,20 +86,24 @@ MACRO_COLS = [
     "policy_uncertainty", "vix_term_structure", "pred_market_sentiment",
 ]
 
-# Cross-sectional transformer (2c_cs_transformer.py)
+# Cross-sectional transformer (3c_cs_transformer.py)
 TRANSFORMER_CS_PARAMS = dict(
     d_model=128, n_heads_s1=4, n_layers_s1=2,
     n_heads_s2=4, n_layers_s2=2,
-    dropout=0.1, lr=5e-4, weight_decay=1e-4,
-    epochs=100, patience=15, max_stocks=520,
-    # Feature tokenizer penalties — let model learn which features matter
-    l1_lambda=1e-4,   # sparsity: drives useless feature embeddings to zero
-    l2_lambda=1e-4,   # shrinkage: prevents any single feature from dominating
-    # Macro FiLM conditioning — macro state modulates per-feature trust
-    use_macro_film=True,  # FiLM layer: macro → (gamma, beta) per stock feature
-    d_macro=64,           # macro embedding dimension
-    # Factor correlation attention bias — inject F×F correlation into Stage 1
-    use_corr_bias=False,  # disabled by default; enable after FiLM is validated
+    dropout=0.1,
+    lr=1e-4,               # lowered from 5e-4 — bigger model / feature set
+    weight_decay=1e-4,
+    epochs=150, patience=20, max_stocks=520,
+    # Feature tokenizer penalties — scaled down 100× so they don't drown MSE.
+    # Previous values (1e-4) were summing to ~48k and dominating the loss.
+    l1_lambda=1e-6,
+    l2_lambda=1e-6,
+    # Macro FiLM conditioning — disabled for first-pass retrain to isolate
+    # training stability. Re-enable once the base model converges cleanly.
+    use_macro_film=False,
+    d_macro=64,
+    # Factor correlation attention bias — remains disabled until FiLM is back on.
+    use_corr_bias=False,
 )
 
 # ── RL Fine-Tuning (Stage 2: GRPO/DAPO after MSE pre-train) ─────────────────
