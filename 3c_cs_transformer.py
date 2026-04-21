@@ -748,8 +748,18 @@ def _sample_group_cs(
     """
     scores, enriched = model.forward_enriched(X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
     mu    = scores[:n_valid]                              # (n_valid,)
+
+    # Guard: if the forward pass produced NaN/Inf on this month, skip it.
+    # Safer than propagating garbage into the sampler and crashing training.
+    if not torch.isfinite(mu).all():
+        return [], []
+
     log_s = noise_head(enriched[:n_valid])                # (n_valid,)
-    std   = log_s.exp()
+    log_s = torch.nan_to_num(log_s, nan=0.0, posinf=2.0, neginf=-10.0)
+    std   = log_s.exp().clamp(min=1e-4, max=10.0)         # numeric floor + ceiling
+
+    if not torch.isfinite(std).all():
+        return [], []
 
     dist = torch.distributions.Normal(mu, std)
     log_probs_old = []
