@@ -343,7 +343,7 @@ Train model incrementally, one improvement at a time:
 - Moved `2_lgbm_backtest.py`, kaggle scripts, `3_pca_rp_backtest.py`, `6_diagnostic_test.py` → `archive/`
 - Moved all `*.png` figures → `figures/` at repo root
 - Restructured repo: moved all files from `Investsoc ML project/` subfolder to repo root
-- Added `.gitignore` (excludes `.claude/`, `*.parquet`, `*.csv`, `*.xlsx`, `__pycache__`)
+- Added `.gitignore` (excludes data caches, `*.parquet`, `*.csv`, `*.xlsx`, `__pycache__`)
 
 ### 6.6 — 2f_factor_diagnostics.py date fix (pending)
 
