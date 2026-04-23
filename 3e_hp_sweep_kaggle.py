@@ -1,40 +1,35 @@
 """
-3c_cs_transformer.py
-=====================
-Cross-Sectional Transformer for S&P 500 stock ranking.
+3d_cs_transformer_kaggle.py — GPU-ready standalone version of 3c_cs_transformer.py
+====================================================================================
+Mirrors 3c_cs_transformer.py EXACTLY (same model, same RL, same zombie-ticker
+filter, same MSE + penalty split logging) but inlines all config so it has no
+dependency on config.py.
 
-Architecture (two-stage):
-  Stage 1 — Per-Stock Feature Attention:
-    Each stock's 100+ features are tokenized (one d_model-dim embedding per feature),
-    a learnable [CLS] token is prepended, and a TransformerEncoder attends over the
-    feature dimension. The CLS output becomes the stock's summary embedding.
-    Weights are SHARED across all stocks (like a shared encoder in set transformers).
+╔══════════════════════════════════════════════════════════════════════╗
+║  KAGGLE SETUP                                                        ║
+║                                                                      ║
+║  1. Create a Kaggle Dataset "investsoc-ml-data" and upload:          ║
+║       panel_monthly_enriched.parquet                                 ║
+║       spx_weights.parquet         (needed for zombie filter)         ║
+║                                                                      ║
+║  2. In your notebook: Add Data → Your Datasets → investsoc-ml-data   ║
+║                                                                      ║
+║  3. Settings → Accelerator → GPU T4 x2                               ║
+║                                                                      ║
+║  4. Paste this file into a code cell, or upload + `!python 3d_...py` ║
+║                                                                      ║
+║  5. Output files (download from /kaggle/working):                    ║
+║       scores_cs_transformer.parquet                                  ║
+║       bt_cs_transformer.csv                                          ║
+║       bt_cs_transformer_ls.csv                                       ║
+╚══════════════════════════════════════════════════════════════════════╝
 
-  Stage 2 — Cross-Stock Attention:
-    All stock embeddings for one month are stacked into a sequence of length N_stocks.
-    A MARKET_CLS token is prepended. A second TransformerEncoder attends across the
-    full cross-section so each stock "sees" its peers before generating its score.
-    This is the key advantage over the original FT-Transformer which processed
-    each stock independently.
-
-  Score Head:
-    LayerNorm → Linear(d_model, 1) → scalar score per stock.
-
-Training:
-  Each month is one forward pass (batch=1 for Stage 2).
-  Months are padded to MAX_N_STOCKS=520; padding_mask prevents attention to pad positions.
-  Loss: masked MSE on non-padded stocks. Shuffle at the month level each epoch.
-  Walk-forward expanding window, same as 2b_nn_backtest.py.
-
-Outputs:
-  data/scores_cs_transformer.parquet
-  data/bt_cs_transformer.csv      (long-only top 50)
-  data/bt_cs_transformer_ls.csv   (long-short)
-
-Run AFTER 1_feature_engineering.py (and optionally 1b_orthogonalize.py).
+Expected GPU time: ~60-90 min (including GRPO/DAPO RL fine-tune).
 """
 
+import os
 import copy
+import time as _time
 import numpy as np
 import pandas as pd
 import torch
@@ -43,22 +38,82 @@ import torch.nn.functional as F
 from pathlib import Path
 from scipy import stats as sp_stats
 
-from config import (
-    DATA_DIR, START_DATE, TRAIN_END, VALID_END,
-    TOP_N, BOTTOM_N, LONG_FRAC, RETRAIN_EVERY,
-    TRANSFORMER_CS_PARAMS, RL_FINETUNE_PARAMS,
-    USE_ORTHOGONALIZED_FEATURES, MACRO_COLS,
+_t0 = _time.time()
+
+# ══════════════════════════════════════════════════════════════════════
+# INLINED CONFIG (mirrors config.py — edit here for Kaggle runs)
+# ══════════════════════════════════════════════════════════════════════
+
+# ── Paths ─────────────────────────────────────────────────────────────
+DATA_DIR = Path(os.environ.get(
+    "ML_DATA_DIR",
+    "/kaggle/input/datasets/patrickridge/investsoc-ml-data",
+))
+OUT_DIR  = Path(os.environ.get("ML_OUT_DIR", "/kaggle/working"))
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# ── Date splits ───────────────────────────────────────────────────────
+START_DATE = "2010-01-01"
+TRAIN_END  = "2022-12-31"
+VALID_END  = "2024-06-30"
+
+# ── Portfolio settings ────────────────────────────────────────────────
+TOP_N         = 100
+BOTTOM_N      = 100
+LONG_FRAC     = 0.20
+RETRAIN_EVERY = 12
+
+# ── Feature panel selection ──────────────────────────────────────────
+USE_ORTHOGONALIZED_FEATURES = False
+
+# ── Macro columns (NOT cross-sectionally ranked; fed through MacroFiLM) ─
+MACRO_COLS = [
+    "vix_level", "vix_change_21d", "yield_10y", "yield_spread_10y2y",
+    "yield_change_21d", "dollar_index", "credit_proxy_change",
+    "market_trend_spx", "market_vol_regime",
+    "spx_ret_1m", "spx_ret_3m", "spx_ret_6m", "spx_ret_12m", "spx_vol_63d",
+    "fed_hike_prob", "fed_cut_prob", "recession_prob",
+    "policy_uncertainty", "vix_term_structure", "pred_market_sentiment",
+]
+
+# ── CS-Transformer hyperparameters (mirrors config.py) ───────────────
+TRANSFORMER_CS_PARAMS = dict(
+    d_model=128, n_heads_s1=4, n_layers_s1=2,
+    n_heads_s2=4, n_layers_s2=2,
+    dropout=0.1,
+    lr=1e-4,
+    weight_decay=1e-4,
+    epochs=150, patience=20, max_stocks=520,
+    l1_lambda=1e-6,
+    l2_lambda=1e-6,
+    # FiLM disabled for first-pass retrain — re-enable once base model converges
+    use_macro_film=False,
+    d_macro=64,
+    use_corr_bias=False,
 )
 
-# Select feature panel
+# ── RL Fine-Tuning (GRPO / DAPO / Hybrid) ─────────────────────────────
+RL_FINETUNE_PARAMS = dict(
+    method="grpo",
+    epochs=30, lr=1e-5,
+    top_k=100, bottom_k=100,
+    grpo_G=4, grpo_clip_epsilon=0.2, grpo_kl_beta=0.01,
+    dapo_clip_low=0.20, dapo_clip_high=0.28,
+    dapo_G_min=4, dapo_G_max=8,
+    patience=10, freeze_backbone=False,
+    sigmoid_temperature=0.5,
+)
+
+# ── Derived paths ─────────────────────────────────────────────────────
 _panel_file = ("panel_monthly_orthogonalized.parquet" if USE_ORTHOGONALIZED_FEATURES
                else "panel_monthly_enriched.parquet")
 PANEL_IN    = DATA_DIR / _panel_file
-OUT_SCORES  = DATA_DIR / "scores_cs_transformer.parquet"
-OUT_BT_LO   = DATA_DIR / "bt_cs_transformer.csv"
-OUT_BT_LS   = DATA_DIR / "bt_cs_transformer_ls.csv"
+OUT_SCORES  = OUT_DIR  / "scores_cs_transformer.parquet"
+OUT_BT_LO   = OUT_DIR  / "bt_cs_transformer.csv"
+OUT_BT_LS   = OUT_DIR  / "bt_cs_transformer_ls.csv"
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Device: {DEVICE}  |  Panel: {PANEL_IN}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -541,47 +596,6 @@ def masked_mse_loss(
     return F.mse_loss(valid_pred, valid_target)
 
 
-def masked_ic_loss(
-    pred:   torch.Tensor,   # (MAX_N,)
-    target: torch.Tensor,   # (MAX_N,)
-    mask:   torch.Tensor,   # (MAX_N,) bool: True = padded
-) -> torch.Tensor:
-    """
-    Negative Pearson IC computed over valid stocks. Differentiable proxy for
-    rank-IC — on monthly returns it tracks Spearman IC very closely without
-    needing sorting networks.
-
-    Minimising this objective = maximising IC. Same direction as "optimise
-    ranking quality directly" but in a differentiable way.
-    """
-    valid_pred   = pred[~mask]
-    valid_target = target[~mask]
-    n = valid_pred.numel()
-    if n < 5:
-        return torch.tensor(0.0, device=pred.device, requires_grad=True)
-
-    p = valid_pred - valid_pred.mean()
-    t = valid_target - valid_target.mean()
-    p_norm = p.norm()
-    t_norm = t.norm()
-    if p_norm < 1e-8 or t_norm < 1e-8:
-        return torch.tensor(0.0, device=pred.device, requires_grad=True)
-    ic = (p * t).sum() / (p_norm * t_norm)
-    return -ic  # we minimise loss, so return negative IC
-
-
-def masked_loss(
-    pred: torch.Tensor,
-    target: torch.Tensor,
-    mask: torch.Tensor,
-    loss_type: str = "mse",
-) -> torch.Tensor:
-    """Dispatch between MSE and IC loss based on config."""
-    if loss_type == "ic":
-        return masked_ic_loss(pred, target, mask)
-    return masked_mse_loss(pred, target, mask)
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # TRAINING
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -624,12 +638,10 @@ def train_cs_model(
     best_state     = None
     rng            = np.random.default_rng(seed=42)
 
-    loss_type = p.get("loss_type", "mse")  # "mse" or "ic"
-
     for epoch in range(p["epochs"]):
         # ── Train ──
         model.train()
-        epoch_loss    = 0.0
+        epoch_mse     = 0.0
         epoch_penalty = 0.0
         indices       = rng.permutation(len(train_cs))   # shuffle months
 
@@ -642,21 +654,21 @@ def train_cs_model(
 
             optimiser.zero_grad()
             scores  = model(X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
-            core    = masked_loss(scores, y, mask, loss_type=loss_type)
+            mse     = masked_mse_loss(scores, y, mask)
             penalty = model.tokenizer.feature_penalty(
                 l1_lambda=p.get("l1_lambda", 1e-6),
                 l2_lambda=p.get("l2_lambda", 1e-6),
             )
-            loss = core + penalty
+            loss = mse + penalty
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimiser.step()
-            epoch_loss    += core.item()
+            epoch_mse     += mse.item()
             epoch_penalty += penalty.item()
 
         scheduler.step()
 
-        # ── Validate (always MSE — comparable across configs) ──
+        # ── Validate ──
         model.eval()
         val_losses = []
         with torch.no_grad():
@@ -679,13 +691,8 @@ def train_cs_model(
 
         if (epoch + 1) % 5 == 0 or epoch == 0:
             n_batches = max(len(train_cs), 1)
-            loss_label = "train_ic" if loss_type == "ic" else "train_mse"
-            train_val = epoch_loss / n_batches
-            # IC loss is stored as negative — flip sign for readable print
-            if loss_type == "ic":
-                train_val = -train_val
             print(f"    Epoch {epoch+1:3d} | "
-                  f"{loss_label}={train_val:.5f} "
+                  f"train_mse={epoch_mse/n_batches:.5f} "
                   f"penalty={epoch_penalty/n_batches:.5f} "
                   f"| val_mse={val_loss:.5f} | patience={patience_count}")
 
@@ -1098,71 +1105,6 @@ def predict_cs(
     return scores[:cs["n_valid"]]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SEED ENSEMBLE
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def train_ensemble(
-    train_cs: list,
-    valid_cs: list,
-    n_features: int,
-    n_macro: int = 0,
-    corr_matrix: torch.Tensor = None,
-    n_seeds: int = 1,
-    rl_method: str = None,
-) -> list:
-    """
-    Train a seed ensemble. If n_seeds=1, single model. If >1, train N models
-    with different random seeds; later average their scores at prediction time.
-
-    If rl_method is set, each model also goes through RL fine-tuning.
-
-    Returns list of trained models.
-    """
-    if n_seeds <= 1:
-        torch.manual_seed(42)
-        np.random.seed(42)
-        model = train_cs_model(train_cs, valid_cs, n_features,
-                               n_macro=n_macro, corr_matrix=corr_matrix)
-        if rl_method:
-            model = grpo_finetune_cs_model(model, train_cs, valid_cs,
-                                            method=rl_method, n_macro=n_macro,
-                                            corr_matrix=corr_matrix)
-        return [model]
-
-    models = []
-    for seed in range(n_seeds):
-        print(f"\n  [Ensemble] Training seed {seed + 1}/{n_seeds}...")
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        m = train_cs_model(train_cs, valid_cs, n_features,
-                           n_macro=n_macro, corr_matrix=corr_matrix)
-        if rl_method:
-            m = grpo_finetune_cs_model(m, train_cs, valid_cs,
-                                        method=rl_method, n_macro=n_macro,
-                                        corr_matrix=corr_matrix)
-        models.append(m)
-    print(f"  [Ensemble] Trained {n_seeds} models; predictions will be averaged.")
-    return models
-
-
-def predict_cs_ensemble(
-    models: list,
-    cs: dict,
-    n_macro: int = 0,
-    corr_matrix: torch.Tensor = None,
-) -> np.ndarray:
-    """Average scores across ensemble. For a single model, same as predict_cs."""
-    if len(models) == 1:
-        return predict_cs(models[0], cs, n_macro=n_macro, corr_matrix=corr_matrix)
-    scored = [predict_cs(m, cs, n_macro=n_macro, corr_matrix=corr_matrix)
-              for m in models]
-    return np.mean(np.stack(scored), axis=0)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     print(f"Device: {DEVICE}")
@@ -1235,22 +1177,16 @@ def main():
         corr_matrix = torch.FloatTensor(corr_np).to(DEVICE)
         print(f"  Correlation bias: {corr_matrix.shape[0]}x{corr_matrix.shape[1]} Spearman matrix")
 
-    # ── Stages 1 + 2: train (optionally as a seed ensemble) ─────────────────
-    n_seeds = p.get("ensemble_seeds", 1)
+    # ── Stage 1: MSE pre-training ───────────────────────────────────────────
+    print("\nStage 1: MSE pre-training...")
+    model = train_cs_model(train_cs, valid_cs, n_stock_features,
+                           n_macro=n_macro, corr_matrix=corr_matrix)
+
+    # ── Stage 2: RL fine-tuning (GRPO/DAPO portfolio-level reward) ──────────
     rl_method = RL_FINETUNE_PARAMS["method"]
-    loss_type = p.get("loss_type", "mse")
-    if n_seeds > 1:
-        print(f"\nTraining ensemble ({n_seeds} seeds) — loss={loss_type.upper()}, "
-              f"RL={rl_method.upper()}")
-    else:
-        print(f"\nStage 1: pre-training (loss={loss_type.upper()})...")
-        print(f"Stage 2 follows: RL fine-tuning ({rl_method.upper()})")
-    models = train_ensemble(
-        train_cs, valid_cs, n_stock_features,
-        n_macro=n_macro, corr_matrix=corr_matrix,
-        n_seeds=n_seeds, rl_method=rl_method,
-    )
-    model = models[0] if len(models) == 1 else None  # kept for RL retrain compat below
+    print(f"\nStage 2: RL fine-tuning ({rl_method.upper()})...")
+    model = grpo_finetune_cs_model(model, train_cs, valid_cs, method=rl_method,
+                                    n_macro=n_macro, corr_matrix=corr_matrix)
 
     # ── Walk-forward prediction ───────────────────────────────────────────────
     all_scores = []
@@ -1274,19 +1210,18 @@ def main():
             if va_cs_rl:
                 print(f"  Retraining at {m.date()} (train={len(tr_cs_exp)}, "
                       f"val={len(va_cs_rl)} months)...")
-                models = train_ensemble(
-                    tr_cs_exp, va_cs_rl, n_stock_features,
-                    n_macro=n_macro, corr_matrix=retrain_corr,
-                    n_seeds=n_seeds, rl_method=rl_method,
-                )
+                model = train_cs_model(tr_cs_exp, va_cs_rl, n_stock_features,
+                                       n_macro=n_macro, corr_matrix=retrain_corr)
+                model = grpo_finetune_cs_model(model, tr_cs_exp, va_cs_rl,
+                                                method=rl_method, n_macro=n_macro,
+                                                corr_matrix=retrain_corr)
                 corr_matrix = retrain_corr  # use updated corr for predictions
 
         if m not in cs_map:
             continue
 
         cs     = cs_map[m]
-        scores = predict_cs_ensemble(models, cs, n_macro=n_macro,
-                                     corr_matrix=corr_matrix)
+        scores = predict_cs(model, cs, n_macro=n_macro, corr_matrix=corr_matrix)
 
         # Match scores back to valid stock rows in the panel
         sub = (panel[panel["date"] == m]
@@ -1345,5 +1280,192 @@ def main():
         print("=" * 65)
 
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HYPERPARAMETER SWEEP — KAGGLE VERSION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SWEEP_VARIANTS = [
+    {"name": "baseline",     "overrides": {}},
+    {"name": "film_on",      "overrides": {"use_macro_film": True}},
+    {"name": "deeper_3x3",   "overrides": {"n_layers_s1": 3, "n_layers_s2": 3}},
+    {"name": "wider_192",    "overrides": {"d_model": 192}},
+    {"name": "dropout_20",   "overrides": {"dropout": 0.2}},
+    {"name": "ensemble_3",   "overrides": {"ensemble_seeds": 3}},
+]
+
+
+def _build_shared_panel():
+    """Load panel + build cross-sections once; reused across all sweep variants."""
+    panel = pd.read_parquet(PANEL_IN)
+    panel["date"] = pd.to_datetime(panel["date"])
+    panel = panel[panel["date"] >= START_DATE].reset_index(drop=True)
+
+    # Zombie filter
+    spx_weights_path = DATA_DIR / "spx_weights.parquet"
+    if spx_weights_path.exists():
+        spx_w = pd.read_parquet(spx_weights_path)
+        spx_w["date"] = pd.to_datetime(spx_w["date"]) + pd.offsets.MonthEnd(0)
+        panel["date"] = pd.to_datetime(panel["date"]) + pd.offsets.MonthEnd(0)
+        valid_keys = set(zip(spx_w["date"], spx_w["ticker"]))
+        mask = list(zip(panel["date"], panel["ticker"]))
+        panel = panel[[k in valid_keys for k in mask]].reset_index(drop=True)
+        print(f"Zombie filter applied: {len(panel):,} rows retained")
+
+    exclude = {"date", "ticker", "fwd_ret_1m"}
+    all_feat_cols = [c for c in panel.columns if c not in exclude]
+    macro_cols = [c for c in MACRO_COLS if c in panel.columns]
+    stock_feat_cols = [c for c in all_feat_cols if c not in macro_cols]
+
+    months = sorted(panel["date"].unique())
+    train_end = pd.Timestamp(TRAIN_END)
+    valid_end = pd.Timestamp(VALID_END)
+    train_months = [m for m in months if m <= train_end]
+    valid_months = [m for m in months if train_end < m <= valid_end]
+    test_months  = [m for m in months if m > valid_end]
+
+    p = TRANSFORMER_CS_PARAMS
+    all_cs = build_monthly_cross_sections(
+        panel, stock_feat_cols, max_stocks=p["max_stocks"], macro_cols=macro_cols,
+    )
+    cs_map = {cs["date"]: cs for cs in all_cs}
+    return (panel, stock_feat_cols, macro_cols, train_months, valid_months,
+            test_months, cs_map)
+
+
+def run_variant(variant_name, overrides, shared):
+    """Train one variant and return metrics dict."""
+    (panel, stock_feat_cols, macro_cols, train_months, valid_months,
+     test_months, cs_map) = shared
+    n_macro = len(macro_cols)
+    n_stock_features = len(stock_feat_cols)
+
+    # Snapshot + override config
+    orig = dict(TRANSFORMER_CS_PARAMS)
+    TRANSFORMER_CS_PARAMS.update(overrides)
+
+    print(f"\n{'═'*74}")
+    print(f"VARIANT: {variant_name}  overrides={overrides}")
+    print(f"{'═'*74}")
+
+    t0 = _time.time()
+    try:
+        train_cs = [cs_map[m] for m in train_months if m in cs_map]
+        valid_cs = [cs_map[m] for m in valid_months if m in cs_map]
+        rl_method = RL_FINETUNE_PARAMS["method"]
+        n_seeds = TRANSFORMER_CS_PARAMS.get("ensemble_seeds", 1)
+
+        if "train_ensemble" in globals():
+            models = train_ensemble(
+                train_cs, valid_cs, n_stock_features,
+                n_macro=n_macro, corr_matrix=None,
+                n_seeds=n_seeds, rl_method=rl_method,
+            )
+            predict_fn = lambda cs: predict_cs_ensemble(
+                models, cs, n_macro=n_macro, corr_matrix=None)
+        else:
+            m = train_cs_model(train_cs, valid_cs, n_stock_features,
+                               n_macro=n_macro)
+            m = grpo_finetune_cs_model(m, train_cs, valid_cs,
+                                        method=rl_method, n_macro=n_macro)
+            models = [m]
+            predict_fn = lambda cs: predict_cs(m, cs, n_macro=n_macro)
+
+        # Walk-forward predictions
+        all_scores = []
+        for mo in test_months:
+            if mo not in cs_map:
+                continue
+            cs = cs_map[mo]
+            scores = predict_fn(cs)
+            sub = (panel[panel["date"] == mo]
+                   .dropna(subset=["fwd_ret_1m"])
+                   .head(cs["n_valid"])
+                   .copy())
+            sub["score"] = scores
+            all_scores.append(sub[["date", "ticker", "score", "fwd_ret_1m"]])
+
+        scores_df = pd.concat(all_scores, ignore_index=True)
+        scores_df.to_parquet(OUT_DIR / f"scores_{variant_name}.parquet",
+                              index=False)
+
+        lo_rets = (scores_df.groupby("date")
+                   .apply(long_only_ret, top_n=100)
+                   .rename("port_ret").dropna())
+        ls_rets = (scores_df.groupby("date")
+                   .apply(long_short_ret, frac=0.20)
+                   .rename("ls_ret").dropna())
+        lo_s = perf_stats(lo_rets)
+        ls_s = perf_stats(ls_rets)
+
+        runtime = _time.time() - t0
+        result = {
+            "variant": variant_name,
+            "overrides": str(overrides),
+            "lo_ann": lo_s["ann"],
+            "lo_sharpe": lo_s["sharpe"],
+            "lo_maxdd": lo_s["maxdd"],
+            "ls_ann": ls_s["ann"],
+            "ls_sharpe": ls_s["sharpe"],
+            "ls_maxdd": ls_s["maxdd"],
+            "runtime_min": runtime / 60,
+            "status": "ok",
+        }
+        print(f"  [✓] {variant_name}: LO Sharpe={lo_s['sharpe']:.2f} "
+              f"ann={lo_s['ann']*100:+.1f}% ({runtime/60:.1f} min)")
+    except Exception as e:
+        runtime = _time.time() - t0
+        result = {"variant": variant_name, "overrides": str(overrides),
+                  "runtime_min": runtime/60, "status": f"error: {e}"}
+        print(f"  [✗] {variant_name} failed: {e}")
+
+    # Restore config
+    TRANSFORMER_CS_PARAMS.clear()
+    TRANSFORMER_CS_PARAMS.update(orig)
+    return result
+
+
+def sweep_main():
+    print("=" * 74)
+    print(f"HYPERPARAMETER SWEEP — {len(SWEEP_VARIANTS)} variants")
+    print(f"Device: {DEVICE}")
+    print("=" * 74)
+
+    shared = _build_shared_panel()
+
+    results = []
+    t_start = _time.time()
+    for i, variant in enumerate(SWEEP_VARIANTS, 1):
+        print(f"\n[{i}/{len(SWEEP_VARIANTS)}]")
+        r = run_variant(variant["name"], variant["overrides"], shared)
+        results.append(r)
+        # Save incrementally
+        pd.DataFrame(results).to_csv(OUT_DIR / "sweep_results.csv", index=False)
+
+    total_min = (_time.time() - t_start) / 60
+    df = pd.DataFrame(results)
+    ok = df[df["status"] == "ok"].sort_values("lo_sharpe", ascending=False) \
+            if "status" in df.columns and (df["status"] == "ok").any() else df
+
+    print("\n" + "=" * 74)
+    print(f"SWEEP DONE — {total_min:.1f} min total")
+    print("=" * 74)
+    if not ok.empty:
+        for _, r in ok.iterrows():
+            print(f"  {r['variant']:<14} LO α={r['lo_ann']*100:+6.2f}%  "
+                  f"Sharpe={r['lo_sharpe']:5.2f}  DD={r['lo_maxdd']*100:6.2f}%  "
+                  f"({r['runtime_min']:.1f}m)")
+
+    # Download links
+    try:
+        from IPython.display import FileLink, display
+        import os
+        for f in sorted(os.listdir(OUT_DIR)):
+            display(FileLink(str(OUT_DIR / f)))
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    main()
+    sweep_main()

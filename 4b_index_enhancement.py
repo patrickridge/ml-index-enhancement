@@ -82,7 +82,13 @@ def build_enhanced_portfolio(
                       on=["date", "ticker"], how="inner")
     df = df.dropna(subset=["score", "spx_weight", "fwd_ret_1m"])
 
+    # Transaction cost: one-way rate in decimals. 10 bps = 0.0010 per side.
+    # Round-trip cost (buy + sell on a new name) = 2 × one_way × |weight change|.
+    # Applied to each month's portfolio turnover vs previous month's weights.
+    one_way_cost = 0.0010  # 10 bps per side — conservative for S&P 500 names
+
     results = []
+    prev_weights = {}      # ticker → weight last month
     for dt, grp in df.groupby("date"):
         if len(grp) < top_n + bottom_n:
             continue
@@ -102,17 +108,30 @@ def build_enhanced_portfolio(
             continue
         grp["port_weight"] = raw_w / total
 
-        # Returns
-        port_ret  = (grp["port_weight"] * grp["fwd_ret_1m"]).sum()
-        bench_ret = (grp["spx_weight"]  * grp["fwd_ret_1m"]).sum()
+        # Turnover vs previous month → transaction cost
+        cur_weights = dict(zip(grp["ticker"], grp["port_weight"]))
+        all_tickers = set(cur_weights) | set(prev_weights)
+        turnover = sum(abs(cur_weights.get(t, 0.0) - prev_weights.get(t, 0.0))
+                       for t in all_tickers)
+        txn_cost = one_way_cost * turnover   # one_way × |Δw| on each side
+
+        # Returns (gross then net of costs)
+        port_ret_gross = (grp["port_weight"] * grp["fwd_ret_1m"]).sum()
+        bench_ret      = (grp["spx_weight"]  * grp["fwd_ret_1m"]).sum()
+        port_ret       = port_ret_gross - txn_cost  # net
 
         results.append({
-            "date":       dt,
-            "port_ret":   port_ret,
-            "bench_ret":  bench_ret,
-            "active_ret": port_ret - bench_ret,
-            "n_stocks":   len(grp),
+            "date":          dt,
+            "port_ret":      port_ret,           # NET of costs
+            "port_ret_gross": port_ret_gross,    # gross (kept for diagnostics)
+            "bench_ret":     bench_ret,
+            "active_ret":    port_ret - bench_ret,
+            "turnover":      turnover,
+            "txn_cost":      txn_cost,
+            "n_stocks":      len(grp),
         })
+
+        prev_weights = cur_weights
 
     return pd.DataFrame(results).set_index("date").sort_index()
 

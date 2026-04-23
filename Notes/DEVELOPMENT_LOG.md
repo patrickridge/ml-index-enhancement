@@ -1294,3 +1294,162 @@ Key observations:
 4. **Insider zombie handling**: 23% of scores rows are non-SPX tickers (CPWR, CHIR etc). Handled at portfolio construction time via inner join with `spx_weights.parquet` — not a backtest bug but worth cleaning up at panel-build time.
 
 **Status:** All code changes complete. Pipeline ready for: panel rebuild → Kaggle retrain → final ensemble backtest on fresh scores.
+
+---
+
+## Phase 19 — Retrain Stability Fixes + Refreshed Results (22-23 Apr 2026)
+
+**Context.** Two Kaggle retrain attempts failed: the first produced negative val IC with training loss dominated by the L1/L2 feature penalty (`train_loss=48,196` while `val_loss=0.23`). The second crashed at the first RL step with NaN in the noise-head std parameter.
+
+### 19.1 — Root cause + fixes
+
+**Penalty was drowning MSE.** L1/L2 at `1e-4` summed over 263 × 128 = 33K tokenizer weights produced a penalty term two orders of magnitude larger than the MSE signal. Dropped to `1e-6` → penalty is now ~0.0002 vs MSE ~0.016. Same order of magnitude, MSE dominates.
+
+**Learning rate too high for bigger feature set.** Dropped `5e-4 → 1e-4`. Bigger model + 263 features need gentler gradients.
+
+**Zombie tickers polluting rankings.** Panel had 697 tickers but only ~500 are SPX members at any given month. Non-members (CPWR, CHIR, NYT etc) had stale data and corrupted top-100 rankings. Added zombie filter in `3c/3d main()`:
+```python
+valid_keys = set(zip(spx_w["date"], spx_w["ticker"]))
+panel = panel[[k in valid_keys for k in zip(panel["date"], panel["ticker"])]]
+```
+Drops 4,561 rows (~4%), but meaningful signal-to-noise improvement.
+
+**RL NaN propagation.** `_sample_group_cs` wasn't guarded — a single NaN in enriched embeddings propagated into log_std → exp() → NaN std → `Normal(mu, std)` constructor blew up. Added three-level guard:
+```python
+if not torch.isfinite(mu).all(): return [], []
+log_s = torch.nan_to_num(log_s, nan=0.0, posinf=2.0, neginf=-10.0)
+std   = log_s.exp().clamp(min=1e-4, max=10.0)
+if not torch.isfinite(std).all(): return [], []
+```
+Empty returns get skipped by the existing `if len(rewards) < 2: continue` check.
+
+**FiLM disabled for first pass.** `use_macro_film=False` as a safety net while debugging. Can re-enable once base model is proven stable.
+
+### 19.2 — Kaggle retrain results
+
+Test period: **17 months OOS** (Jul 2024 – Nov 2025), `RETRAIN_EVERY=999` (skipped mid-test retrain to save GPU time).
+
+| Metric | Pre-fix | Post-fix (current) |
+|---|---|---|
+| Train MSE (dominated by penalty) | ~48,000 | ~0.016 |
+| Val MSE | 0.234 | 0.233 |
+| Val IC (RL) | −0.02 | +0.014 → +0.037 after retrain cycle |
+| **Long-only Top 100 Sharpe** | — | **1.94** |
+| **Long-only annual return** | — | **46.21 %** |
+| **Long-short 20% Sharpe** | — | **1.76** |
+| **Ensemble (CS+Fund+Macro 50/25/25) α** | +3.06 % | **+7.58 %** |
+| **Ensemble IR** | 1.46 | 1.46 (unchanged) |
+| **CS-Transformer alone α** | +2.63 % | **+8.22 %** |
+| **CS-Transformer alone IR** | 1.17 | **1.55** |
+
+**Key narrative shift: CS-Transformer alone now beats the agent ensemble** (α 8.2 % vs 7.6 %). Pre-fix, the agents carried the strategy; post-fix, the ML model is the strongest single signal and the agents slightly dilute.
+
+### 19.3 — Kaggle session lessons
+
+Lost two sets of outputs by using interactive "Draft Session" + laptop sleep. Kaggle wipes `/kaggle/working/` when the session expires. Third attempt succeeded because we downloaded files immediately after `Saved scores:` line printed (before the session timed out).
+
+**Going forward: use `Save Version → Save & Run All`** — batch mode, runs on Kaggle servers independent of browser, output persists automatically.
+
+### 19.4 — Interesting diagnostic
+
+Mean monthly Spearman IC on the full universe is **−0.007** (essentially zero / slightly negative), yet long-only top-100 delivers 46 % annual return and Sharpe 1.94. The model's edge is **concentrated at the tails** (top 100 picks), not across the full rank correlation. Two implications:
+
+1. **Tail accuracy > mean IC** for this strategy. RL fine-tune trains for portfolio reward, not IC.
+2. **Some of the alpha is small-cap tilt**. Long-only equal-weight top-100 is an aggressive small-cap overweight vs cap-weighted SPX. In 2024-25 small-caps did well. Needs sector-neutral construction or risk-factor decomposition to disentangle.
+
+Worth addressing before any live deployment — see "Next Steps" below.
+
+---
+
+## Phase 20 — Sweep Infrastructure + Transaction Costs (23 Apr 2026)
+
+### 20.1 — Hyperparameter sweep orchestrator
+
+Built `3e_hp_sweep.py` (local) and `3e_hp_sweep_kaggle.py` (standalone) that run N config variants sequentially and dump results to `sweep_results.csv`.
+
+Default 6 variants:
+1. **baseline** — current config
+2. **film_on** — re-enable Macro FiLM layer
+3. **deeper_3x3** — 3 layers per stage
+4. **wider_192** — d_model=192
+5. **dropout_20** — 0.2 dropout
+6. **ensemble_3** — 3-seed ensemble averaging
+
+Each run saves its own scores parquet (`scores_{variant}.parquet`) for audit. Sweep results CSV has LO/LS Sharpe, alpha, max DD, runtime per variant.
+
+### 20.2 — Optional IC loss
+
+Added `masked_ic_loss()` (negative Pearson IC) and a `masked_loss()` dispatcher so training can switch between MSE and IC objectives via `TRANSFORMER_CS_PARAMS["loss_type"] = "ic"`. On monthly returns Pearson IC tracks Spearman very closely and is fully differentiable.
+
+### 20.3 — Seed ensemble wrapper
+
+`train_ensemble()` and `predict_cs_ensemble()` let you train N models with different seeds and average their scores at prediction time. Controlled by `TRANSFORMER_CS_PARAMS["ensemble_seeds"]` (default 1).
+
+### 20.4 — Transaction costs in the backtest
+
+`4b_index_enhancement.py::build_enhanced_portfolio` now:
+- Tracks per-ticker previous month weights
+- Computes turnover = Σ |w_new − w_prev|
+- Deducts `one_way_cost × turnover` (default 10 bps per side)
+- Records both gross (`port_ret_gross`) and net (`port_ret`) returns
+- Also logs `turnover` and `txn_cost` per month for diagnostics
+
+All downstream metrics (IR, Sharpe, alpha) now reported net of costs by default. Expect ~0.5 – 1.0 % reduction in headline alpha at current turnover.
+
+---
+
+## Next Steps — Project Roadmap (April 2026)
+
+### This week — easy wins (no new data)
+
+1. **Re-enable FiLM and rerun Kaggle** (`use_macro_film=True`, 90 min GPU). The whole architectural innovation is currently inactive. Now that the base is stable, FiLM is next in line.
+
+2. **Run the hyperparameter sweep** (`3e_hp_sweep_kaggle.py` on Kaggle, or local overnight). Picks the best config empirically — no guessing.
+
+3. **Verify transaction-cost impact** — rerun `4b_index_enhancement.py` against the new scores and record the net-of-cost headline. This becomes the defensible IR number.
+
+4. **Feature importance analysis** — regenerate `cs_transformer_loadings.png` from the tokenizer weights of the new model. Both a diagnostic and potential feature pruner.
+
+### Next month — bigger lifts
+
+5. **Fix survivorship bias** — the single largest inflator of OOS numbers (per Kieran's feedback). Options:
+   - Free: Wikipedia historical constituents + yfinance delisted ticker OHLCV → adds ~300 historical names
+   - ~$300/yr: Simfin API key → closes ~95 % of the gap
+   - Varies: CRSP via university → 100 % fix
+
+6. **Multiple walk-forward retrains** — current config does 1 retrain in 17 months. Industry standard is every 6–12. Change `RETRAIN_EVERY=6` and rerun. Tests regime adaptation.
+
+7. **Turn RL fine-tune back on with the FiLM model** — currently val IC post-RL ≈ 0.014 (weak). With FiLM conditioning + stable base, target 0.04+.
+
+8. **Statistical significance** — add **Deflated Sharpe** and **Probability of Backtest Overfitting (PBO)** from Lopez de Prado. 20 lines of code, answers "is this Sharpe real or a fluke?".
+
+9. **Cross-asset extension** — same pipeline on FTSE 100 or Euro STOXX 50. Tests whether the architecture generalises.
+
+### Next quarter — production path
+
+10. **Paper trading pipeline** — daily run on today's SPX universe, record predicted portfolio vs realised for 3 months. Much harder to fool than backtest.
+
+11. **Monitoring / regime dashboard** — `6_regime_dashboard.py` is scaffolded. Wire up daily IC tracking, turnover, concentration, factor exposures (value/mom/size/quality/low-vol). Alert on drift.
+
+12. **Sector-neutral construction** — current portfolio can load 20 %+ into a single sector. Add sector-neutral constraint: overweight within each sector, not across. Addresses the "some alpha is small-cap tilt" diagnostic above.
+
+13. **Multi-horizon prediction** — predict 1m, 3m, 6m forward returns simultaneously; average horizon scores. Typically adds 0.1–0.2 IR on equity strategies.
+
+### Long-term — make it real
+
+14. **Execution modelling** — square-root impact model, bid-ask spread, order scheduling. Decouples signal alpha from execution alpha.
+
+15. **Risk management overlay** — volatility targeting, drawdown caps, position limits. Essential for any real deployment.
+
+16. **Alternative data** — expand insider trading + news sentiment coverage. Satellite / credit-card data if available.
+
+17. **Whitepaper + GitHub polish** — proper technical report (motivation, architecture, results, limits). Portfolio piece for quant interviews.
+
+### Priority ranking — highest "IR lift + credibility gain per hour" (April 2026)
+
+1. Fix survivorship bias (credibility) — 1 day
+2. Re-enable FiLM + rerun (performance) — 1 hr config + 90 min Kaggle
+3. Add transaction costs to headline (credibility) — done in Phase 20.4
+4. Hyperparameter sweep (performance) — runs overnight
+
+These four together take the project from "promising backtest" to "defensible trade-able signal."
