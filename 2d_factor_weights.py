@@ -23,7 +23,7 @@ Outputs:
   data/factor_selected.csv   — clean factor list, ready for model training
   figures/factor_weights.png — bar chart of normalised decay weights
 
-Run after 5_factor_analysis.py and 5b_ic_decay_all.py.
+Run after 2a_factor_analysis.py and 2b_ic_decay_all.py.
 """
 
 import time as _time

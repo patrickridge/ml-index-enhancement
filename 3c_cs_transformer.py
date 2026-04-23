@@ -24,14 +24,14 @@ Training:
   Each month is one forward pass (batch=1 for Stage 2).
   Months are padded to MAX_N_STOCKS=520; padding_mask prevents attention to pad positions.
   Loss: masked MSE on non-padded stocks. Shuffle at the month level each epoch.
-  Walk-forward expanding window, same as 2b_nn_backtest.py.
+  Walk-forward expanding window, same as 3a_ft_transformer.py.
 
 Outputs:
   data/scores_cs_transformer.parquet
   data/bt_cs_transformer.csv      (long-only top 50)
   data/bt_cs_transformer_ls.csv   (long-short)
 
-Run AFTER 1_feature_engineering.py (and optionally 1b_orthogonalize.py).
+Run AFTER 1h_feature_engineering.py (and optionally 1i_orthogonalize.py).
 """
 
 import copy
@@ -62,7 +62,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PERFORMANCE HELPERS  (identical to 2b_nn_backtest.py)
+# PERFORMANCE HELPERS  (identical to 3a_ft_transformer.py)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def perf_stats(r: pd.Series) -> dict:

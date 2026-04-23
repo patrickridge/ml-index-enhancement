@@ -8,11 +8,11 @@ Core function: rmt_denoise(matrix, q, return_as_corr)
   leaving only genuine signal eigenvalues intact.
 
 Key use cases in this pipeline:
-  1. Return covariance cleaning in 3_pca_rp_backtest.py
+  1. Return covariance cleaning in archive/3_pca_rp_backtest.py
      q = N_assets / T_days  (e.g. 50/252 ≈ 0.198)
      → fixes ill-conditioned covariance, resolves beta=2.07 bug
 
-  2. Feature correlation diagnostics in 7_factor_diagnostics.py
+  2. Feature correlation diagnostics in 2f_factor_diagnostics.py
      q = N_features / T_obs  (e.g. 100/90000 ≈ 0.001)
      → q very small → λ+ ≈ 1.004 → most eigenvalues are "signal" → denoising is mild
 

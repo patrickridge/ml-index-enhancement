@@ -1,29 +1,13 @@
 """
-6_regime_dashboard.py — ML Index Enhancement: Regime Backtesting Dashboard
-===========================================================================
-Interactive Streamlit application for regime-conditional performance analysis
-of the CS-Transformer, FT-Transformer, LGBM, and Factor-Combo IE strategies.
+6_regime_dashboard.py — Streamlit dashboard for regime-conditional IE analysis.
 
-Tabs:
-  1. Regime Breakdown       — IR, cumulative alpha, hit rate by regime
-  2. Bootstrap Analysis     — Block bootstrap confidence intervals on IR
-  3. Monte Carlo Projection — Forward simulation of cumulative active return
-  4. Statistics             — Full metrics table with IR heatmap
-  5. Volatility Surface     — Interactive 3-D cross-sectional vol surface
-  6. Walk-Forward RL        — 5-fold expanding-window RL validation (no leakage)
-  7. Backtest Engine        — Unified view: Normal / Walk-Forward / Stress Test
+Tabs: regime breakdown, block-bootstrap CIs, Monte Carlo projection, full stats
+table, 3-D cross-sectional vol surface, walk-forward RL, and a combined
+"Normal / Walk-Forward / Stress Test" backtest view. Covers the CS-Transformer,
+FT-Transformer, LightGBM, and factor-combo IE strategies.
 
-HOW TO RUN:
-  streamlit run 6_regime_dashboard.py
-  Opens at: http://localhost:8501
-
-HOW TO STOP:
-  Press Ctrl+C in the terminal where it is running.
-
-HOW STREAMLIT WORKS:
-  Runs a local web server on port 8501. Every time you interact with a widget
-  (slider, dropdown, checkbox) the entire script reruns from top to bottom
-  with the updated widget values.
+Run with:   streamlit run 6_regime_dashboard.py
+Stops on Ctrl+C. Listens on http://localhost:8501.
 """
 
 import warnings

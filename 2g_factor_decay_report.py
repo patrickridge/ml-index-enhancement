@@ -1,7 +1,7 @@
 """
 2g_factor_decay_report.py
 ==========================
-Comprehensive factor decay diagnostic report.
+IS vs OOS factor-decay diagnostics.
 
 Reads factor_ic_summary.csv, factor_oos_ic.csv, and factor_ic_decay.csv
 (outputs from 2a_factor_analysis.py) and produces:

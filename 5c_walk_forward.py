@@ -1,56 +1,32 @@
 """
-5c_walk_forward.py — Walk-Forward Backtest: No-Leakage RL Validation
-=====================================================================
-Implements an expanding-window walk-forward backtest for the Layer 2 SAC
-portfolio tilt agent. This is the primary credibility test for the RL model.
+5c_walk_forward.py — Expanding-window walk-forward test for the SAC tilt agent.
 
-WHY WALK-FORWARD?
-─────────────────
-The standard single-split backtest (train 2010–2022, test 2023–2025) has two
-credibility problems:
-  1. Short test window: only 35 months, all in a bull market (AI rally). Any
-     model — including naive ones — looks good in this regime.
-  2. Signal leakage risk: IC-optimised factor weights (2e_ic_optimise.py) were
-     tuned on the FULL panel. Scores built from these weights carry forward-
-     looking information into the "training" period.
+The single-split 2010-2022 / 2023-2025 backtest has two problems: only 35 test
+months, all in a bull rally; and the IC-optimised factor weights from
+2e_ic_optimise.py were fitted on the full panel, which leaks forward-looking
+information into the "training" years. Walk-forward addresses both by refitting
+everything (factor weights, z-score normalisation, SAC agent, regime median)
+inside each fold's training slice and concatenating the test windows into ~12
+years of genuine out-of-sample returns.
 
-Walk-forward fixes both:
-  - Each fold's factor weights are recomputed from its OWN training data only
-    (mean-IC rank, no future information)
-  - State normalisation statistics (z-score params) come from training data only
-  - The SAC agent is trained fresh on each fold's training period
-  - Test windows are concatenated into 12 years of genuine out-of-sample returns
+On algorithm choice: PPO is on-policy and needs thousands of env steps per
+update, which isn't realistic with 100-140 training months per fold. SAC is
+off-policy, replays each month many times from the buffer, handles continuous
+tilt actions naturally, and its entropy term stops the policy collapsing to a
+single alpha.
 
-WHY SAC OVER PPO?
-─────────────────
-  PPO  : on-policy, needs thousands of environment steps per update.
-          With only 100–140 training months per fold, it cannot converge.
-  SAC  : off-policy, replay buffer — each month is sampled many times.
-          Works well with small datasets. Continuous-action tilt sizing fits
-          naturally. Entropy regularisation prevents premature collapse to a
-          single fixed alpha value.
+Folds (expanding window):
+  1. Train 2010-2013 → Test 2014-2015
+  2. Train 2010-2015 → Test 2016-2017
+  3. Train 2010-2017 → Test 2018-2019
+  4. Train 2010-2019 → Test 2020-2021
+  5. Train 2010-2021 → Test 2022-2025
 
-FOLDS (expanding window):
-  Fold 1: Train 2010–2013 → Test 2014–2015
-  Fold 2: Train 2010–2015 → Test 2016–2017
-  Fold 3: Train 2010–2017 → Test 2018–2019
-  Fold 4: Train 2010–2019 → Test 2020–2021
-  Fold 5: Train 2010–2021 → Test 2022–2025
-
-NO-LEAKAGE GUARANTEES:
-  ✓ Factor weights: mean-IC per fold, using only training-period data
-  ✓ State z-score params: fitted on training period, applied to test
-  ✓ SAC agent: trained fresh from scratch on each fold's data
-  ✓ Regime threshold: expanding median computed on training months only
-
-Run:
-  python 5c_walk_forward.py
-
-Outputs:
-  data/bt_wf_rl.csv              — monthly returns (all folds concatenated)
-  data/wf_fold_summary.csv       — per-fold IR, alpha, TE
-  figures/wf_rl_comparison.png   — cumulative active return: RL vs fixed alpha
-  figures/wf_fold_summary.png    — bar chart of IR per fold
+Run:        python 5c_walk_forward.py
+Writes:     data/bt_wf_rl.csv              monthly returns (all folds)
+            data/wf_fold_summary.csv       per-fold IR, alpha, TE
+            figures/wf_rl_comparison.png   cumulative active return vs fixed α
+            figures/wf_fold_summary.png    per-fold IR bar chart
 """
 
 import warnings

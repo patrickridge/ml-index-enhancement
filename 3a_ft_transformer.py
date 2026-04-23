@@ -4,23 +4,24 @@
 Feature Tokenizer + Transformer (FT-Transformer) stock-ranking model.
 
 Architecture:
-  - Each of the 26 input features is embedded into a d_model-dim vector
+  - Each input feature is embedded into a d_model-dim vector
   - A [CLS] token is prepended
-  - Multi-head self-attention learns which COMBINATIONS of features predict returns
-    (e.g. "high momentum + rising IR ratio together beat either alone")
+  - Multi-head self-attention learns which combinations of features predict
+    returns (e.g. "high momentum + rising IR ratio together beat either alone")
   - CLS token output → linear head → predicted score (rank ≈ next-month return)
 
-This is a legitimate transformer — same attention mechanism as GPT/BERT, applied
-to the 26 financial features instead of tokens in a sentence.
+Same attention machinery as a BERT encoder, but the sequence is feature tokens
+per stock rather than word tokens per sentence. Reference: Gorishniy et al.
+2021, "Revisiting Deep Learning Models for Tabular Data".
 
-Outputs (same format as 2_lgbm_backtest.py):
+Outputs:
   - data/scores_transformer.parquet
   - data/bt_transformer.csv           (long-only top 50)
   - data/bt_transformer_ls.csv        (long-short)
 
-Prints side-by-side comparison with LightGBM at the end.
+Prints side-by-side comparison with LightGBM scores at the end if present.
 
-Run AFTER 1_feature_engineering.py and 2_lgbm_backtest.py.
+Run AFTER 1h_feature_engineering.py.
 """
 
 import numpy as np

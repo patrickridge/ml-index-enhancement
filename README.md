@@ -39,7 +39,8 @@ Written as a working record of what was built and what the numbers actually show
 ├── 2a–2h_*.py                      factor diagnostics
 ├── 3a–3d_*.py                      ranking models
 ├── 3e_cs_transformer_audit.py      post-hoc diagnostics on CS-T scores
-├── 4a–4f_*.py                      backtests + portfolio construction
+├── 3e_hp_sweep{,_kaggle}.py        CS-Transformer hyperparameter sweeps
+├── 4a–4g_*.py                      backtests + portfolio construction
 ├── 5a–5f_*.py                      RL overlays
 ├── 6_regime_dashboard.py           Streamlit regime analysis dashboard
 ├── 7_synthetic_regimes.py          DDPM-based synthetic-regime stress test
@@ -52,7 +53,7 @@ Written as a working record of what was built and what the numbers actually show
 │       ├── screen_*.py             Lasso / RF / LightGBM / autoencoder screens
 │       └── regime_entropy.py       vol-regime entropy detector
 │
-├── notes/                          development log, strategy notes
+├── Notes/                          development log, strategy notes
 └── data/                           (gitignored — regenerated from the scripts)
 ```
 

@@ -1,8 +1,10 @@
 """
 2a_factor_analysis.py — Per-Factor IC Analysis and Quantile Backtests
 =====================================================================
-Evaluates how predictive each of the 80 features is vs next-month returns.
-This is about PREDICTIVE POWER, not feature redundancy (that's 7_factor_diagnostics.py).
+Evaluates how predictive each feature in the enriched panel is vs next-month
+returns (typically ~270 columns after 1h_feature_engineering.py). This is
+about predictive power per factor, not redundancy between factors — see
+2f_factor_diagnostics.py for the correlation / RMT / VIF view.
 
 Metrics computed per factor:
   IC       — Spearman rank correlation of factor vs fwd_ret_1m, averaged across months
@@ -26,7 +28,7 @@ Outputs (all to data/):
   factor_ic_summary.png        — bar chart of top/bottom 20 by ICIR
   factor_ic_decay_top10.png    — IC decay curves for top 10 factors
 
-Run AFTER 1_feature_engineering.py.
+Run AFTER 1h_feature_engineering.py.
 """
 
 import time as _time

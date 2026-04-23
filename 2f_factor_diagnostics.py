@@ -33,7 +33,7 @@ Outputs (all to data/ directory):
   diag_rmt_corr_heatmap.png
   diag_vif.csv
 
-Run AFTER 1_feature_engineering.py.
+Run AFTER 1h_feature_engineering.py.
 """
 
 import matplotlib
@@ -303,7 +303,7 @@ def main():
         )
     else:
         print(f"\nPart D skipped — {ORTH_IN.name} not found.")
-        print("  Run 1b_orthogonalize.py first to enable comparison.")
+        print("  Run 1i_orthogonalize.py first to enable comparison.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # SUMMARY

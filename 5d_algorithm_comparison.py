@@ -1,52 +1,27 @@
 """
-5d_algorithm_comparison.py — RL Algorithm Comparison: SAC vs PPO vs GRPO vs DAPO
-==================================================================================
-Runs the same 5-fold expanding-window walk-forward backtest as 5c but with
-four reinforcement learning algorithms side-by-side:
+5d_algorithm_comparison.py — SAC vs PPO vs GRPO vs DAPO on the 5c walk-forward.
 
-  SAC  (Soft Actor-Critic)
-    Off-policy, replay buffer, twin Q-critics, auto-tuned entropy temperature.
-    Our primary algorithm — sample-efficient, designed for continuous actions.
+Same 5-fold expanding-window setup as 5c, run with four RL algorithms so we
+can see which one actually handles this regime (continuous-action portfolio
+tilt, ~100-140 training months per fold):
 
-  PPO  (Proximal Policy Optimisation)
-    On-policy, clipped surrogate objective, critic baseline for advantages.
-    Canonical deep RL algorithm — included as a principled comparison.
-    Expected to underperform: on-policy constraint wastes 100-140 monthly obs.
+  SAC   Off-policy, replay buffer, twin Q-critics, auto-tuned entropy. Our
+        primary algorithm; sample-efficient enough for the small fold sizes.
+  PPO   On-policy with clipped surrogate and a critic baseline. Canonical
+        deep RL, but on-policy discards past experience — with ~100 months
+        per fold it barely converges. Included as the honest baseline.
+  GRPO  No critic at all. Samples G candidate alphas per state, simulates
+        each, uses the group-relative reward as the advantage. From
+        DeepSeek-R1 (2025), originally for LLM fine-tuning. KL penalty
+        (β=0.01) against a frozen reference policy stops collapse.
+  DAPO  GRPO + three ByteDance/Seed (2025) tweaks: asymmetric clipping
+        (ε_low=0.20, ε_high=0.28), dynamic G (G_max=8 for noisy states,
+        G_min=2 for easy ones), and no KL penalty (clip-higher does the
+        regularisation).
 
-  GRPO (Group Relative Policy Optimisation)
-    No critic at all. For each state, sample G candidate alphas, simulate each,
-    use group-relative reward as the advantage signal.
-    Origin: DeepSeek-R1 (2025) — developed for LLM fine-tuning without a critic.
-    Applied here to portfolio tilt: each "group" is G candidate alpha values for
-    the same market state. Eliminates value-estimation error at the cost of G×
-    simulation overhead per step.
-    KL penalty (β=0.01) against a frozen reference policy prevents collapse.
-
-  DAPO (Dynamic Sampling Policy Optimisation)
-    Extends GRPO with three innovations from ByteDance/Seed (2025):
-    1. Clip-higher: asymmetric clipping (ε_low=0.20, ε_high=0.28) — policy can
-       move aggressively toward good alphas but is protected from large bad steps.
-    2. Dynamic G: high-variance (hard) market states get G_MAX=8 candidate alphas;
-       easy states use G_MIN=2. Focuses compute where it matters most.
-    3. No KL penalty: clip-higher alone provides sufficient regularisation.
-
-WHY COMPARE?
-  SAC:  off-policy replay buffer → efficient reuse of 100-140 monthly obs.
-        Twin critics reduce Q overestimation. Entropy prevents alpha collapse.
-  PPO:  on-policy → throws away past experience after each update.
-        With only ~100 training months, barely converges. Shows the cost of
-        on-policy constraint at small sample sizes.
-  GRPO: no critic → no value-estimation bias or variance from bootstrapping.
-        Simple — just relative ranking within a group.
-  DAPO: GRPO + smarter sampling + asymmetric clipping. Best at limiting downside
-        in volatile/uncertain market regimes.
-
-Run:
-  python 5d_algorithm_comparison.py
-
-Outputs:
-  data/algo_comparison.csv       — per-fold × per-algorithm metrics
-  figures/algo_comparison.png    — cumulative alpha + per-fold IR bar chart
+Run:     python 5d_algorithm_comparison.py
+Writes:  data/algo_comparison.csv     per-fold × per-algorithm metrics
+         figures/algo_comparison.png  cumulative alpha + per-fold IR bars
 """
 
 import warnings

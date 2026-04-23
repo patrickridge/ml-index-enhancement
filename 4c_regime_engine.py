@@ -6,7 +6,7 @@ out by market regime to answer: does the strategy hold up in bear markets,
 not just the AI bull run?
 
 Two regime methods:
-  1. Rule-based (default) — same 4 hardcoded regimes as 5_factor_analysis.py
+  1. Rule-based (default) — same 4 hardcoded regimes as 2a_factor_analysis.py
   2. HMM (optional, --hmm flag) — 2-state Hidden Markov Model fitted to
      SPX monthly returns + VIX (detects risk-on / risk-off dynamically)
 
@@ -42,7 +42,7 @@ DATA_DIR = Path("data")
 FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
-# Rule-based regimes (shared with 5_factor_analysis.py)
+# Rule-based regimes (shared with 2a_factor_analysis.py)
 REGIMES = {
     "QE Bull\n2010–2019":        ("2010-01-01", "2019-12-31"),
     "COVID Recovery\n2020–2021": ("2020-06-01", "2021-12-31"),
@@ -172,7 +172,7 @@ def main():
               f"({df['date'].min().date()} → {df['date'].max().date()})")
 
     if not all_dfs:
-        print("No backtest files found. Run 6_index_enhancement.py first.")
+        print("No backtest files found. Run 4b_index_enhancement.py first.")
         return
 
     # ── Assign regimes ────────────────────────────────────────────────────────

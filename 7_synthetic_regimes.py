@@ -1,31 +1,16 @@
 """
-7_synthetic_regimes.py — Regime-Conditional Diffusion Model for Stress Testing
-===============================================================================
-Trains a conditional DDPM on monthly macro features (SPX return, SPX vol,
-market trend) labelled by regime. Generates 1000 synthetic bear market months
-and stress-tests the CS-Transformer IE strategy's IR under those conditions.
+7_synthetic_regimes.py — Diffusion-based regime stress test for the CS-T IE strategy.
 
-MOTIVATION:
-  The test period (2023–2025) contains only 7 genuine risk-off months — far
-  too few for reliable IR estimation (confidence interval ≈ ±0.6). A diffusion
-  model trained on the full 2010–2025 macro history learns the joint distribution
-  of market conditions under each regime and generates novel stress scenarios.
+The real test period (2023-2025) has only 7 risk-off months, giving an IR
+confidence interval around ±0.6. This script trains a tiny conditional DDPM on
+the full 2010-2025 macro history (spx_ret_1m, spx_vol_63d, market_trend_spx),
+generates 1000 synthetic bear-market months, then pushes them through a linear
+"feature → active return" bridge fitted on the real CS-T test window. The
+output is a stress-tested IR distribution across the synthetic scenarios.
 
-PIPELINE:
-  1. Extract monthly macro features from panel (spx_ret_1m, spx_vol_63d,
-     market_trend_spx) — 180 months, 2010–2025
-  2. Label each month: bear (bottom tertile SPX returns) vs bull
-  3. Normalise features to zero mean, unit variance
-  4. Train DDPM: small MLP denoiser conditioned on regime + sinusoidal time
-  5. Generate 1000 synthetic bear market feature vectors
-  6. Fit linear bridge: active_ret ~ f(spx_ret, spx_vol, trend) on real CS-T
-     test period (35 months) to translate synthetic features → active returns
-  7. Compute stress-tested IR distribution across 1000 synthetic scenarios
-  8. Print comparison table, save figures/diffusion_stress_test.png and
-     data/synthetic_stress_results.csv
+Writes figures/diffusion_stress_test.png and data/synthetic_stress_results.csv.
 
-RUN:
-  python 7_synthetic_regimes.py
+Run:  python 7_synthetic_regimes.py
 """
 
 import warnings

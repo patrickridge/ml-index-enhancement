@@ -1,6 +1,9 @@
 """
-config.py — shared constants for the main pipeline
-(2_lgbm_backtest.py, 2b_nn_backtest.py, 3_pca_rp_backtest.py, 4_benchmark_spx.py)
+config.py — shared constants for the pipeline.
+
+Date splits, portfolio sizing, model hyperparameters. Imported by the 2*, 3*,
+4*, and 5* scripts. Kaggle scripts (3b, 3d, 3e_hp_sweep_kaggle) inline a copy
+of the subset they need so they run without this module.
 """
 from pathlib import Path
 
@@ -32,7 +35,7 @@ MIN_OBS       = 150            # minimum daily observations per ticker
 N_PCA         = 10             # PCA components to keep
 RIDGE         = 1e-3           # ridge regularization on covariance
 
-# ── FT-Transformer (2b_nn_backtest.py) ───────────────────────────────────────
+# ── FT-Transformer (3a_ft_transformer.py) ───────────────────────────────────
 # Architecture: each of the N input features is embedded into d_model-dim vectors,
 # then processed by multi-head self-attention to learn feature interactions.
 # CPU training time: ~45-60 min (3 folds × ~15-20 min each). GPU: ~15-25 min total.
@@ -68,9 +71,9 @@ LGBM_PARAMS = dict(
 # Feature variants
 USE_ORTHOGONALIZED_FEATURES = False   # True → load panel_monthly_orthogonalized.parquet
 USE_CANDIDATE_FEATURES      = True    # True → include 69 factor mining candidates in panel
-PCA_VARIANCE_THRESHOLD      = 0.80    # variance explained threshold for 1b_orthogonalize.py
+PCA_VARIANCE_THRESHOLD      = 0.80    # variance explained threshold for 1i_orthogonalize.py
 
-# RMT covariance denoising (fixes beta=2.07 in 3_pca_rp_backtest.py)
+# RMT covariance denoising (fixes beta=2.07 in archive/3_pca_rp_backtest.py)
 USE_RMT_COV_DENOISING = True
 
 # Macro factor columns — NOT cross-sectionally ranked (same value for all stocks per month)

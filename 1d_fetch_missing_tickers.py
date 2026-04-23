@@ -1,7 +1,7 @@
 """
 1d_fetch_missing_tickers.py — Recover Price Data for Failed Historical Tickers
 ===============================================================================
-Script 1d_fetch_historical_constituents.py fetched ~440 historical S&P 500
+Script 1b_fetch_constituents.py fetched ~440 historical S&P 500
 members but ~252 tickers failed, typically due to a yfinance timezone bug
 (YFTzMissingError) or because the ticker was fully delisted.
 
@@ -203,7 +203,7 @@ def main():
     # ── Load ticker log ──────────────────────────────────────────────────────
     if not TICKER_LOG.exists():
         print(f"\nERROR: {TICKER_LOG} not found.")
-        print("Run 1d_fetch_historical_constituents.py first.")
+        print("Run 1b_fetch_constituents.py first.")
         return
 
     log_df = pd.read_csv(TICKER_LOG)
@@ -360,7 +360,7 @@ def main():
     print(f"  Recovered:  {len(ok_tickers)} tickers  "
           f"({len(via_yf_history)} via yf.history, {len(via_stooq)} via Stooq)")
     print(f"  Still lost: {len(still_failed)} tickers  (truly unavailable)")
-    print(f"\nNext step: re-run 1e_rebuild_base_panel.py then 1_feature_engineering.py")
+    print(f"\nNext step: re-run 1g_rebuild_panel.py then 1h_feature_engineering.py")
     print(f"\nDone in {(_time.time() - _t0) / 60:.1f} min")
 
 

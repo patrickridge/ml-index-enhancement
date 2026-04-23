@@ -13,7 +13,7 @@ Convention:
   - Each add_*() function takes prices and returns prices with NEW columns appended in-place.
   - Intermediate columns used only as building blocks are prefixed with an underscore or
     kept only if explicitly listed in NEW COLUMNS comments.
-  - Cross-sectional ranking happens LATER in 1_feature_engineering.py — these functions
+  - Cross-sectional ranking happens LATER in 1h_feature_engineering.py — these functions
     produce raw (unranked) values.
   - Macro functions return a date-indexed DataFrame (one row per date, merged on date).
 
@@ -43,7 +43,7 @@ from typing import Optional
 def _rolling_maxdd(x: pd.Series, w: int) -> pd.Series:
     """
     Rolling maximum drawdown computed within each window of length w.
-    Moved here from 1_feature_engineering.py and parameterised by window.
+    Moved here from 1h_feature_engineering.py and parameterised by window.
     """
     nav = (1 + x.fillna(0)).cumprod()
     roll_max = nav.rolling(w, min_periods=max(5, w // 3)).max()
@@ -124,7 +124,7 @@ def add_momentum_daily(prices: pd.DataFrame) -> pd.DataFrame:
 
     Note: ret_36m requires 756 trading days of history (≈3 years).
     For stocks with shorter histories the value is NaN → filled with 0 (neutral rank)
-    in 1_feature_engineering.py.
+    in 1h_feature_engineering.py.
     """
     grp = prices.groupby("ticker", group_keys=False)
 
@@ -344,7 +344,7 @@ def add_volume_liquidity(prices: pd.DataFrame) -> pd.DataFrame:
       obv_signal        — OBV momentum: 21d pct change in cumulative OBV
 
     NEW COLUMNS (always, without volume):
-      [hl_ratio_d and amihud_21d are computed in 1_feature_engineering.py existing code;
+      [hl_ratio_d and amihud_21d are computed in 1h_feature_engineering.py existing code;
        this function adds the volume-based ones only]
 
     Degrades gracefully: if 'volume' not in prices.columns, skips all volume factors.
@@ -608,7 +608,7 @@ def add_fundamental_factors(
         recently reported value as of that month-end date.
 
     Returns panel with available fundamental columns left-joined.
-    Missing values → NaN → filled with 0 (neutral rank) in 1_feature_engineering.py.
+    Missing values → NaN → filled with 0 (neutral rank) in 1h_feature_engineering.py.
     """
     fund_cols_available = [c for c in FUNDAMENTAL_COLS if c in fundamental.columns]
     if not fund_cols_available:
@@ -714,7 +714,7 @@ def add_macro_factors(
 
     NOTE: Macro columns are NOT cross-sectionally ranked (same for all stocks
     in a month → zero cross-sectional variance). They are time-series z-scored
-    in 1_feature_engineering.py after this merge.
+    in 1h_feature_engineering.py after this merge.
     """
     if macro_daily.empty:
         return panel

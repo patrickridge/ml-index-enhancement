@@ -26,7 +26,7 @@ Run:
   python 1e_parse_wind_prices.py
 
 Input:
-  /Users/patrick/Downloads/Missing data.xlsx  (or DATA_XLSX env var)
+  $DATA_XLSX (env var) — defaults to ~/Downloads/Missing data.xlsx
   data/prices.parquet
 
 Output:
@@ -44,8 +44,10 @@ from pathlib import Path
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 DATA_DIR   = Path("data")
-XLSX_PATH  = Path(os.environ.get("DATA_XLSX",
-                  "/Users/patrick/Downloads/Missing data.xlsx"))
+XLSX_PATH  = Path(os.environ.get(
+    "DATA_XLSX",
+    str(Path.home() / "Downloads" / "Missing data.xlsx"),
+))
 PRICES_OUT = DATA_DIR / "prices.parquet"
 
 # ── Tickers to exclude regardless of data presence ────────────────────────────

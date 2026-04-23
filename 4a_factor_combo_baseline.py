@@ -1,9 +1,9 @@
 """
 4a_factor_combo_baseline.py — Factor-Combo IE Baseline (No ML)
 ===============================================================
-Uses the optimised factor weights from 5e_ic_optimise.py to create
+Uses the optimised factor weights from 2e_ic_optimise.py to create
 stock scores directly (weighted sum of z-scored factors) and runs
-them through the same index enhancement pipeline as 6_index_enhancement.py.
+them through the same index enhancement pipeline as 4b_index_enhancement.py.
 
 This answers: how much does the transformer model ADD on top of a
 well-constructed linear factor combination?
@@ -39,7 +39,7 @@ DATA_DIR = Path("data")
 FACTOR_FILE = DATA_DIR / "factor_selected_optimised.csv"
 if not FACTOR_FILE.exists():
     FACTOR_FILE = DATA_DIR / "factor_selected.csv"
-    print("Note: using IC-decay weights (run 5e_ic_optimise.py for optimised weights)")
+    print("Note: using IC-decay weights (run 2e_ic_optimise.py for optimised weights)")
 
 WEIGHT_COL = "weight_optimised" if "optimised" in FACTOR_FILE.name else "weight"
 

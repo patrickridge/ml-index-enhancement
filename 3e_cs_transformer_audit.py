@@ -4,7 +4,7 @@
 Audit what the CS-Transformer signal is actually ranking.
 
 Requires (run first):
-  1_feature_engineering.py  → data/panel_monthly_enriched.parquet
+  1h_feature_engineering.py → data/panel_monthly_enriched.parquet
   3c_cs_transformer.py      → data/scores_cs_transformer.parquet
 
 Outputs:

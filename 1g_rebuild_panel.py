@@ -4,7 +4,7 @@
 The original panel_monthly.parquet was built from data.xlsx (Wind platform
 export), which has been deleted. This script recreates it directly from
 prices.parquet, now containing 692 tickers including historical S&P 500
-members added by 1d_fetch_historical_constituents.py.
+members added by 1d_fetch_missing_tickers.py.
 
 Columns produced (matching original panel_monthly.parquet schema):
   date        — month-end date
@@ -20,8 +20,8 @@ Columns produced (matching original panel_monthly.parquet schema):
   hl_range    — normalised high-low range (monthly avg daily (H-L)/close)
   fwd_ret_1m  — forward 1-month return (target variable)
 
-Run AFTER 1d_fetch_historical_constituents.py.
-Run BEFORE 1_feature_engineering.py.
+Run AFTER 1d_fetch_missing_tickers.py.
+Run BEFORE 1h_feature_engineering.py.
 """
 
 import time as _time
@@ -130,7 +130,7 @@ def main():
     pq.write_table(pa.Table.from_pandas(panel, preserve_index=False),
                    PANEL_OUT, compression="snappy")
     print(f"\nSaved → {PANEL_OUT}  ({len(panel):,} rows)")
-    print("Next: run 1_feature_engineering.py")
+    print("Next: run 1h_feature_engineering.py")
     print(f"\nDone in {(_time.time() - _t0) / 60:.1f} min")
 
 

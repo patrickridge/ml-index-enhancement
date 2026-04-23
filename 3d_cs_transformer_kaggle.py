@@ -1,30 +1,21 @@
 """
-3d_cs_transformer_kaggle.py — GPU-ready standalone version of 3c_cs_transformer.py
-====================================================================================
-Mirrors 3c_cs_transformer.py EXACTLY (same model, same RL, same zombie-ticker
-filter, same MSE + penalty split logging) but inlines all config so it has no
-dependency on config.py.
+3d_cs_transformer_kaggle.py — GPU-ready standalone version of 3c_cs_transformer.py.
 
-╔══════════════════════════════════════════════════════════════════════╗
-║  KAGGLE SETUP                                                        ║
-║                                                                      ║
-║  1. Create a Kaggle Dataset "investsoc-ml-data" and upload:          ║
-║       panel_monthly_enriched.parquet                                 ║
-║       spx_weights.parquet         (needed for zombie filter)         ║
-║                                                                      ║
-║  2. In your notebook: Add Data → Your Datasets → investsoc-ml-data   ║
-║                                                                      ║
-║  3. Settings → Accelerator → GPU T4 x2                               ║
-║                                                                      ║
-║  4. Paste this file into a code cell, or upload + `!python 3d_...py` ║
-║                                                                      ║
-║  5. Output files (download from /kaggle/working):                    ║
-║       scores_cs_transformer.parquet                                  ║
-║       bt_cs_transformer.csv                                          ║
-║       bt_cs_transformer_ls.csv                                       ║
-╚══════════════════════════════════════════════════════════════════════╝
+Mirrors 3c exactly (same model, same RL loop, same zombie-ticker filter, same
+MSE + penalty split logging) but inlines every hyperparameter so the file
+runs on Kaggle with no dependency on config.py.
 
-Expected GPU time: ~60-90 min (including GRPO/DAPO RL fine-tune).
+Kaggle quickstart:
+  1. Upload panel_monthly_enriched.parquet and spx_weights.parquet (the
+     zombie filter needs both) into a Kaggle Dataset "investsoc-ml-data".
+  2. Add Data → Your Datasets → investsoc-ml-data.
+  3. Settings → Accelerator → GPU T4 x2.
+  4. Paste this file into a cell, or upload it and run
+     !python 3d_cs_transformer_kaggle.py.
+  5. Download scores_cs_transformer.parquet / bt_cs_transformer.csv /
+     bt_cs_transformer_ls.csv from /kaggle/working.
+
+Expected GPU time: ~60-90 min including the GRPO/DAPO RL fine-tune.
 """
 
 import os
@@ -117,7 +108,7 @@ print(f"Device: {DEVICE}  |  Panel: {PANEL_IN}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PERFORMANCE HELPERS  (identical to 2b_nn_backtest.py)
+# PERFORMANCE HELPERS  (identical to 3a_ft_transformer.py)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def perf_stats(r: pd.Series) -> dict:

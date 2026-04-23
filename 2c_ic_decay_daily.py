@@ -2,7 +2,7 @@
 2c_ic_decay_daily.py — Daily IC Decay (1–90 trading days)
 ==========================================================
 Tests how long each factor's predictive signal lasts at daily resolution.
-Complements 5b_ic_decay_all.py (which uses monthly lags).
+Complements 2b_ic_decay_all.py (which uses monthly lags).
 
 Method:
   - Factor values taken from panel_monthly_enriched.parquet at each month-end
@@ -17,10 +17,10 @@ Why this matters:
 
 Outputs:
   data/factor_ic_decay_daily.csv         — IC at each horizon per factor
-  figures/factor_ic_decay_daily_grid.png — grid of all factors (like 5b)
+  figures/factor_ic_decay_daily_grid.png — grid of all factors (like 2b)
   figures/factor_ic_decay_daily_top20.png — top 20 factors by |ICIR| zoomed in
 
-Run AFTER 1_feature_engineering.py.
+Run AFTER 1h_feature_engineering.py.
 """
 
 import time as _time

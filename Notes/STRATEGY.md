@@ -1,5 +1,10 @@
 # ML-Driven S&P 500 Index Enhancement — Strategy Overview
 
+> **Note:** this document was written around Phase 11 (43 surviving factors).
+> The current panel has ~270 features across 24 categories — see the root
+> `README.md` for up-to-date counts and results. The methodology below is
+> still accurate; only the specific numbers are a historical snapshot.
+
 ## What Are We Trying to Do?
 
 Build a portfolio that tracks the S&P 500 closely but consistently beats it. Every month, we use machine learning to rank all ~500 stocks and tilt portfolio weights slightly toward the stocks expected to outperform. The goal is a high Information Ratio (IR) with low tracking error — generating steady alpha relative to the benchmark rather than making big concentrated bets.
@@ -84,7 +89,7 @@ This is the core analysis that ensures our 43 factors are providing independent 
 
 **What we do with these results:**
 - Factors flagged in both IC corr AND VIF are strong candidates for removal or replacement
-- If two factors are highly correlated but both have good IC individually, we run `1b_orthogonalize.py` (PCA residualization) to keep the independent part of each
+- If two factors are highly correlated but both have good IC individually, we run `1i_orthogonalize.py` (PCA residualization) to keep the independent part of each
 - Part D of `2f_factor_diagnostics.py` then measures how much orthogonalization reduced the mean off-diagonal correlation
 
 ---

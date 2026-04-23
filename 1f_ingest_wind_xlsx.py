@@ -18,8 +18,8 @@ Usage:
   1. Export the missing tickers from Wind (one file per ticker, or multiple)
   2. Place all XLSX files in  data/wind_exports/
   3. Run:  python 1f_ingest_wind_xlsx.py
-  4. Then: python 1e_rebuild_base_panel.py
-           python 1_feature_engineering.py
+  4. Then: python 1g_rebuild_panel.py
+           python 1h_feature_engineering.py
 
 Also handles the single-ticker format (like missing data.xlsx placed anywhere
 in the data/ folder if passed as --file argument).
@@ -294,8 +294,8 @@ def main():
             print("  Export these from Wind and place in data/wind_exports/")
 
     print(f"\nNext steps:")
-    print("  python 1e_rebuild_base_panel.py")
-    print("  python 1_feature_engineering.py")
+    print("  python 1g_rebuild_panel.py")
+    print("  python 1h_feature_engineering.py")
     print(f"\nDone in {(_time.time() - _t0) / 60:.1f} min")
 
 

@@ -212,7 +212,7 @@ def main():
         OUT_WEIGHTS, index=False
     )
     print(f"\nSaved → {OUT_WEIGHTS}  ({len(mktcap_long):,} rows)")
-    print("Run 6_index_enhancement.py next.")
+    print("Run 4b_index_enhancement.py next.")
 
     print(f"\nDone in {(_time.time() - _t0) / 60:.1f} min")
 

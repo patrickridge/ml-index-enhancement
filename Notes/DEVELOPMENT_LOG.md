@@ -847,7 +847,7 @@ Interactive Streamlit dashboard with:
 
 **Run:** `streamlit run 6_regime_dashboard.py`
 
-**Note:** Conda streamlit removed (broken). Pip version installed at `/Users/patrick/Library/Python/3.13/bin/`. PATH fixed in `~/.bash_profile`.
+**Note:** Conda streamlit was broken for me, so I removed it and used the pip-installed version from the user Python bin dir instead. PATH fixed in `~/.bash_profile`.
 
 ### 13.3 — FT-Transformer Retrained on Kaggle (24 Mar 2026)
 
@@ -1032,7 +1032,7 @@ New script to parse the `Missing data.xlsx` file (255 sheets, 181 valid tickers 
 
 Named `1d2` (not `1e`) to avoid clash with `1e_ingest_wind_xlsx.py` (Wind fundamentals).
 
-**Status:** Ready to run when `Missing data.xlsx` is placed at `/Users/patrick/Downloads/Missing data.xlsx`.
+**Status:** Ready to run when `Missing data.xlsx` is placed at the path given by `DATA_XLSX` (defaults to `~/Downloads/Missing data.xlsx`).
 
 ### 15.8 — README Updated
 

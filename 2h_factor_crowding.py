@@ -1,35 +1,27 @@
 """
-2h_factor_crowding.py — Factor Crowding, Decay & Contrarian Diagnostic
-=======================================================================
-Four diagnostic checks:
+2h_factor_crowding.py — Crowding, within-month decay, and contrarian diagnostics.
 
-  1. FACTOR CROWDING — correlation matrix (IS data only), cluster highly
-     correlated factors (r > 0.70), flag redundant pairs to prune before retraining.
+Four checks run on the enriched panel:
 
-  2. 7-DAY DECAY — within-month IC decay at days 1/3/7/10 from existing
-     factor_ic_decay_daily.csv. Answers: do we need a 7-day refresh or is monthly fine?
+  1. Crowding. Pairwise IC correlation on training data only, cluster at
+     r > 0.70, flag redundant pairs worth pruning before retraining.
+  2. 7-day decay. Pulls day-1/3/7/10 IC out of factor_ic_decay_daily.csv to
+     answer whether a weekly refresh beats monthly rebalancing.
+  3. Contrarian factors. Compares IS vs OOS for the sign-flipped group so we
+     can tell genuine reversal signals from noise.
+  4. Quintile direction audit. Flags factors where the Q5-Q1 spread sign
+     contradicts IC_IS — i.e. the "wrong direction" factors.
 
-  3. CONTRARIAN FACTORS — IS vs OOS for the sign-flip group.
-     Are short-term reversal signals actually useful contrarian bets or noise?
-
-  4. QUINTILE DIRECTION AUDIT — flag factors where Q5-Q1 sign contradicts IC_IS.
-     Surfaces the "wrong direction" factors in the pipeline.
-
-STRICT IS / OOS SEPARATION:
-  - All training metrics  → data ≤ TRAIN_END  (from config.py)
-  - All OOS metrics       → data >  TRAIN_END
-  - Never mixed.
+Training metrics always use date ≤ TRAIN_END (config.py); OOS metrics use
+date > TRAIN_END. No mixing.
 
 Outputs:
-  data/crowding_corr_matrix.csv       — pairwise IC correlation matrix (IS)
-  data/crowding_redundant_pairs.csv   — pairs with |r| > 0.70
-  data/crowding_7day_decay.csv        — day_1 / day_3 / day_7 IC per factor
-  data/crowding_contrarian_oos.csv    — IS vs OOS for sign-flip factors
-  data/crowding_quintile_audit.csv    — quintile direction audit
-  figures/crowding_corr_heatmap.png
-  figures/crowding_7day_decay.png
-  figures/crowding_contrarian_oos.png
-  figures/crowding_quintile_audit.png
+  data/crowding_corr_matrix.csv       pairwise IC correlation matrix (IS)
+  data/crowding_redundant_pairs.csv   pairs with |r| > 0.70
+  data/crowding_7day_decay.csv        day_1 / day_3 / day_7 IC per factor
+  data/crowding_contrarian_oos.csv    IS vs OOS for sign-flip factors
+  data/crowding_quintile_audit.csv    quintile direction audit
+  figures/crowding_{corr_heatmap,7day_decay,contrarian_oos,quintile_audit}.png
 """
 
 import warnings

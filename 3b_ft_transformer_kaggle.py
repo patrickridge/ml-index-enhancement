@@ -1,33 +1,21 @@
 """
-3b_ft_transformer_kaggle.py  — GPU-ready standalone version
-=========================================================
-Identical logic to 3a_nn_backtest.py but with NO dependency on config.py.
-All hyperparameters are defined as plain variables at the top — easy to tweak on Kaggle.
+3b_ft_transformer_kaggle.py — GPU-ready standalone version of 3a_ft_transformer.py.
 
-╔══════════════════════════════════════════════════════════════════════╗
-║  KAGGLE SETUP (5 steps)                                              ║
-║                                                                      ║
-║  1. Create a Kaggle Dataset called "investsoc-ml-data" and upload:   ║
-║       • panel_monthly_enriched.parquet  (~12 MB)                     ║
-║       • scores_lgbm.parquet            (~300 KB)  [optional]         ║
-║                                                                      ║
-║  2. In your Kaggle notebook:                                         ║
-║       Add Data → Your Datasets → investsoc-ml-data                   ║
-║                                                                      ║
-║  3. Enable GPU:                                                      ║
-║       Settings (right panel) → Accelerator → GPU T4 x2               ║
-║                                                                      ║
-║  4. Paste this entire file into a code cell and run.                 ║
-║     Or upload this file and run: !python 2b_nn_backtest_kaggle.py    ║
-║                                                                      ║
-║  5. When done, download from Output:                                 ║
-║       scores_transformer.parquet                                     ║
-║       bt_transformer.csv                                             ║
-║       bt_transformer_ls.csv                                          ║
-║     Copy these into your local data/ folder.                         ║
-╚══════════════════════════════════════════════════════════════════════╝
+Same logic as 3a, but inlines every hyperparameter so the file runs on Kaggle
+with no dependency on config.py. Tweak values at the top of the file before
+pasting it into a notebook cell.
 
-Expected GPU time: 18 minutes
+Kaggle quickstart:
+  1. Upload panel_monthly_enriched.parquet (and scores_lgbm.parquet for the
+     side-by-side table, optional) into a Kaggle Dataset called
+     "investsoc-ml-data".
+  2. Add Data → Your Datasets → investsoc-ml-data.
+  3. Settings → Accelerator → GPU T4 x2.
+  4. Paste this file into a cell, or upload it and !python 3b_ft_transformer_kaggle.py.
+  5. Download scores_transformer.parquet / bt_transformer.csv /
+     bt_transformer_ls.csv from Output, drop into your local data/ folder.
+
+Expected GPU time: ~18 min.
 """
 
 import os

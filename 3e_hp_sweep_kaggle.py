@@ -1,30 +1,28 @@
 """
-3d_cs_transformer_kaggle.py — GPU-ready standalone version of 3c_cs_transformer.py
-====================================================================================
-Mirrors 3c_cs_transformer.py EXACTLY (same model, same RL, same zombie-ticker
-filter, same MSE + penalty split logging) but inlines all config so it has no
-dependency on config.py.
+3e_hp_sweep_kaggle.py — GPU-ready sweep over CS-Transformer variants
+====================================================================
+Kaggle-standalone counterpart of 3e_hp_sweep.py. Inlines the same model / RL
+code as 3d_cs_transformer_kaggle.py, then runs a fixed list of config variants
+(baseline / deeper / wider / higher-dropout / IC-loss / 3-seed ensemble) and
+writes one sweep_results.csv row per variant.
 
-╔══════════════════════════════════════════════════════════════════════╗
-║  KAGGLE SETUP                                                        ║
-║                                                                      ║
-║  1. Create a Kaggle Dataset "investsoc-ml-data" and upload:          ║
-║       panel_monthly_enriched.parquet                                 ║
-║       spx_weights.parquet         (needed for zombie filter)         ║
-║                                                                      ║
-║  2. In your notebook: Add Data → Your Datasets → investsoc-ml-data   ║
-║                                                                      ║
-║  3. Settings → Accelerator → GPU T4 x2                               ║
-║                                                                      ║
-║  4. Paste this file into a code cell, or upload + `!python 3d_...py` ║
-║                                                                      ║
-║  5. Output files (download from /kaggle/working):                    ║
-║       scores_cs_transformer.parquet                                  ║
-║       bt_cs_transformer.csv                                          ║
-║       bt_cs_transformer_ls.csv                                       ║
-╚══════════════════════════════════════════════════════════════════════╝
+Kaggle setup
+------------
+  1. Create a Kaggle Dataset "investsoc-ml-data" and upload:
+       panel_monthly_enriched.parquet
+       spx_weights.parquet         (needed for zombie filter)
 
-Expected GPU time: ~60-90 min (including GRPO/DAPO RL fine-tune).
+  2. Notebook: Add Data → Your Datasets → investsoc-ml-data
+
+  3. Settings → Accelerator → GPU T4 x2
+
+  4. Paste this file into a code cell, or upload + `!python 3e_hp_sweep_kaggle.py`
+
+  5. Outputs (download from /kaggle/working):
+       sweep_results.csv
+       scores_<variant>.parquet  (one per variant)
+
+Expected GPU time: ~90-150 min for the full six-variant sweep.
 """
 
 import os
@@ -117,7 +115,7 @@ print(f"Device: {DEVICE}  |  Panel: {PANEL_IN}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PERFORMANCE HELPERS  (identical to 2b_nn_backtest.py)
+# PERFORMANCE HELPERS  (identical to 3a_ft_transformer.py)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def perf_stats(r: pd.Series) -> dict:

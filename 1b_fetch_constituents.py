@@ -306,7 +306,7 @@ def main():
     print(f"  Successfully added: {len(ok_list)} tickers")
     print(f"  Unavailable:        {len(fail_list)} tickers (bankrupt/fully delisted)")
     print(f"  Final universe:     {merged['ticker'].nunique()} tickers")
-    print(f"\nNext step: re-run 1_feature_engineering.py to rebuild the panel.")
+    print(f"\nNext step: re-run 1h_feature_engineering.py to rebuild the panel.")
     print(f"\nDone in {(_time.time() - _t0) / 60:.1f} min")
 
 
