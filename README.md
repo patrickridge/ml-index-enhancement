@@ -1,11 +1,73 @@
-# S&P 500 Index Enhancement Pipeline
+# Deep-Learning Index Enhancement on the S&P 500
 
-A research project that tries to beat the S&P 500 with small, controlled tilts away from cap weights.
-Three ML models rank the ~500 constituents each month; a portfolio layer turns the ranks into over-
-and underweights relative to the benchmark; a two-layer RL agent learns how aggressive to be given
-the market regime.
+## Background — what index enhancement is
 
-Written as a working record of what was built and what the numbers actually show — not a marketing page.
+Most active equity managers don't beat the S&P 500 after fees. Index
+enhancement takes a different route: hold all ~500 constituents and tilt the
+weights by a small amount based on a predictive model. The portfolio still
+behaves mostly like the index — tracking error typically 2–4% annualised —
+but earns a small, steady layer of alpha on top.
+
+It's a real product category at large quant shops. AQR, Robeco, BlackRock's
+systematic-active desk, Acadian, and the enhanced-index books inside most
+multi-strat hedge funds all run some version. The headline metric is the
+**information ratio** (IR = annualised alpha ÷ tracking error). IR > 0.5 is
+considered institutional-grade; > 1.0 is top-quartile.
+
+This repo is a working implementation of that strategy on the S&P 500. Test
+window (2023–2025, 35 months): **IR 1.87** at 2.22% tracking error, ~67% hit
+rate. Written as a working record of what was built and what the numbers
+actually show — not a marketing page.
+
+## How the strategy works
+
+1. **Score the universe every month.** A Cross-Sectional Transformer reads a
+   panel of ~270 features per stock (momentum, volatility, fundamentals,
+   short interest, institutional ownership, insider filings, news sentiment,
+   macro regime signals, mined OHLCV candidates) and produces one score per
+   stock.
+2. **Tilt around benchmark weights.** `w_i = w_SPX_i + α × score_z_i`,
+   long-only, renormalised to sum to 1. α is a single number controlling how
+   aggressive the tilt is this month.
+3. **Let an RL agent pick α.** A SAC policy observes the current market
+   state (signal dispersion, benchmark vol, rolling tracking error, regime
+   flag, yield-curve features) and outputs α, trained directly on the
+   information ratio.
+
+## Why deep learning
+
+Tree ensembles like LightGBM look at each stock in isolation. Ranking 500
+stocks against each other is inherently relational — a volatility reading of
+30% means one thing when most of the universe is at 15% and something else
+when most are at 45%, and the signal strength at the *tails* of the
+cross-section matters more than absolute levels. A Cross-Sectional
+Transformer handles this directly: a first attention stage operates within
+each stock's feature vector; a second stage attends across every stock in
+the universe that month, so each score is aware of its peers. Macro state
+(VIX, yield curve, Fed rate expectations) is injected through FiLM
+conditioning so the model knows what regime it's scoring in.
+
+Training is two-stage. First a standard masked-MSE pre-train so the model
+learns cross-sectional rank structure. Then a portfolio-level RL fine-tune
+(GRPO or DAPO) that optimises portfolio return directly — bridging the gap
+between "predicting labels" and "actually making money", since those two
+objectives are not the same.
+
+## Why reinforcement learning on top
+
+The tracking-error budget is a hard constraint, not a soft preference. A
+fixed α over-reacts in some regimes (e.g. when the cross-section has
+collapsed and every stock looks the same, aggressive tilting just adds
+tracking error without alpha) and under-reacts in others (in a dispersed
+month with a clear top/bottom split, a timid tilt wastes signal). A learned
+policy adapts tilt size to what the market is actually doing.
+
+Validation is a 5-fold expanding-window walk-forward from 2014 to 2025 — no
+shared training data between folds, factor weights refitted from scratch
+each fold, agent retrained fresh. On 95 OOS months the SAC overlay delivers
+**IR 0.88 vs 0.28** for the fixed-α baseline, with max active drawdown
+almost halved (−6.04% vs −10.50%). GRPO and PPO reach similar IR; SAC wins
+on sample efficiency given the ~100-month fold sizes.
 
 ## What the pipeline does
 
