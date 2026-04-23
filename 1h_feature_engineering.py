@@ -1,37 +1,43 @@
 """
-1h_feature_engineering.py  (v2 — 100+ factors)
-===============================================
-Reads daily OHLCV prices and the existing monthly panel, engineers 100+ factors
-across 10 categories, and saves the enriched panel.
+1h_feature_engineering.py — build the enriched monthly factor panel.
 
-Data sources:
-  REQUIRED   data/prices.parquet          — daily OHLC (+ optional volume column)
-  REQUIRED   data/panel_monthly.parquet   — monthly panel with existing 9 momentum factors
-  OPTIONAL   data/fundamental.parquet     — fundamental data (Cat 9)
-  FETCHED    yfinance: ^GSPC, ^VIX, ^TNX, ^IRX, DX-Y.NYB, HYG (Cats 6, 8, 10)
+Reads daily OHLCV prices and the base monthly panel, computes the factor
+library from utils_factors.py plus the optional-source categories that need
+this pipeline's context (macro/regime, fundamentals, mined alpha, etc.), and
+writes the cross-sectionally ranked panel consumed by every downstream model.
+
+Downstream Cats 19-24 (short interest, 13F, prediction markets, mined
+candidates, insider, sentiment) are added in-place by later fetchers; this
+file covers Cats 1-16.
+
+Inputs:
+  data/prices.parquet            required — daily OHLC (+ optional volume)
+  data/panel_monthly.parquet     required — base monthly panel (9 momentum factors)
+  data/fundamental.parquet       optional — fundamentals (enables Cat 9)
+  yfinance                       fetched  — ^GSPC, ^VIX, ^TNX, ^IRX, DX-Y.NYB, HYG
+                                            (Cats 6, 8, 10)
 
 Output:
-  data/panel_monthly_enriched.parquet   — all factors, cross-sectionally ranked
+  data/panel_monthly_enriched.parquet
 
-Factor categories built here:
-  Cat 1  — Multi-horizon momentum (6 new: ret_1w/2w/9m/18m/24m/36m)
-  Cat 2  — Volatility regimes (8 new)
-  Cat 3  — Tail risk (6 new)
-  Cat 4  — Price level / trend (11 new)
-  Cat 5  — Volume & liquidity (6 new, optional)
-  Cat 6  — Market beta / correlation (8 new)
-  Cat 7  — Intraday / microstructure (5 new)
-  Cat 8  — Cross-sectional relative (6 new)
-  Cat 9  — Fundamental / quality (12 optional)
-  Cat 10 — Macro / regime (9, time-series z-scored NOT cross-sectionally ranked)
-  Cat 11 — Time signal factors (5 new: ir_6m, trend_r2_126d, ret_consistency_12m, skew_60d, drawdown_pct_252d)
-  Cat 12 — Barra-style factors (4 new: amihud_illiq_21d, size_proxy, vol_of_vol_63d, beta_stability_63d)
-  Cat 13 — Cross-sectional interaction factors (5 new, monthly: residual_ret_1m, beta_x_idiovol, up_down_beta_spread, vol_excess, mom_decel)
-  Cat 14 — Size / market cap (1 new: log_mktcap via yfinance)
-  Cat 15 — Tail ranking features (51 new: _top/_bot/_tail dummies for 17 base factors)
-  Cat 16 — Mined alpha factors (12 new: nearness_52w_high, max_ret_21d, risk_adj_mom_6m/12m,
-            residual_mom_6m/12m, up_down_vol_ratio, co_skewness_63d, vol_contraction_signal,
-            mom_quality, price_range_ratio, reversal_size)
+Categories added here (Cats 17-18 for seasonality / time-signal v2 are appended
+by the same run; README has the full 24-category list):
+  Cat 1   multi-horizon momentum               (6 factors: 1w/2w/9m/18m/24m/36m)
+  Cat 2   volatility regimes                    (8)
+  Cat 3   tail risk                             (6)
+  Cat 4   price level / trend                   (11)
+  Cat 5   volume & liquidity                    (6, needs volume column)
+  Cat 6   market beta / correlation             (8)
+  Cat 7   intraday / microstructure             (5)
+  Cat 8   cross-sectional relative              (6)
+  Cat 9   fundamental / quality                 (12, optional)
+  Cat 10  macro / regime                        (9, TS-z-scored, not CS-ranked)
+  Cat 11  time-signal v1                        (5)
+  Cat 12  Barra-style                           (4)
+  Cat 13  cross-sectional interactions          (5)
+  Cat 14  size / market cap                     (1)
+  Cat 15  tail ranking (top/bot/tail dummies)   (51)
+  Cat 16  mined alpha                           (12)
 
 Run time: ~5-10 min on a laptop.
 """

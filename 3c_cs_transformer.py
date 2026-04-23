@@ -14,8 +14,8 @@ Architecture (two-stage):
     All stock embeddings for one month are stacked into a sequence of length N_stocks.
     A MARKET_CLS token is prepended. A second TransformerEncoder attends across the
     full cross-section so each stock "sees" its peers before generating its score.
-    This is the key advantage over the original FT-Transformer which processed
-    each stock independently.
+    That's the main lift over the original FT-Transformer, which processed
+    each stock independently and had no way to see the rest of the universe.
 
   Score Head:
     LayerNorm → Linear(d_model, 1) → scalar score per stock.

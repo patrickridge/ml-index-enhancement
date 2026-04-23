@@ -1,15 +1,10 @@
 """
-5b_rl_portfolio_agent.py — Reinforcement Learning Portfolio Tilt Agent
-======================================================================
-Trains a Soft Actor-Critic (SAC) agent to dynamically adapt the alpha
-(tilt strength) used in index enhancement each month.
+5b_rl_portfolio_agent.py — SAC agent that picks the monthly tilt α.
 
-Instead of a fixed alpha, the agent observes the current market state
-and learns the optimal tilt for that environment.
-
-Key design constraint: NO memory / no recurrence.
-Each month's decision is fully self-contained (Markov).
-Policy is a plain MLP — no LSTM, no GRU, no hidden state.
+Instead of a fixed α in 4b_index_enhancement.py, this trains a Soft
+Actor-Critic agent that observes the current market state and picks the tilt
+for that month. Deliberately Markov — no LSTM, no GRU, no recurrence. Each
+month's decision is self-contained and the policy is a plain MLP.
 
 Architecture:
   State  (9 features): signal strength, signal dispersion, benchmark vol,
