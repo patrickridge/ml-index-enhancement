@@ -1,5 +1,5 @@
 """
-1f_ingest_wind_xlsx.py — Ingest Wind platform XLSX exports into prices.parquet
+1f_ingest_wind_xlsx.py - Ingest Wind platform XLSX exports into prices.parquet
 ==============================================================================
 The Wind platform can export historical OHLCV data for any S&P 500
 constituent (including delisted stocks). This script reads all XLSX files
@@ -53,7 +53,7 @@ def parse_wind_xlsx(path: Path) -> tuple[str, pd.DataFrame] | None:
     Parse a single Wind-exported XLSX file.
 
     Returns (ticker_str, df) where df has columns:
-        date, open, high, low, close  (volume set to NaN — Wind doesn't export it)
+        date, open, high, low, close  (volume set to NaN - Wind doesn't export it)
     Returns None if parsing fails.
     """
     try:
@@ -211,13 +211,13 @@ def main():
             existing = prices[prices["ticker"] == ticker]["date"]
             new_dates = df[~df["date"].isin(existing)]
             if len(new_dates) == 0:
-                print(f"  Already fully covered — skipping")
+                print(f"  Already fully covered - skipping")
                 continue
             else:
                 print(f"  Adding {len(new_dates)} new rows (extending existing data)")
                 df = new_dates
         else:
-            print(f"  New ticker — adding all {n_rows} rows")
+            print(f"  New ticker - adding all {n_rows} rows")
 
         new_dfs.append(df)
         ok_list.append(ticker)
@@ -270,7 +270,7 @@ def main():
             if tk in log_df.index:
                 log_df.loc[tk, "status"] = "ok_wind"
             else:
-                # New ticker not in log — add it
+                # New ticker not in log - add it
                 log_df.loc[tk] = {"status": "ok_wind"}
         log_df = log_df.reset_index()
         log_df.to_csv(TICKER_LOG, index=False)

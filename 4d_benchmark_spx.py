@@ -10,7 +10,7 @@ Strategies benchmarked:
   - FT-Transformer Long-Short
   - CS Transformer Long-Only
   - CS Transformer Long-Short
-  - LGBM + PCA-RP (experimental — known beta issue)
+  - LGBM + PCA-RP (experimental - known beta issue)
 
 Outputs:
   - data/benchmark_comparison.csv
@@ -34,7 +34,7 @@ STRATEGIES = [
     ("Transformer Long-Short",         "bt_transformer_ls.csv",     "ls_ret",     ""),
     ("CS Transformer Long-Only",       "bt_cs_transformer.csv",     "port_ret",   ""),
     ("CS Transformer Long-Short",      "bt_cs_transformer_ls.csv",  "ls_ret",     ""),
-    ("LGBM + PCA-RP (experimental)",   "bt_monthly_pca_rp.csv",    "port_ret_m", "⚠ experimental — high vol"),
+    ("LGBM + PCA-RP (experimental)",   "bt_monthly_pca_rp.csv",    "port_ret_m", "⚠ experimental - high vol"),
 ]
 
 
@@ -83,7 +83,7 @@ def load_strategy(filename: str, ret_col: str) -> pd.Series | None:
     if not path.exists():
         return None
     df = pd.read_csv(path)
-    # normalise date column — first column is always date
+    # normalise date column - first column is always date
     df["_date"] = pd.to_datetime(df.iloc[:, 0])
     df["_date"] = df["_date"].dt.to_period("M").dt.to_timestamp("M")
     df = df.sort_values("_date").set_index("_date")
@@ -140,7 +140,7 @@ def main():
             series_map[label] = (s, note)
             all_starts.append(s.index.min())
         else:
-            print(f"Skipping '{label}' — {filename} not found")
+            print(f"Skipping '{label}' - {filename} not found")
 
     if not all_starts:
         print("No strategy files found. Run scripts 2, 2b, 3 first.")

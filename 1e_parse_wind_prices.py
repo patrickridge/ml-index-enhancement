@@ -1,5 +1,5 @@
 """
-1e_parse_wind_prices.py — Parse Wind Missing Data & Merge into prices.parquet
+1e_parse_wind_prices.py - Parse Wind Missing Data & Merge into prices.parquet
 ==============================================================================
 Parses the Missing data.xlsx file (historical S&P 500 constituents with
 OHLCV data from Wind) and merges valid tickers into data/prices.parquet.
@@ -9,7 +9,7 @@ that survived to be in the S&P 500 in 2024. The xlsx adds ~179 tickers that
 were constituents in earlier years but have since been removed.
 
 Excel structure (per ticker sheet):
-  Rows 0-5  : Chinese/English header rows — skip
+  Rows 0-5  : Chinese/English header rows - skip
   Row 6+    : Daily OHLCV data
   Column 0  : Date
   Column 1  : Open
@@ -19,14 +19,14 @@ Excel structure (per ticker sheet):
   Column 5  : Volume
 
 Excluded tickers:
-  AW  — CBOT Dow Jones-UBS Commodity Index Futures (wrong asset class)
-  ABC  — Italian company "CIA DELLA RUOTA" (wrong geography)
+  AW  - CBOT Dow Jones-UBS Commodity Index Futures (wrong asset class)
+  ABC  - Italian company "CIA DELLA RUOTA" (wrong geography)
 
 Run:
   python 1e_parse_wind_prices.py
 
 Input:
-  $DATA_XLSX (env var) — defaults to ~/Downloads/Missing data.xlsx
+  $DATA_XLSX (env var) - defaults to ~/Downloads/Missing data.xlsx
   data/prices.parquet
 
 Output:
@@ -110,7 +110,7 @@ def parse_ticker_sheet(xl: pd.ExcelFile, sheet: str) -> pd.DataFrame | None:
 
 def main():
     print("=" * 65)
-    print("1e_parse_wind_prices.py — Parse Wind OHLCV & Merge")
+    print("1e_parse_wind_prices.py - Parse Wind OHLCV & Merge")
     print("=" * 65)
 
     if not XLSX_PATH.exists():
@@ -129,7 +129,7 @@ def main():
     else:
         prices_existing  = pd.DataFrame()
         existing_tickers = set()
-        print("  prices.parquet not found — will create fresh.")
+        print("  prices.parquet not found - will create fresh.")
 
     # ── Open Excel ────────────────────────────────────────────────────────────
     print(f"\nOpening {XLSX_PATH.name} ...")
@@ -147,7 +147,7 @@ def main():
 
     for i, sheet in enumerate(ticker_sheets, 1):
         if i % 25 == 0 or i == 1:
-            print(f"  Processing {i}/{len(ticker_sheets)} — {sheet} ...")
+            print(f"  Processing {i}/{len(ticker_sheets)} - {sheet} ...")
 
         if sheet in existing_tickers:
             log_rows.append({"ticker": sheet, "status": "already_in_prices",
@@ -218,11 +218,11 @@ def main():
               + (" ..." if len(added_tickers) > 20 else ""))
 
     print("\nNext steps:")
-    print("  1. python 1f_build_panel.py         — rebuild panel with new tickers")
-    print("  2. python 1g_feature_engineering.py  — recompute all factors")
-    print("  3. python 2a_factor_analysis.py      — re-run IC selection")
-    print("  4. [Kaggle] 3d_cs_transformer_kaggle.py — retrain model")
-    print("  5. python 5c_walk_forward.py         — re-run walk-forward backtest")
+    print("  1. python 1f_build_panel.py         - rebuild panel with new tickers")
+    print("  2. python 1g_feature_engineering.py  - recompute all factors")
+    print("  3. python 2a_factor_analysis.py      - re-run IC selection")
+    print("  4. [Kaggle] 3d_cs_transformer_kaggle.py - retrain model")
+    print("  5. python 5c_walk_forward.py         - re-run walk-forward backtest")
     print("\nDone.")
 
 

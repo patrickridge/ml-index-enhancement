@@ -1,5 +1,5 @@
 """
-2b_ic_decay_all.py — IC Decay Grid for ALL Factors
+2b_ic_decay_all.py - IC Decay Grid for ALL Factors
 ===================================================
 Generates a grid plot showing IC decay curves (0-60 months) for every factor.
 Used for meeting review to visually identify short-term vs long-term factors.
@@ -115,7 +115,7 @@ for idx, fac in enumerate(feat_cols):
 for idx in range(n_factors, len(axes)):
     axes[idx].set_visible(False)
 
-fig.suptitle(f"IC Decay (0–{MAX_IC_DECAY_LAGS} months) — All {n_factors} Factors\n"
+fig.suptitle(f"IC Decay (0–{MAX_IC_DECAY_LAGS} months) - All {n_factors} Factors\n"
              f"Blue = positive IC at lag 0, Red = contrarian signal",
              fontsize=11, y=1.01)
 plt.tight_layout()

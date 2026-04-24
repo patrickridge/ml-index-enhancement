@@ -111,7 +111,7 @@ def train_autoencoder(
         import torch.nn as nn
         from torch.utils.data import DataLoader, TensorDataset
     except ImportError:
-        print("  PyTorch not available — using PCA fallback for latent features")
+        print("  PyTorch not available - using PCA fallback for latent features")
         return _pca_fallback(X_train, latent_dim)
 
     torch.manual_seed(seed)
@@ -228,7 +228,7 @@ def autoencoder_screen(
     X, meta = build_rolling_windows(prices, window=window, features=features)
 
     if len(X) == 0:
-        print("  No valid windows — skipping autoencoder")
+        print("  No valid windows - skipping autoencoder")
         return pd.DataFrame(), None
 
     print(f"  Windows: {X.shape[0]} samples × {X.shape[1]} features")

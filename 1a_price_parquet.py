@@ -1,5 +1,5 @@
 """
-1a_price_parquet.py — Parse the legacy Wind OHLC workbook into prices.parquet.
+1a_price_parquet.py - Parse the legacy Wind OHLC workbook into prices.parquet.
 
 The original data.xlsx is a wide sheet: each ticker occupies a block of
 columns separated by empty columns. We detect the column blocks, parse a
@@ -7,9 +7,9 @@ columns separated by empty columns. We detect the column blocks, parse a
 long-format parquet.
 
 Inputs:
-  data/data.xlsx          — raw Wind export (deprecated; historical only)
+  data/data.xlsx          - raw Wind export (deprecated; historical only)
 Outputs:
-  data/prices.parquet     — long-format OHLC panel used by every later stage
+  data/prices.parquet     - long-format OHLC panel used by every later stage
 """
 
 import pandas as pd

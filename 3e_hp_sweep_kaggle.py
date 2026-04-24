@@ -1,5 +1,5 @@
 """
-3e_hp_sweep_kaggle.py — GPU-ready sweep over CS-Transformer variants
+3e_hp_sweep_kaggle.py - GPU-ready sweep over CS-Transformer variants
 ====================================================================
 Kaggle-standalone counterpart of 3e_hp_sweep.py. Inlines the same model / RL
 code as 3d_cs_transformer_kaggle.py, then runs a fixed list of config variants
@@ -39,7 +39,7 @@ from scipy import stats as sp_stats
 _t0 = _time.time()
 
 # ══════════════════════════════════════════════════════════════════════
-# INLINED CONFIG (mirrors config.py — edit here for Kaggle runs)
+# INLINED CONFIG (mirrors config.py - edit here for Kaggle runs)
 # ══════════════════════════════════════════════════════════════════════
 
 # ── Paths ─────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ TRANSFORMER_CS_PARAMS = dict(
     epochs=150, patience=20, max_stocks=520,
     l1_lambda=1e-6,
     l2_lambda=1e-6,
-    # FiLM disabled for first-pass retrain — re-enable once base model converges
+    # FiLM disabled for first-pass retrain - re-enable once base model converges
     use_macro_film=False,
     d_macro=64,
     use_corr_bias=False,
@@ -163,7 +163,7 @@ class FeatureTokenizer(nn.Module):
     Per-feature linear projection: each scalar → d_model-dim embedding.
     Separate weights per feature (same as in FTTransformer).
 
-    Built-in L1/L2 penalty on per-feature weight norms — lets the model
+    Built-in L1/L2 penalty on per-feature weight norms - lets the model
     learn to zero out useless features instead of manual pre-filtering.
     """
     def __init__(self, n_features: int, d_model: int):
@@ -185,7 +185,7 @@ class FeatureTokenizer(nn.Module):
 
         Returns scalar penalty to add to the loss.
         """
-        # Per-feature norm: (n_features,) — L2 norm of each feature's embedding
+        # Per-feature norm: (n_features,) - L2 norm of each feature's embedding
         feat_norms = self.weight.norm(dim=1)  # (n_features,)
         l1_penalty = l1_lambda * feat_norms.sum()
         l2_penalty = l2_lambda * (feat_norms ** 2).sum()
@@ -226,7 +226,7 @@ class MacroFiLMLayer(nn.Module):
     Given macro embedding and per-stock feature tokens, produces per-feature
     (gamma, beta) and modulates: tokens_out = gamma * tokens + beta.
 
-    This creates implicit n_features × n_macro interactions — the model learns
+    This creates implicit n_features × n_macro interactions - the model learns
     which factors to trust/distrust under each macro regime.
 
     Identity-initialized (gamma=1, beta=0) so pre-trained weights still work.
@@ -303,7 +303,7 @@ class CrossSectionalTransformer(nn.Module):
     Two-stage cross-sectional transformer for monthly stock ranking.
 
     Stage 1 (feature attention):
-      - Input: (MAX_N, n_features) — all stocks in a month (padded)
+      - Input: (MAX_N, n_features) - all stocks in a month (padded)
       - FeatureTokenizer → (MAX_N, n_features, d_model)
       - Prepend CLS_S1 → (MAX_N, n_features+1, d_model)
       - TransformerEncoder over feature dim → (MAX_N, n_features+1, d_model)
@@ -386,17 +386,17 @@ class CrossSectionalTransformer(nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor,            # (MAX_N, n_features) — stock features only
-        padding_mask: torch.Tensor,  # (MAX_N,) bool — True = padded/invalid stock
-        x_macro: torch.Tensor = None,  # (n_macro,) — macro features (one per month)
-        corr_matrix: torch.Tensor = None,  # (F, F) — factor correlation matrix
+        x: torch.Tensor,            # (MAX_N, n_features) - stock features only
+        padding_mask: torch.Tensor,  # (MAX_N,) bool - True = padded/invalid stock
+        x_macro: torch.Tensor = None,  # (n_macro,) - macro features (one per month)
+        corr_matrix: torch.Tensor = None,  # (F, F) - factor correlation matrix
     ) -> torch.Tensor:              # (MAX_N,) scores
         """
-        x:            (MAX_N, F)  — stock feature matrix (padded)
-        padding_mask: (MAX_N,)    — True for padded positions
-        x_macro:      (n_macro,)  — macro features (same for all stocks in month)
-        corr_matrix:  (F, F)      — Spearman correlation matrix of stock features
-        Returns:      (MAX_N,)    — scores; caller masks out padded positions
+        x:            (MAX_N, F)  - stock feature matrix (padded)
+        padding_mask: (MAX_N,)    - True for padded positions
+        x_macro:      (n_macro,)  - macro features (same for all stocks in month)
+        corr_matrix:  (F, F)      - Spearman correlation matrix of stock features
+        Returns:      (MAX_N,)    - scores; caller masks out padded positions
         """
         MAX_N = x.shape[0]
 
@@ -420,7 +420,7 @@ class CrossSectionalTransformer(nn.Module):
         else:
             out_s1 = self.transformer_s1(tokens)             # (MAX_N, F+1, d)
 
-        stock_emb = out_s1[:, 0, :]                          # (MAX_N, d) — CLS output
+        stock_emb = out_s1[:, 0, :]                          # (MAX_N, d) - CLS output
 
         # ── Stage 2: cross-stock attention ────────────────────────────────────
         stock_seq = stock_emb.unsqueeze(0)                   # (1, MAX_N, d)
@@ -441,7 +441,7 @@ class CrossSectionalTransformer(nn.Module):
     def forward_enriched(
         self,
         x: torch.Tensor,            # (MAX_N, n_features)
-        padding_mask: torch.Tensor,  # (MAX_N,) bool — True = padded
+        padding_mask: torch.Tensor,  # (MAX_N,) bool - True = padded
         x_macro: torch.Tensor = None,
         corr_matrix: torch.Tensor = None,
     ) -> tuple:
@@ -731,7 +731,7 @@ def portfolio_reward(
         top_k = max(1, n // 4)
         bottom_k = max(1, n // 4)
 
-    # Sort scores descending — gradient flows through sorted_idx
+    # Sort scores descending - gradient flows through sorted_idx
     sorted_scores, sorted_idx = scores.sort(descending=True)
     sorted_returns = returns[sorted_idx]
 
@@ -840,7 +840,7 @@ def _compute_val_rank_ic(
 ) -> float:
     """
     Validation metric: mean Spearman rank IC across validation months.
-    Uses rank correlation between predicted scores and realized returns —
+    Uses rank correlation between predicted scores and realized returns -
     no return leakage since this is a read-only evaluation.
     """
     model.eval()
@@ -1125,7 +1125,7 @@ def main():
         print(f"Zombie filter: {pre_rows:,} → {len(panel):,} rows "
               f"({pre_rows - len(panel):,} non-SPX pairs dropped)")
     else:
-        print(f"[WARN] {spx_weights_path} not found — skipping zombie filter")
+        print(f"[WARN] {spx_weights_path} not found - skipping zombie filter")
 
     # ── Separate stock vs macro features ─────────────────────────────────────
     exclude   = {"date", "ticker", "fwd_ret_1m"}
@@ -1244,7 +1244,7 @@ def main():
 
     # ── Print results ─────────────────────────────────────────────────────────
     print("\n" + "=" * 65)
-    print("CROSS-SECTIONAL TRANSFORMER — TEST PERIOD RESULTS")
+    print("CROSS-SECTIONAL TRANSFORMER - TEST PERIOD RESULTS")
     print("=" * 65)
     print_stats(f"Long-Only Top{TOP_N} (equal weight)", lo_rets["port_ret"])
     print_stats(f"Long-Short top/bot {int(LONG_FRAC*100)}%",  ls_rets["ls_ret"])
@@ -1281,7 +1281,7 @@ def main():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# HYPERPARAMETER SWEEP — KAGGLE VERSION
+# HYPERPARAMETER SWEEP - KAGGLE VERSION
 # ═══════════════════════════════════════════════════════════════════════════════
 
 SWEEP_VARIANTS = [
@@ -1426,7 +1426,7 @@ def run_variant(variant_name, overrides, shared):
 
 def sweep_main():
     print("=" * 74)
-    print(f"HYPERPARAMETER SWEEP — {len(SWEEP_VARIANTS)} variants")
+    print(f"HYPERPARAMETER SWEEP - {len(SWEEP_VARIANTS)} variants")
     print(f"Device: {DEVICE}")
     print("=" * 74)
 
@@ -1447,7 +1447,7 @@ def sweep_main():
             if "status" in df.columns and (df["status"] == "ok").any() else df
 
     print("\n" + "=" * 74)
-    print(f"SWEEP DONE — {total_min:.1f} min total")
+    print(f"SWEEP DONE - {total_min:.1f} min total")
     print("=" * 74)
     if not ok.empty:
         for _, r in ok.iterrows():

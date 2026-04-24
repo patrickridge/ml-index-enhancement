@@ -1,12 +1,12 @@
 """
-1n_fetch_insider_trades.py — SEC EDGAR Form 4 insider filings
+1n_fetch_insider_trades.py - SEC EDGAR Form 4 insider filings
 ===============================================================
 For each S&P 500 ticker, looks up the SEC CIK from the official
 ticker-to-CIK mapping, then pulls the filing history from the EDGAR
 submissions API and counts Form 4 (insider transaction) filings per
 month.
 
-The output is filing-frequency only, not buy/sell dollars — the EDGAR
+The output is filing-frequency only, not buy/sell dollars - the EDGAR
 submissions endpoint doesn't return transaction amounts, just form
 metadata. Frequency has been used as a stand-in in the literature
 (more filings roughly = more insider activity around a name).
@@ -20,9 +20,9 @@ Features produced (per stock per month)
 
 References
 ----------
-  Lakonishok & Lee (2001) — insider purchases predict abnormal returns
-  Jeng, Metrick & Zeckhauser (2003) — insider portfolio beats market
-  Seyhun (1998) — aggregate insider trading predicts market returns
+  Lakonishok & Lee (2001) - insider purchases predict abnormal returns
+  Jeng, Metrick & Zeckhauser (2003) - insider portfolio beats market
+  Seyhun (1998) - aggregate insider trading predicts market returns
 
 Output: data/insider_trades.parquet.
 Rate limits: SEC allows 10 req/sec with a proper User-Agent.
@@ -65,7 +65,7 @@ except ImportError:
 #   export SEC_USER_AGENT="Your Name your_email@example.com"
 _sec_ua = os.environ.get("SEC_USER_AGENT")
 if not _sec_ua:
-    print("[WARN] SEC_USER_AGENT not set — SEC EDGAR may return 403.")
+    print("[WARN] SEC_USER_AGENT not set - SEC EDGAR may return 403.")
     print("       Set it with: export SEC_USER_AGENT='Your Name your_email@example.com'")
     _sec_ua = "Anonymous User anonymous@example.com"
 
@@ -93,7 +93,7 @@ if _ticker_src:
     print(f"Loaded {len(tickers)} tickers from {_ticker_src}")
     del _df
 else:
-    print("[WARN] No panel/prices parquet found — cannot get ticker list")
+    print("[WARN] No panel/prices parquet found - cannot get ticker list")
     tickers = []
 
 
@@ -195,7 +195,7 @@ def fetch_insider_filings_bulk() -> pd.DataFrame:
     print(f"  Total Form 4 filings found: {len(all_records):,}")
 
     if not all_records:
-        print("[WARN] No insider filings retrieved — returning empty DataFrame")
+        print("[WARN] No insider filings retrieved - returning empty DataFrame")
         return pd.DataFrame(columns=["ticker", "filing_date", "form_type"])
 
     return pd.DataFrame(all_records)
@@ -267,14 +267,14 @@ def compute_insider_features(filings: pd.DataFrame) -> pd.DataFrame:
 
 if __name__ == "__main__":
     if not tickers:
-        print("\n[ERROR] No tickers available — cannot proceed")
+        print("\n[ERROR] No tickers available - cannot proceed")
         raise SystemExit(1)
 
     filings = fetch_insider_filings_bulk()
     features = compute_insider_features(filings)
 
     if features.empty:
-        print("\n[WARN] No insider features computed — creating empty parquet")
+        print("\n[WARN] No insider features computed - creating empty parquet")
         features = pd.DataFrame(columns=[
             "ticker", "date", "insider_filings_30d", "insider_filings_90d",
             "insider_activity_30d", "insider_activity_90d",

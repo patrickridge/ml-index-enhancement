@@ -1,4 +1,4 @@
-# Literature Factor Shortlist — 2020–2025
+# Literature Factor Shortlist - 2020–2025
 
 **Date:** 2026-04-06
 **Scope:** JF, JFE, RFS + top empirical finance, 2020–2025
@@ -6,13 +6,13 @@
 
 ---
 
-## Tier 1 — Implementable with Current Data (OHLCV + Fundamentals)
+## Tier 1 - Implementable with Current Data (OHLCV + Fundamentals)
 
 ### 1. Frog-in-the-Pan Momentum (Da, Gurun & Warachka, JF 2014 / extended 2021)
 - **Signal:** Continuous information = sign(ret_6m) × fraction of same-sign daily returns. High FIP → underreaction → momentum continuation.
 - **Data:** OHLCV only
 - **Feasibility:** ✅ Already implemented as `cand_frog_in_pan_6m` in candidate_factory.py
-- **Covered by existing?** No — `ret_consistency_12m` counts positive days but doesn't weight by direction
+- **Covered by existing?** No - `ret_consistency_12m` counts positive days but doesn't weight by direction
 - **Novelty:** Medium (well-known but not in current library)
 
 ### 2. Short-Term Reversal Decomposition (Avramov, Chordia & Goyal, RFS 2006 / Nagel 2012 update)
@@ -26,28 +26,28 @@
 - **Signal:** MAX = highest daily return in past month. High-MAX stocks underperform (lottery demand).
 - **Data:** OHLCV only
 - **Feasibility:** ✅ Already in library as `max_ret_21d` (Cat 16)
-- **Covered by existing?** Yes — skip
+- **Covered by existing?** Yes - skip
 - **Novelty:** N/A (already implemented)
 
 ### 4. Corwin-Schultz Spread (Corwin & Schultz, JF 2012)
 - **Signal:** Bid-ask spread estimated from daily high-low prices. Higher spread = less liquid = higher expected return.
 - **Data:** OHLCV only
 - **Feasibility:** ✅ Implemented as `cand_corwin_schultz_21d`
-- **Covered by existing?** `amihud_illiq_21d` is a different liquidity proxy — complementary, not duplicate
+- **Covered by existing?** `amihud_illiq_21d` is a different liquidity proxy - complementary, not duplicate
 - **Novelty:** High (not widely used in ML pipelines)
 
 ### 5. Realized Skewness (Amaya, Christoffersen, Jacobs & Vasquez, JFE 2015 / Bali et al. 2020)
 - **Signal:** Stocks with positive realized skewness earn lower returns (lottery preference). Monthly cross-sectional.
 - **Data:** OHLCV only
 - **Feasibility:** ✅ Implemented as `cand_realized_skew_21d/63d`
-- **Covered by existing?** `skew_60d` exists — `cand_realized_skew_63d` likely duplicate, but 21d version is new
+- **Covered by existing?** `skew_60d` exists - `cand_realized_skew_63d` likely duplicate, but 21d version is new
 - **Novelty:** Medium (21d horizon is new information)
 
 ### 6. Trend Factor (Han, Zhou & Zhu, JFE 2016 / updated 2022)
 - **Signal:** Weighted combination of MA signals across horizons. "Which MA crossovers matter most?" Weights estimated IS.
 - **Data:** OHLCV only
 - **Feasibility:** ✅ Could construct from existing price_to_ma* columns
-- **Covered by existing?** Partially — individual MAs exist but not the composite
+- **Covered by existing?** Partially - individual MAs exist but not the composite
 - **Novelty:** Medium (composite adds value over individual MAs)
 - **Implementation:** `cand_trend_composite = Σ w_k × price_to_ma_k` where weights from IS IC
 
@@ -62,7 +62,7 @@
 - **Signal:** Expected shortfall (mean of worst-decile returns) predicts cross-section. More informative than VaR alone.
 - **Data:** OHLCV only
 - **Feasibility:** ✅ Implemented as `cand_expected_shortfall_mom`
-- **Covered by existing?** `cvar_95_21d` is over 21d — 126d horizon is different
+- **Covered by existing?** `cvar_95_21d` is over 21d - 126d horizon is different
 - **Novelty:** Medium-High
 
 ### 9. Kyle's Lambda from OHLCV (Hasbrouck, JF 2009 / Abdi & Ranaldo, JFE 2017)
@@ -74,16 +74,16 @@
 
 ---
 
-## Tier 2 — Partially Implementable (Requires Proxy or Approximation)
+## Tier 2 - Partially Implementable (Requires Proxy or Approximation)
 
 ### 10. Earnings Announcement Premium (Barber, De George, Lehavy & Trueman, JFE 2013 / Savor & Wilson 2016)
 - **Signal:** Stocks earn higher returns around scheduled earnings announcements. Tradeable if you know the calendar.
-- **Data:** Earnings calendar (not in repo) — proxy via largest gap days
+- **Data:** Earnings calendar (not in repo) - proxy via largest gap days
 - **Feasibility:** ⚠️ Proxied by `earnings_gap` and `post_earnings_drift` (Cat 17)
 - **Novelty:** Medium (proxy is rough)
 
 ### 11. Anomaly Momentum (Huang, Li, Wang & Zhou, JFE 2023)
-- **Signal:** Returns to anomalies are persistent — use past 12m anomaly return as predictor.
+- **Signal:** Returns to anomalies are persistent - use past 12m anomaly return as predictor.
 - **Data:** Requires multiple anomaly returns (could use our factor IC history)
 - **Feasibility:** ⚠️ Could proxy via rolling IC of individual factors
 - **Implementation:** Track which factors had high IC last 12 months, overweight them
@@ -94,12 +94,12 @@
 - **Signal:** Stocks with high downside beta earn higher returns. Up-down beta asymmetry.
 - **Data:** OHLCV + SPX
 - **Feasibility:** ✅ Already implemented as `up_beta_63d`, `down_beta_63d`, `up_down_beta_spread`
-- **Covered by existing?** Yes — skip
+- **Covered by existing?** Yes - skip
 - **Novelty:** N/A
 
 ---
 
-## Tier 3 — Requires External Data (Not Currently Feasible)
+## Tier 3 - Requires External Data (Not Currently Feasible)
 
 ### 13. News Sentiment (Tetlock, JF 2007 / Ke, Kelly & Xiu, RFS 2024)
 - **Signal:** NLP-derived sentiment from news articles. Negative sentiment predicts negative returns.

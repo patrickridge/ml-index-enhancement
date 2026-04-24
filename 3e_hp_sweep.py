@@ -1,24 +1,24 @@
 """
-3e_hp_sweep.py — Hyperparameter sweep for the CS-Transformer
+3e_hp_sweep.py - Hyperparameter sweep for the CS-Transformer
 =============================================================
 Runs the full training pipeline across N config variants and records the
 test-period performance of each. Result: a single CSV you can use to
 pick the best config before doing a proper Kaggle retrain.
 
 Variants tested (edit SWEEP below to add/remove):
-  1. baseline       — current config
-  2. deeper_3x3     — 3 layers in each stage (more capacity)
-  3. wider_192      — d_model=192 (more capacity, less depth)
-  4. dropout_20     — 0.2 dropout (more regularisation)
-  5. ic_loss        — IC loss instead of MSE
-  6. ensemble_3     — 3-seed ensemble (averaged predictions)
+  1. baseline       - current config
+  2. deeper_3x3     - 3 layers in each stage (more capacity)
+  3. wider_192      - d_model=192 (more capacity, less depth)
+  4. dropout_20     - 0.2 dropout (more regularisation)
+  5. ic_loss        - IC loss instead of MSE
+  6. ensemble_3     - 3-seed ensemble (averaged predictions)
 
 How to run
 ----------
-Locally (CPU, slow — each variant ~30-90 min):
+Locally (CPU, slow - each variant ~30-90 min):
     python 3e_hp_sweep.py
 
-On Kaggle (GPU, fast — each variant ~15-25 min):
+On Kaggle (GPU, fast - each variant ~15-25 min):
     Paste the whole file into a code cell. It'll need access to 3c_cs_transformer.py
     which isn't directly possible on Kaggle. See the KAGGLE note below.
 
@@ -68,7 +68,7 @@ long_only_ret                = cs_mod.long_only_ret
 long_short_ret               = cs_mod.long_short_ret
 perf_stats                   = cs_mod.perf_stats
 
-# Config (mutable — we'll override per variant)
+# Config (mutable - we'll override per variant)
 TRANSFORMER_CS_PARAMS = cs_mod.TRANSFORMER_CS_PARAMS
 RL_FINETUNE_PARAMS    = cs_mod.RL_FINETUNE_PARAMS
 
@@ -174,7 +174,7 @@ def run_one_variant(variant_name, overrides, panel, stock_feat_cols, macro_cols,
             "runtime_min": runtime / 60,
             "status": f"error: {type(e).__name__}: {e}",
         }
-        print(f"\n  [✗] {variant_name} failed after {runtime/60:.1f} min — {e}")
+        print(f"\n  [✗] {variant_name} failed after {runtime/60:.1f} min - {e}")
 
     # Restore config
     TRANSFORMER_CS_PARAMS.clear()
@@ -185,7 +185,7 @@ def run_one_variant(variant_name, overrides, panel, stock_feat_cols, macro_cols,
 
 def main():
     print("=" * 74)
-    print("HYPERPARAMETER SWEEP — CS-Transformer")
+    print("HYPERPARAMETER SWEEP - CS-Transformer")
     print(f"Device: {DEVICE}")
     print(f"Variants: {len(SWEEP)}")
     print("=" * 74)
@@ -256,7 +256,7 @@ def main():
         ok = ok.sort_values("lo_sharpe", ascending=False)
 
     print("\n" + "=" * 74)
-    print(f"SWEEP COMPLETE — {total_min:.1f} min total ({len(results)} variants)")
+    print(f"SWEEP COMPLETE - {total_min:.1f} min total ({len(results)} variants)")
     print("=" * 74)
     if not ok.empty:
         print(f"{'Variant':<16}{'LO Ann':>9}{'LO Sharpe':>10}"

@@ -1,5 +1,5 @@
 """
-5c_walk_forward.py — Expanding-window walk-forward test for the SAC tilt agent.
+5c_walk_forward.py - Expanding-window walk-forward test for the SAC tilt agent.
 
 The single-split 2010-2022 / 2023-2025 backtest has two problems: only 35 test
 months, all in a bull rally; and the IC-optimised factor weights from
@@ -104,7 +104,7 @@ if HAS_TORCH:
 
 
 # =============================================================================
-# FACTOR COMBO SCORES — recomputed per fold from training data only
+# FACTOR COMBO SCORES - recomputed per fold from training data only
 # =============================================================================
 
 def compute_fold_weights(panel_train, factor_names, signs):
@@ -206,7 +206,7 @@ def simulate_month(scores_month, weights_month, alpha):
 
 
 # =============================================================================
-# BUILD EPISODE TABLE — with training-period normalisation
+# BUILD EPISODE TABLE - with training-period normalisation
 # =============================================================================
 
 def build_episodes(scores, weights, ref_alpha=0.01,
@@ -533,7 +533,7 @@ def ie_stats(bt):
 
 def plot_results(all_rl, all_fixed, fold_summaries):
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle("Walk-Forward RL Backtest — No Data Leakage\n"
+    fig.suptitle("Walk-Forward RL Backtest - No Data Leakage\n"
                  "(5 expanding folds, factor weights recomputed per fold, "
                  "SAC trained fresh per fold)",
                  fontsize=12, fontweight="bold")
@@ -630,7 +630,7 @@ def plot_results(all_rl, all_fixed, fold_summaries):
 
 def main():
     print("=" * 70)
-    print("5c_walk_forward.py — Walk-Forward RL Backtest (No Data Leakage)")
+    print("5c_walk_forward.py - Walk-Forward RL Backtest (No Data Leakage)")
     print("=" * 70)
     print(f"\nFolds: {len(FOLDS)}")
     for te, ts, tend, lbl in FOLDS:
@@ -661,7 +661,7 @@ def main():
     # ── Walk-forward loop ──────────────────────────────────────────────────────
     for fold_idx, (train_end, test_start, test_end, fold_label) in enumerate(FOLDS):
         print(f"\n{'='*70}")
-        print(f"FOLD {fold_idx+1}/5 — Test: {fold_label}")
+        print(f"FOLD {fold_idx+1}/5 - Test: {fold_label}")
         print(f"  Train: {TRAIN_START_GLOBAL[:4]}–{train_end[:4]}"
               f"  |  Test: {test_start[:10]} → {test_end[:10]}")
         print("=" * 70)
@@ -703,7 +703,7 @@ def main():
         print(f"  Episodes: {len(ep_train)} train, {len(ep_test)} test")
 
         if len(ep_train) < 24:
-            print(f"  WARNING: only {len(ep_train)} training months — skipping fold.")
+            print(f"  WARNING: only {len(ep_train)} training months - skipping fold.")
             continue
 
         # ── Step 4: Train SAC from scratch on training data ───────────────────
@@ -716,7 +716,7 @@ def main():
             reward_hist = train_fold(agent, ep_train)
             print(f"  Training complete. Final avg reward: {reward_hist[-1]:+.4f}")
         else:
-            print(f"  PyTorch not available — using rule-based fallback.")
+            print(f"  PyTorch not available - using rule-based fallback.")
             agent = None
 
         # ── Step 5: Evaluate on test period ───────────────────────────────────
@@ -834,7 +834,7 @@ def main():
     plot_results(all_rl, all_fixed, fold_summaries)
 
     print("\nDone.")
-    print(f"\nNOTE: These are fully out-of-sample results — factor weights,")
+    print(f"\nNOTE: These are fully out-of-sample results - factor weights,")
     print(f"state normalisation, and RL policy were all trained on past data only.")
     print(f"No information from the test period was used in any component.")
 

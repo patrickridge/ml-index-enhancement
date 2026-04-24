@@ -1,13 +1,13 @@
-# ML-Driven S&P 500 Index Enhancement — Strategy Overview
+# ML-Driven S&P 500 Index Enhancement - Strategy Overview
 
 > **Note:** this document was written around Phase 11 (43 surviving factors).
-> The current panel has ~270 features across 24 categories — see the root
+> The current panel has ~270 features across 24 categories - see the root
 > `README.md` for up-to-date counts and results. The methodology below is
 > still accurate; only the specific numbers are a historical snapshot.
 
 ## What Are We Trying to Do?
 
-Build a portfolio that tracks the S&P 500 closely but consistently beats it. Every month, we use machine learning to rank all ~500 stocks and tilt portfolio weights slightly toward the stocks expected to outperform. The goal is a high Information Ratio (IR) with low tracking error — generating steady alpha relative to the benchmark rather than making big concentrated bets.
+Build a portfolio that tracks the S&P 500 closely but consistently beats it. Every month, we use machine learning to rank all ~500 stocks and tilt portfolio weights slightly toward the stocks expected to outperform. The goal is a high Information Ratio (IR) with low tracking error - generating steady alpha relative to the benchmark rather than making big concentrated bets.
 
 ---
 
@@ -25,9 +25,9 @@ Build a portfolio that tracks the S&P 500 closely but consistently beats it. Eve
 
 All features start as raw price-derived signals and go through three processing steps:
 
-1. **Regime stability filter** — factor must show consistent sign across ≥ 3 of 4 market regimes (QE bull 2010–2019, COVID recovery 2020–2021, rate hike bear 2022, AI bull 2023+). 59 → 43 factors survive.
-2. **Sign normalisation** — contrarian factors (negative IC) are sign-flipped so higher always means better predicted return.
-3. **IC optimisation** — a PyTorch gradient descent pass finds the optimal weight for each factor by maximising mean Pearson IC over the training period (2010–2020). Train IC improved +197% vs static IC-decay weights.
+1. **Regime stability filter** - factor must show consistent sign across ≥ 3 of 4 market regimes (QE bull 2010–2019, COVID recovery 2020–2021, rate hike bear 2022, AI bull 2023+). 59 → 43 factors survive.
+2. **Sign normalisation** - contrarian factors (negative IC) are sign-flipped so higher always means better predicted return.
+3. **IC optimisation** - a PyTorch gradient descent pass finds the optimal weight for each factor by maximising mean Pearson IC over the training period (2010–2020). Train IC improved +197% vs static IC-decay weights.
 
 | Category | Example Factors | IC Direction |
 |----------|----------------|--------------|
@@ -37,7 +37,7 @@ All features start as raw price-derived signals and go through three processing 
 | Technical | `nearness_52w_low`, `macd_hist` | Positive (after flip) |
 | Mean reversion | `bollinger_pct`, `rsi_14`, `price_to_ma20` | Contrarian (sign-flipped) |
 
-All features are cross-sectionally z-scored within each month — a stock's absolute level doesn't matter, only its rank relative to the full universe that month. This makes signals stable across different market regimes.
+All features are cross-sectionally z-scored within each month - a stock's absolute level doesn't matter, only its rank relative to the full universe that month. This makes signals stable across different market regimes.
 
 ---
 
@@ -47,8 +47,8 @@ Before any factor is used, it must pass:
 
 **1. IC Analysis (Information Coefficient)**
 - IC = Pearson correlation between factor ranking and next-month return, computed each month
-- ICIR = mean(IC) / std(IC) — measures consistency. Best factors: `idio_vol_252d` ICIR +0.172, `vol_252d` ICIR +0.155
-- Both positive and contrarian factors kept — sign just tells you which direction to trade
+- ICIR = mean(IC) / std(IC) - measures consistency. Best factors: `idio_vol_252d` ICIR +0.172, `vol_252d` ICIR +0.155
+- Both positive and contrarian factors kept - sign just tells you which direction to trade
 
 **2. Quintile Test**
 - Sort all stocks by factor → split into 5 buckets (Q1 bottom 20%, Q5 top 20%)
@@ -64,14 +64,14 @@ Before any factor is used, it must pass:
 - Volatility factors persist 60+ months (structural tilt). Short-term momentum factors fade within 1–2 months.
 - Used to weight factors by signal longevity
 
-**5. Factor Redundancy Diagnostics** (`2f_factor_diagnostics.py`) — *most important for factor quality*
+**5. Factor Redundancy Diagnostics** (`2f_factor_diagnostics.py`) - *most important for factor quality*
 
 This is the core analysis that ensures our 43 factors are providing independent signals, not just measuring the same thing multiple ways. Three tests:
 
 **A. Spearman IC Correlation Matrix** → `data/diag_ic_corr_matrix.csv` + `figures/diag_ic_corr_heatmap.png`
 - Computes pairwise Spearman rank correlations between all 43 factors across the full panel
-- **Why Spearman not Pearson?** Spearman measures rank correlation — more robust to outliers and non-linear relationships between factors
-- **What we're checking:** factors with |corr| > 0.50 are measuring similar things. If `vol_252d` and `vol_126d` are 0.90 correlated, adding both doesn't improve the signal — it just double-counts the same information and adds noise to weight estimation
+- **Why Spearman not Pearson?** Spearman measures rank correlation - more robust to outliers and non-linear relationships between factors
+- **What we're checking:** factors with |corr| > 0.50 are measuring similar things. If `vol_252d` and `vol_126d` are 0.90 correlated, adding both doesn't improve the signal - it just double-counts the same information and adds noise to weight estimation
 - **Action:** pairs flagged in `data/diag_redundant_pairs.csv` → candidates for removal or orthogonalization
 
 **B. Random Matrix Theory (RMT) Eigenvalue Analysis** → `data/diag_rmt_eigenvalues.csv` + `figures/diag_rmt_corr_heatmap.png`
@@ -83,7 +83,7 @@ This is the core analysis that ensures our 43 factors are providing independent 
 
 **C. Variance Inflation Factor (VIF)** → `data/diag_vif.csv`
 - VIF_i = 1 / (1 − R²_i) where R²_i = how well you can predict factor i using all other 42 factors
-- **VIF > 10** → that factor is almost entirely explained by other factors — near-zero independent contribution
+- **VIF > 10** → that factor is almost entirely explained by other factors - near-zero independent contribution
 - **VIF = 1** → perfectly independent of all other factors
 - This is the most direct measure of multicollinearity: if `vol_252d` can be predicted with 99% accuracy from the other 42 factors, it adds nothing to the model
 
@@ -102,9 +102,9 @@ This is the core analysis that ensures our 43 factors are providing independent 
                               │ (24m) │   (35+ months)
 ```
 
-- **Factor analysis** runs only on training data (2010–2020) — factors are selected before seeing any test period data
-- **Model training** uses expanding window — every 12 months in the test period, the model retrains on all available history
-- **Test period (2023–2025)** is never seen during training, validation, or factor selection
+- **Factor analysis** runs only on training data (2010–2020) - factors are selected before seeing any test period data
+- **Model training** uses expanding window - every 12 months in the test period, the model retrains on all available history
+- **Test period (2023–2025)** is never seen during training, validation or factor selection
 
 ---
 
@@ -121,9 +121,9 @@ Month t:  [Stock 1 factors]  →
                ...
 ```
 
-**Why it outperforms:** It sees every stock relative to every other stock in the same month — directly learning cross-sectional ranking, which is exactly what index enhancement requires. LGBM and the FT-Transformer score stocks independently and miss this relative information.
+**Why it outperforms:** It sees every stock relative to every other stock in the same month - directly learning cross-sectional ranking, which is exactly what index enhancement requires. LGBM and the FT-Transformer score stocks independently and miss this relative information.
 
-**Key property:** Regime-stable — IR of 0.926 in risk-off periods and 2.227 in risk-on periods (consistent across both). Full period IR 1.850.
+**Key property:** Regime-stable - IR of 0.926 in risk-off periods and 2.227 in risk-on periods (consistent across both). Full period IR 1.850.
 
 ### FT-Transformer (Secondary Model)
 
@@ -131,7 +131,7 @@ Per-stock transformer that treats each of the 43 factors as a "token" and learns
 
 ### LightGBM (Baseline)
 
-Gradient-boosted decision trees — fast, interpretable via feature importance. Used as a baseline. Good ICIR properties but weaker at cross-sectional ranking.
+Gradient-boosted decision trees - fast, interpretable via feature importance. Used as a baseline. Good ICIR properties but weaker at cross-sectional ranking.
 
 ---
 
@@ -142,22 +142,22 @@ Gradient-boosted decision trees — fast, interpretable via feature importance. 
 The CS-Transformer predicts each stock's **next 1-month forward return** (`fwd_ret_1m`). It is trained with MSE loss against realised next-month returns, so the output score is a continuous prediction of relative performance over the coming calendar month. Higher score = predicted to outperform more over the next month.
 
 This means:
-- The signal is inherently **monthly frequency** — one prediction per stock per month-end
+- The signal is inherently **monthly frequency** - one prediction per stock per month-end
 - **Rebalancing frequency:** Monthly is optimal. The IC decay analysis shows factor signals persist for 1–3 months and decay toward zero beyond that. Rebalancing weekly would apply the same stale score four times per month, adding ~3× the transaction costs with zero additional signal. Biweekly or daily rebalancing would be strictly worse on a net-of-cost basis. Monthly rebalancing matches the signal refresh rate.
 - The signal ranks stocks **cross-sectionally** (relative to each other in that month), not in absolute return terms. A score of +0.8 means "predicted to be in the top decile this month", not "+0.8% return".
 
 Every month the portfolio is fully rebalanced using the following process:
 
-**Step 1 — Score every stock**
+**Step 1 - Score every stock**
 The ML model scores all ~490–500 active S&P 500 stocks. Higher score = predicted to outperform next month.
 
-**Step 2 — Rank and split into three groups**
+**Step 2 - Rank and split into three groups**
 Stocks are sorted by score and split into:
-- **Top 100** — the 100 highest-scoring stocks (predicted best performers)
-- **Middle ~300** — held at their normal S&P 500 benchmark weight, no change
-- **Bottom 100** — the 100 lowest-scoring stocks (predicted worst performers)
+- **Top 100** - the 100 highest-scoring stocks (predicted best performers)
+- **Middle ~300** - held at their normal S&P 500 benchmark weight, no change
+- **Bottom 100** - the 100 lowest-scoring stocks (predicted worst performers)
 
-**Step 3 — Apply tilt**
+**Step 3 - Apply tilt**
 Each stock's portfolio weight is nudged away from its S&P 500 benchmark weight by a small amount α:
 
 ```
@@ -168,7 +168,7 @@ Bottom 100 →  weight = S&P500 weight − α   (underweighted vs index)
 
 Weights are clipped at 0 (no shorting) and renormalised to sum to 1.
 
-**Step 4 — Measure performance**
+**Step 4 - Measure performance**
 Active return each month = our portfolio return − S&P 500 return.
 If we overweighted stocks that went up and underweighted stocks that went down, active return is positive.
 
@@ -195,7 +195,7 @@ score_i = sum(optimised_weight_j × z-scored_factor_j)  for each stock i
 | FT-Transformer | 0.428 |
 | **CS-Transformer** | **1.874** |
 
-The linear combination underperforms the index. The transformer goes from −0.047 → 1.874 — it is learning genuine non-linear cross-sectional patterns, not just repackaging the factor exposures.
+The linear combination underperforms the index. The transformer goes from −0.047 → 1.874 - it is learning genuine non-linear cross-sectional patterns, not just repackaging the factor exposures.
 
 ---
 
@@ -222,11 +222,11 @@ IR > 0.5 = good (top-quartile institutional fund managers typically hit ~0.3–0
 | FT-Transformer | 0.024 | 0.210 | −0.044 | No |
 | LGBM | 0.384 | 1.397 | 0.224 | No |
 
-CS-Transformer is the only model that generates consistent alpha regardless of market regime. FT-Transformer IR collapses to near-zero after retraining — confirms CS-T's cross-sectional architecture is the key differentiator.
+CS-Transformer is the only model that generates consistent alpha regardless of market regime. FT-Transformer IR collapses to near-zero after retraining - confirms CS-T's cross-sectional architecture is the key differentiator.
 
 ### RL Agent Results
 
-**Walk-Forward Backtest — 5 Folds, No Data Leakage (5c_walk_forward.py)**
+**Walk-Forward Backtest - 5 Folds, No Data Leakage (5c_walk_forward.py)**
 
 95 out-of-sample months across 2014–2025. Factor weights, state normalisation, and RL policy all retrained from scratch per fold using past data only.
 
@@ -240,23 +240,23 @@ CS-Transformer is the only model that generates consistent alpha regardless of m
 
 RL beats fixed alpha in 4/5 folds. Max drawdown cut nearly in half.
 
-**Algorithm Comparison — SAC vs PPO vs GRPO (5d_algorithm_comparison.py)**
+**Algorithm Comparison - SAC vs PPO vs GRPO (5d_algorithm_comparison.py)**
 
 Same 5-fold structure, three different DRL algorithms:
 
 | Algorithm | What It Does | IR |
 |-----------|-------------|-----|
-| **GRPO** | No critic — samples 4 alphas per state, ranks by reward. DeepSeek-R1 algorithm + KL penalty. | **0.875** |
+| **GRPO** | No critic - samples 4 alphas per state, ranks by reward. DeepSeek-R1 algorithm + KL penalty. | **0.875** |
 | PPO | On-policy clipped update with critic baseline | 0.870 |
 | SAC | Off-policy replay buffer, twin Q-critics, entropy regularisation | 0.788 |
 | Fixed α=1% | No RL | 0.276 |
 
 GRPO's critic-free group ranking is the best fit for small-data regimes (~100 training months). No value function = no estimation error.
 
-**DAPO (5e_dapo_agent.py) — ByteDance 2025**
+**DAPO (5e_dapo_agent.py) - ByteDance 2025**
 
 DAPO is the next evolution of GRPO with three improvements:
-1. **Clip-higher**: Asymmetric clipping — positive advantages allow larger policy updates (ε=0.28) vs negative (ε=0.20)
+1. **Clip-higher**: Asymmetric clipping - positive advantages allow larger policy updates (ε=0.28) vs negative (ε=0.20)
 2. **Dynamic sampling**: Hard market states (high reward variance) get up to 8 candidate alphas; easy states get 2
 3. **No KL penalty**: Clip-higher replaces the KL stability mechanism
 
@@ -267,9 +267,9 @@ DAPO is the next evolution of GRPO with three improvements:
 | **GRPO** | **0.629** | −1.168, 1.961, −0.173, 1.132, 1.394 | 4/5 |
 | DAPOSwitch | 0.566 | −1.191, 1.954, −0.176, 1.114, 1.128 | 4/5 |
 | DAPO | 0.525 | −1.222, 1.963, −0.238, 1.156, 0.965 | 4/5 |
-| Fixed α=1% | 0.235 | −1.659, 1.778, −0.073, 0.751, 0.380 | — |
+| Fixed α=1% | 0.235 | −1.659, 1.778, −0.073, 0.751, 0.380 | - |
 
-**Key finding:** With a fair G comparison, GRPO (0.629) beats DAPO (0.525). The previous DAPO "edge" (0.580 vs 0.562) was an artifact of the asymmetric sampling budget — DAPO's G_MIN=2 in easy states was accidentally generating fewer noisy gradient updates, not genuine algorithmic superiority. DAPOSwitch (0.566) sits between the two, consistent with its hybrid design.
+**Key finding:** With a fair G comparison, GRPO (0.629) beats DAPO (0.525). The previous DAPO "edge" (0.580 vs 0.562) was an artifact of the asymmetric sampling budget - DAPO's G_MIN=2 in easy states was accidentally generating fewer noisy gradient updates, not genuine algorithmic superiority. DAPOSwitch (0.566) sits between the two, consistent with its hybrid design.
 
 **DAPOSwitch regime detection (upgraded 31 Mar 2026):** Now uses a 2-state Gaussian HMM fitted on `[bench_vol, bench_ret]` from each fold's training data. Risk-off state = higher-volatility state identified by HMM. Previously used a simple rolling vol-threshold (bench_vol > rolling median). The HMM is trained per fold with no look-ahead bias. Falls back to vol-threshold if `hmmlearn` is not installed.
 
@@ -281,7 +281,7 @@ The SAC/GRPO/DAPO agents observe:
 - Regime (risk-on / risk-off)
 - **VIX level, 10Y yield, yield spread (10Y–2Y)** ← macro features added Mar 2026
 
-**Layer 1 — Adaptive Factor Weighting (5a_rl_factor_agent.py)**
+**Layer 1 - Adaptive Factor Weighting (5a_rl_factor_agent.py)**
 
 | Method | Mean IC | ICIR | Hit Rate |
 |--------|---------|------|---------|
@@ -290,7 +290,7 @@ The SAC/GRPO/DAPO agents observe:
 | IC-decay weights | 0.0110 | 0.051 | 57.9% |
 | IC-optimised weights | 0.0040 | 0.033 | 47.4% |
 
-RL IC is 4× higher than next best. Static optimised weights underperform — overfit to training period signal. The RL agent dynamically upweights factors with recent positive IC and downweights those that have stopped working.
+RL IC is 4× higher than next best. Static optimised weights underperform - overfit to training period signal. The RL agent dynamically upweights factors with recent positive IC and downweights those that have stopped working.
 
 ---
 
@@ -301,7 +301,7 @@ RL IC is 4× higher than next best. Static optimised weights underperform — ov
 | Monthly rebalancing | Signal IC decays over ~6–12 months; daily rebalancing adds cost with no benefit |
 | Top/bottom 100 tilt | Middle stocks carry weak signal; focusing on extremes improves IR |
 | Cross-sectional z-scoring | Makes features regime-invariant; model sees relative rank not absolute value |
-| Survivorship bias fix | 697 tickers (historical constituents) vs 504 (current only) — avoids inflating backtest returns by ~1–2%/year |
+| Survivorship bias fix | 697 tickers (historical constituents) vs 504 (current only) - avoids inflating backtest returns by ~1–2%/year |
 | No shorting | Long-only index enhancement; avoids borrow costs and concentration risk |
 | 2010 start date | Post-GFC baseline; GFC had structurally different correlations and regime |
 | Regime stability filter | Factors that flip sign in different market environments are unreliable signals |
@@ -313,11 +313,11 @@ RL IC is 4× higher than next best. Static optimised weights underperform — ov
 | Limitation | Detail |
 |------------|--------|
 | No transaction costs | Results assume zero slippage/commissions. At 10 bps per trade with ~30% monthly turnover, Sharpe reduces ~0.1–0.15 |
-| Remaining survivorship bias | 248 historical constituents still missing — blocked on Wind/CRSP data pull |
-| No fundamental data | All 43 factors are price-derived. PE, PB, money flow factors not yet incorporated — likely to improve IC significantly |
+| Remaining survivorship bias | 248 historical constituents still missing - blocked on Wind/CRSP data pull |
+| No fundamental data | All 43 factors are price-derived. PE, PB, money flow factors not yet incorporated - likely to improve IC significantly |
 | Bull market test period | Test period (2023–2025) is almost entirely the AI bull run. Regime stability analysis (HMM) partially mitigates this by testing risk-off sub-periods separately |
 | SPX weights approximation | Benchmark weights estimated from market cap / price via yfinance. Top 4 holdings capped at 8% (winsorised). Real SPDR constituent data would improve accuracy |
-| 35 test months | IR estimated on ~35 months. Confidence interval is wide — IR could vary ±0.3 with more data |
+| 35 test months | IR estimated on ~35 months. Confidence interval is wide - IR could vary ±0.3 with more data |
 
 ---
 
@@ -330,33 +330,33 @@ RL IC is 4× higher than next best. Static optimised weights underperform — ov
 4. Retrain CS-Transformer + FT-Transformer on Kaggle with expanded universe
 5. Re-run `4b_index_enhancement.py` + `4c_regime_engine.py`
 
-**DAPO fix (algorithmic — can do now):**
+**DAPO fix (algorithmic - can do now):**
 1. Fix unfair G comparison: set DAPO `G_MIN = G_MAX = 4` (same as GRPO `G=4`) in `5e_dapo_agent.py` → isolates clip-higher + no-KL as the only differences
 2. Increase `G_INIT` to ≥ 4 so the dynamic sampling variance estimate is statistically meaningful
 3. Run three-way ablation: GRPO (G=4, KL) vs DAPO-fixed (G=4, clip-higher, no KL) vs DAPO-dynamic (G=2–8, clip-higher, no KL)
 
-**Two-layer RL design — objectives are complementary, not conflicting:**
+**Two-layer RL design - objectives are complementary, not conflicting:**
 
 | Layer | File | Objective | What it optimises |
 |-------|------|-----------|-------------------|
-| **Layer 1** | `5a_rl_factor_agent.py` | Maximise IC / ICIR | *What signal to generate* — which factors to trust each month |
+| **Layer 1** | `5a_rl_factor_agent.py` | Maximise IC / ICIR | *What signal to generate* - which factors to trust each month |
 | **Layer 2** | `5b_rl_portfolio_agent.py` | Maximise portfolio Sharpe | *How aggressively to act* on that signal each month |
 
 No conflict: Layer 1 never sees portfolio vol. Layer 2 takes signal quality as given and adjusts tilt to maximise risk-adjusted total return. A stronger signal (high recent IC from L1) should cause L2 to tilt more aggressively, as more alpha per unit of tilt raises Sharpe.
 
-**Layer 2 — Portfolio Tilt (`5b_rl_portfolio_agent.py`):**
+**Layer 2 - Portfolio Tilt (`5b_rl_portfolio_agent.py`):**
 
 - **State (6 features):** signal strength, signal dispersion, benchmark vol, recent active return, regime indicator, rolling tracking error
-- **Action:** alpha in [0.002, 0.05] — how aggressively to tilt this month
-- **Reward:** annualised active return (`active_ret × 12`). TE constraint is implicit — high alpha × weak signal → negative active return → agent learns to reduce alpha when signal is unreliable.
-- **Policy:** MLP only — NO memory, NO recurrence. Each month is fully independent (Markov).
+- **Action:** alpha in [0.002, 0.05] - how aggressively to tilt this month
+- **Reward:** annualised active return (`active_ret × 12`). TE constraint is implicit - high alpha × weak signal → negative active return → agent learns to reduce alpha when signal is unreliable.
+- **Policy:** MLP only - NO memory, NO recurrence. Each month is fully independent (Markov).
 - **Training:** factor-combo scores on full panel 2010–2022 (12 years, ~103 months)
 - **Evaluation:** CS-Transformer scores on test period 2023–2025
 
-**Layer 1 — Adaptive Factor Weighting (`5a_rl_factor_agent.py`):**
+**Layer 1 - Adaptive Factor Weighting (`5a_rl_factor_agent.py`):**
 
 - **State (133-dim):** rolling 6m IC per factor (43) + rolling 12m IC per factor (43) + IC momentum (43) + macro (4)
-- **Action:** 43-dim weight vector — how much to trust each factor this month
+- **Action:** 43-dim weight vector - how much to trust each factor this month
 - **Reward:** direct monthly IC of the combined weighted factor signal (IC/ICIR maximisation)
 - **Policy:** MLP only, no memory, fully Markov
 - In momentum regimes: upweights momentum/quality factors. In mean-reversion regimes: shifts to contrarian factors.
@@ -365,7 +365,7 @@ No conflict: Layer 1 never sees portfolio vol. Layer 2 takes signal quality as g
 
 ## Diffusion Model Stress Test (`7_synthetic_regimes.py`)
 
-The test period (2023–2025) contains only ~7 genuine risk-off months — too few for reliable bear-regime IR estimation (confidence interval ≈ ±0.6). A regime-conditional DDPM generates 1,000 synthetic bear market months to stress-test performance.
+The test period (2023–2025) contains only ~7 genuine risk-off months - too few for reliable bear-regime IR estimation (confidence interval ≈ ±0.6). A regime-conditional DDPM generates 1,000 synthetic bear market months to stress-test performance.
 
 **Pipeline:**
 1. Train DDPM on 312 months of macro features (SPX return, SPX vol, market trend) conditioned on regime label
@@ -383,7 +383,7 @@ The test period (2023–2025) contains only ~7 genuine risk-off months — too f
 | Synthetic bear 5th pct | 2.107 |
 | Synthetic bear 95th pct | 2.495 |
 
-74.6% of synthetic bear months generate positive active alpha. The CS-T strategy appears robust to stress scenarios — cross-sectional ranking signal survives market crashes (defensive/quality stocks still separate from the rest).
+74.6% of synthetic bear months generate positive active alpha. The CS-T strategy appears robust to stress scenarios - cross-sectional ranking signal survives market crashes (defensive/quality stocks still separate from the rest).
 
 ---
 
@@ -400,30 +400,30 @@ streamlit run 6_regime_dashboard.py
 ## Files & Execution Order
 
 ```
-Step 1 — Data Prep
+Step 1 - Data Prep
   python 1a_price_parquet.py          # parse OHLC data → data/prices.parquet
   python 1f_rebuild_panel.py    # build monthly panel from prices
   python 1e_ingest_wind_xlsx.py      # add Wind xlsx exports (run after dropping files)
   python 1g_feature_engineering.py    # compute 43+ factors → panel_monthly_enriched.parquet
   python 1h_orthogonalize.py         # PCA residualization (optional, run after finalising features)
 
-Step 2 — Factor Analysis
+Step 2 - Factor Analysis
   python 2a_factor_analysis.py        # IC, quintile, regime stability → factor_selected.csv
   python 2b_ic_decay_all.py          # IC decay grid (all 43 factors)
   python 2d_factor_weights.py        # IC-decay based weights → factor_selected.csv
   python 2e_ic_optimise.py           # gradient-optimised weights → factor_selected_optimised.csv
   python 4a_factor_combo_baseline.py # linear combo baseline (no ML)
 
-Step 3 — Models (GPU recommended)
+Step 3 - Models (GPU recommended)
   python 3a_ft_transformer.py           # FT-Transformer → scores_transformer.parquet
   [Kaggle] 3d_cs_transformer_kaggle.py # CS-Transformer → scores_cs_transformer.parquet
 
-Step 4 — Evaluation
+Step 4 - Evaluation
   python 4b_index_enhancement.py      # IE portfolio → bt_ie_*.csv
   python 4c_regime_engine.py          # regime breakdown (rule-based)
   python 4c_regime_engine.py --hmm    # HMM 2-state regime breakdown
   python 4d_benchmark_spx.py          # full comparison table
 
-Step 5 — Reinforcement Learning
-  python 5b_rl_portfolio_agent.py     # SAC agent — adaptive alpha (requires torch)
+Step 5 - Reinforcement Learning
+  python 5b_rl_portfolio_agent.py     # SAC agent - adaptive alpha (requires torch)
 ```

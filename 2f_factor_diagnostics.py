@@ -1,27 +1,27 @@
 """
 2f_factor_diagnostics.py
 ========================
-READ-ONLY diagnostic script — does NOT modify any model inputs or pipeline data.
+READ-ONLY diagnostic script - does NOT modify any model inputs or pipeline data.
 
 Computes three complementary redundancy diagnostics on the enriched factor panel:
 
-  Part A — IC Correlation Matrix (Spearman)
+  Part A - IC Correlation Matrix (Spearman)
     Pairwise Spearman rank correlations between all features.
     Flags pairs with |corr| > 0.5 as potentially redundant.
     Saves correlation matrix CSV + heatmap PNG.
 
-  Part B — RMT Eigenvalue Analysis
+  Part B - RMT Eigenvalue Analysis
     Compares the empirical eigenvalue spectrum of the feature correlation matrix
     against the Marchenko-Pastur theoretical bounds.
     Shows how many eigenvalues carry genuine signal vs noise.
     Saves eigenvalue CSV + RMT-denoised correlation heatmap.
 
-  Part C — Variance Inflation Factor (VIF)
+  Part C - Variance Inflation Factor (VIF)
     VIF_i = 1 / (1 - R²_i) where R²_i is R² from regressing feature i on all others.
     VIF > 10 → highly redundant (multicollinear); flags these features for review.
     Saves VIF table CSV.
 
-  Part D — Pre/Post-Orthogonalization Comparison (optional)
+  Part D - Pre/Post-Orthogonalization Comparison (optional)
     If panel_monthly_orthogonalized.parquet exists, computes and prints
     the mean |off-diagonal correlation| before and after PCA residualization.
 
@@ -37,7 +37,7 @@ Run AFTER 1h_feature_engineering.py.
 """
 
 import matplotlib
-matplotlib.use("Agg")   # headless — no display needed
+matplotlib.use("Agg")   # headless - no display needed
 
 import numpy as np
 import pandas as pd
@@ -155,7 +155,7 @@ def main():
         print(f"Macro cols excluded from correlation diagnostics: {macro_in_panel}")
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PART A — IC CORRELATION MATRIX (SPEARMAN)
+    # PART A - IC CORRELATION MATRIX (SPEARMAN)
     # ─────────────────────────────────────────────────────────────────────────
     print(f"\n{'─'*50}")
     print("PART A: Spearman IC Correlation Matrix")
@@ -202,7 +202,7 @@ def main():
     )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PART B — RMT EIGENVALUE ANALYSIS
+    # PART B - RMT EIGENVALUE ANALYSIS
     # ─────────────────────────────────────────────────────────────────────────
     print(f"\n{'─'*50}")
     print("PART B: RMT Eigenvalue Analysis")
@@ -246,7 +246,7 @@ def main():
     )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PART C — VARIANCE INFLATION FACTOR
+    # PART C - VARIANCE INFLATION FACTOR
     # ─────────────────────────────────────────────────────────────────────────
     print(f"\n{'─'*50}")
     print("PART C: Variance Inflation Factor (VIF)")
@@ -273,7 +273,7 @@ def main():
         print(f"\n  All features have VIF <= {VIF_FLAG}  (acceptable)")
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PART D — PRE/POST ORTHOGONALIZATION COMPARISON (optional)
+    # PART D - PRE/POST ORTHOGONALIZATION COMPARISON (optional)
     # ─────────────────────────────────────────────────────────────────────────
     if ORTH_IN.exists():
         print(f"\n{'─'*50}")
@@ -302,7 +302,7 @@ def main():
             flag_val=IC_CORR_FLAG,
         )
     else:
-        print(f"\nPart D skipped — {ORTH_IN.name} not found.")
+        print(f"\nPart D skipped - {ORTH_IN.name} not found.")
         print("  Run 1i_orthogonalize.py first to enable comparison.")
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -321,13 +321,13 @@ def main():
     print("=" * 65)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PART E — FACTOR IC CORRELATION ANALYSIS (selected factors only)
+    # PART E - FACTOR IC CORRELATION ANALYSIS (selected factors only)
     # ─────────────────────────────────────────────────────────────────────────
     factor_correlation_analysis()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PART E — FACTOR IC CORRELATION ANALYSIS
+# PART E - FACTOR IC CORRELATION ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def factor_correlation_analysis():
@@ -339,8 +339,8 @@ def factor_correlation_analysis():
     IC time-series.  Factors are clustered with Ward linkage on 1 - |corr|.
 
     Outputs:
-      figures/factor_ic_correlation.png   — clustered heatmap
-      data/factor_clusters.csv            — factor, cluster_id
+      figures/factor_ic_correlation.png   - clustered heatmap
+      data/factor_clusters.csv            - factor, cluster_id
     """
     from scipy.cluster.hierarchy import linkage, fcluster, leaves_list
     from scipy.spatial.distance import squareform
@@ -352,12 +352,12 @@ def factor_correlation_analysis():
     # ── 1. Load inputs ────────────────────────────────────────────────────────
     selected_path = DATA_DIR / "factor_selected.csv"
     if not selected_path.exists():
-        print(f"  Skipped — {selected_path} not found.")
+        print(f"  Skipped - {selected_path} not found.")
         return
 
     factor_sel = pd.read_csv(selected_path)
     if "factor" not in factor_sel.columns:
-        print("  Skipped — factor_selected.csv must contain a 'factor' column.")
+        print("  Skipped - factor_selected.csv must contain a 'factor' column.")
         return
     factors = factor_sel["factor"].tolist()
 
@@ -368,15 +368,15 @@ def factor_correlation_analysis():
     # Keep only factors present in the panel
     missing = [f for f in factors if f not in panel.columns]
     if missing:
-        print(f"  Warning: {len(missing)} factors not found in panel — dropping: {missing}")
+        print(f"  Warning: {len(missing)} factors not found in panel - dropping: {missing}")
     factors = [f for f in factors if f in panel.columns]
 
     if "fwd_ret_1m" not in panel.columns:
-        print("  Skipped — fwd_ret_1m column not found in panel.")
+        print("  Skipped - fwd_ret_1m column not found in panel.")
         return
 
     if not factors:
-        print("  Skipped — no valid factors found.")
+        print("  Skipped - no valid factors found.")
         return
 
     print(f"  Factors to analyse: {len(factors)}")
@@ -395,7 +395,7 @@ def factor_correlation_analysis():
         ret = month_data["fwd_ret_1m"].values
         for fi, fac in enumerate(factors):
             fac_vals = month_data[fac].values
-            # Pearson correlation — skip if zero variance
+            # Pearson correlation - skip if zero variance
             if fac_vals.std() < 1e-12 or ret.std() < 1e-12:
                 continue
             ic_matrix[fi, m] = float(np.corrcoef(fac_vals, ret)[0, 1])
@@ -415,7 +415,7 @@ def factor_correlation_analysis():
         r, _ = spearmanr(ic_filled[0], ic_filled[1])
         spearman_corr = np.array([[1.0, r], [r, 1.0]])
     else:
-        # spearmanr on (n_observations × n_variables) — transpose so months are rows
+        # spearmanr on (n_observations × n_variables) - transpose so months are rows
         spearman_corr, _ = spearmanr(ic_filled.T)
         if spearman_corr.ndim == 0:
             spearman_corr = np.array([[1.0]])
@@ -477,8 +477,8 @@ def factor_correlation_analysis():
     fig = plt.figure(figsize=(fig_w, fig_h))
 
     # Axes layout:
-    #   [dendro_ax]  — top, full width, shows dendrogram
-    #   [heat_ax]    — bottom, shows heatmap
+    #   [dendro_ax]  - top, full width, shows dendrogram
+    #   [heat_ax]    - bottom, shows heatmap
     dendro_frac = dendro_h / fig_h
     heat_frac   = heat_size / fig_h
 
@@ -502,7 +502,7 @@ def factor_correlation_analysis():
                       linestyle="--", label=f"cut={CLUSTER_DIST_THRESHOLD}")
     dendro_ax.tick_params(labelsize=7)
     dendro_ax.set_title(
-        "Factor IC Correlation (Spearman) — Clustered by Ward Linkage",
+        "Factor IC Correlation (Spearman) - Clustered by Ward Linkage",
         fontsize=10, pad=6,
     )
 
@@ -530,7 +530,7 @@ def factor_correlation_analysis():
     plt.close()
     print(f"  Saved: {out_path.name}")
 
-    print(f"\n  Part E complete — {n_factors} factors, {n_clusters} clusters.")
+    print(f"\n  Part E complete - {n_factors} factors, {n_clusters} clusters.")
 
 
 if __name__ == "__main__":

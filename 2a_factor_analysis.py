@@ -1,18 +1,18 @@
 """
-2a_factor_analysis.py — Per-Factor IC Analysis and Quantile Backtests
+2a_factor_analysis.py - Per-Factor IC Analysis and Quantile Backtests
 =====================================================================
 Evaluates how predictive each feature in the enriched panel is vs next-month
 returns (typically ~270 columns after 1h_feature_engineering.py). This is
-about predictive power per factor, not redundancy between factors — see
+about predictive power per factor, not redundancy between factors - see
 2f_factor_diagnostics.py for the correlation / RMT / VIF view.
 
 Metrics computed per factor:
-  IC       — Spearman rank correlation of factor vs fwd_ret_1m, averaged across months
-  ICIR     — IC Information Ratio: mean(IC) / std(IC)  (consistency of signal)
-  t-stat   — statistical significance: mean(IC) / (std(IC) / sqrt(N_months))
-  % pos    — fraction of months where IC > 0  (directional consistency)
-  IC decay — IC at lags 1–6 months ahead (signal persistence)
-  Quintile spread — mean return spread between top and bottom quintile stocks
+  IC       - Spearman rank correlation of factor vs fwd_ret_1m, averaged across months
+  ICIR     - IC Information Ratio: mean(IC) / std(IC)  (consistency of signal)
+  t-stat   - statistical significance: mean(IC) / (std(IC) / sqrt(N_months))
+  % pos    - fraction of months where IC > 0  (directional consistency)
+  IC decay - IC at lags 1–6 months ahead (signal persistence)
+  Quintile spread - mean return spread between top and bottom quintile stocks
 
 Interpretation:
   IC   > 0.02  : weak but meaningful signal
@@ -22,11 +22,11 @@ Interpretation:
   IC decay     : a factor with IC that drops quickly has a short signal half-life
 
 Outputs (all to data/):
-  factor_ic_summary.csv        — ranked table of all factors
-  factor_ic_decay.csv          — IC at lags 0–6 for each factor
-  factor_quintile_returns.csv  — quintile spread per factor
-  factor_ic_summary.png        — bar chart of top/bottom 20 by ICIR
-  factor_ic_decay_top10.png    — IC decay curves for top 10 factors
+  factor_ic_summary.csv        - ranked table of all factors
+  factor_ic_decay.csv          - IC at lags 0–6 for each factor
+  factor_quintile_returns.csv  - quintile spread per factor
+  factor_ic_summary.png        - bar chart of top/bottom 20 by ICIR
+  factor_ic_decay_top10.png    - IC decay curves for top 10 factors
 
 Run AFTER 1h_feature_engineering.py.
 """
@@ -145,7 +145,7 @@ def quintile_backtest(panel: pd.DataFrame, factor: str) -> pd.DataFrame:
                                        labels=list(range(1, N_QUINTILES + 1)),
                                        duplicates="drop")
         except ValueError:
-            # Fewer unique values than quintiles after deduplication — skip month
+            # Fewer unique values than quintiles after deduplication - skip month
             continue
         q_rets = sub.groupby("quintile")["fwd_ret_1m"].mean()
         row = {"date": dt}
@@ -206,8 +206,8 @@ def ic_decay_series(panel: pd.DataFrame, factor: str) -> dict:
 def plot_ic_summary(summary_df: pd.DataFrame, out_dir: Path, top_n: int = 10):
     """
     Two separate horizontal bar charts:
-      - Top N by ICIR  (positive signal — buy these)
-      - Bottom N by ICIR (negative signal — short these / use inverted)
+      - Top N by ICIR  (positive signal - buy these)
+      - Bottom N by ICIR (negative signal - short these / use inverted)
     """
     df = summary_df.dropna(subset=["icir"]).sort_values("icir", ascending=False)
 
@@ -215,8 +215,8 @@ def plot_ic_summary(summary_df: pd.DataFrame, out_dir: Path, top_n: int = 10):
     top_neg = df.tail(top_n).sort_values("icir")          # most negative ICIR
 
     for subset, label, color, fname in [
-        (top_pos, f"Top {top_n} — Positive Signal (buy high)",  "#2ecc71", "factor_ic_summary_positive.png"),
-        (top_neg, f"Bottom {top_n} — Negative Signal (buy low)", "#e74c3c", "factor_ic_summary_negative.png"),
+        (top_pos, f"Top {top_n} - Positive Signal (buy high)",  "#2ecc71", "factor_ic_summary_positive.png"),
+        (top_neg, f"Bottom {top_n} - Negative Signal (buy low)", "#e74c3c", "factor_ic_summary_negative.png"),
     ]:
         fig, ax = plt.subplots(figsize=(9, max(5, len(subset) * 0.45)))
         ax.barh(range(len(subset)), subset["icir"], color=color, alpha=0.85)
@@ -245,7 +245,7 @@ def plot_ic_decay(decay_df: pd.DataFrame, factors: list, out_path: Path):
     ax.axhline(0, color="black", linewidth=0.8)
     ax.set_xlabel("Lag (months ahead)")
     ax.set_ylabel("Mean IC (Spearman)")
-    ax.set_title("IC Decay — Top 10 Factors by |ICIR|")
+    ax.set_title("IC Decay - Top 10 Factors by |ICIR|")
     ax.legend(fontsize=7, ncol=2)
     plt.tight_layout()
     plt.savefig(out_path, dpi=130, bbox_inches="tight")
@@ -253,7 +253,7 @@ def plot_ic_decay(decay_df: pd.DataFrame, factors: list, out_path: Path):
     print(f"  Saved: {out_path.name}")
 
 
-# Market regimes (COVID crash Mar-May 2020 excluded — black swan, stress test handles it)
+# Market regimes (COVID crash Mar-May 2020 excluded - black swan, stress test handles it)
 REGIMES = {
     "qe_bull":        ("2010-01-01", "2019-12-31"),   # QE-era bull market
     "covid_recovery": ("2020-06-01", "2021-12-31"),   # Stimulus-driven rally
@@ -297,7 +297,7 @@ def regime_stability(panel: pd.DataFrame, factor: str) -> dict:
         regime_ics[name] = mean_ic
 
     # Sign consistency: stable if IC sign is same direction in ≥ 75% of valid regimes
-    # (consistently positive OR consistently negative — both are usable signals)
+    # (consistently positive OR consistently negative - both are usable signals)
     valid_ics = [v for v in regime_ics.values() if not np.isnan(v)]
     n_valid = len(valid_ics)
     if n_valid > 0:
@@ -318,7 +318,7 @@ def regime_stability(panel: pd.DataFrame, factor: str) -> dict:
 def factor_turnover(panel: pd.DataFrame, factor: str) -> float:
     """
     Turnover = average % of stocks that change quintile month-to-month.
-    Low turnover (< 20%) is ideal — means the signal is stable and cheap to trade.
+    Low turnover (< 20%) is ideal - means the signal is stable and cheap to trade.
     High turnover (> 50%) means excessive rebalancing costs would kill real-world returns.
     """
     sub = panel[["date", "ticker", factor]].dropna().copy()
@@ -386,7 +386,7 @@ def plot_quintile_bars(quint_df: pd.DataFrame, out_path: Path):
     ax.set_xticks(x)
     ax.set_xticklabels([f"Q{q}\n(low→high)" if q == 1 else f"Q{q}" for q in range(1, N_QUINTILES + 1)])
     ax.set_ylabel("Ann. Return (%)")
-    ax.set_title("Quintile Backtest — Mean Annualised Return per Bucket\n(Q5=top factor score, Q1=bottom)")
+    ax.set_title("Quintile Backtest - Mean Annualised Return per Bucket\n(Q5=top factor score, Q1=bottom)")
     ax.legend(fontsize=7, ncol=2, loc="upper left")
     plt.tight_layout()
     plt.savefig(out_path, dpi=130, bbox_inches="tight")
@@ -400,7 +400,7 @@ def plot_quintile_bars(quint_df: pd.DataFrame, out_path: Path):
 
 def main():
     print("=" * 65)
-    print("FACTOR ANALYSIS — Predictive IC and Quantile Backtests")
+    print("FACTOR ANALYSIS - Predictive IC and Quantile Backtests")
     print("=" * 65)
 
     # ── Load panel ───────────────────────────────────────────────────────────────
@@ -474,9 +474,9 @@ def main():
     print(f"  Positive IC: {sig_positive}")
     print(f"  Negative IC (contrarian): {sig_negative}")
 
-    # ── Filter 1: |IC| > 0 — keep any directional signal (positive or negative) ──
+    # ── Filter 1: |IC| > 0 - keep any directional signal (positive or negative) ──
     nonzero_ic = summary_df[summary_df["ic_mean"].abs() > 0].copy()
-    print(f"\nFilter 1 — |IC| > 0 (both directions kept): {len(nonzero_ic)} / {len(summary_df)} kept")
+    print(f"\nFilter 1 - |IC| > 0 (both directions kept): {len(nonzero_ic)} / {len(summary_df)} kept")
     print(f"  Positive IC: {nonzero_ic[nonzero_ic['ic_mean'] > 0]['factor'].tolist()}")
     print(f"  Negative IC (contrarian): {nonzero_ic[nonzero_ic['ic_mean'] < 0]['factor'].tolist()}")
 
@@ -486,7 +486,7 @@ def main():
     #          rate hike bear (2022), AI bull (2023–present)
     # Pass: IC > 0 in ≥ 75% of regimes.
     # Regime stability uses FULL panel (needs 2022 rate hike bear + 2023 AI bull)
-    print(f"\nFilter 2 — Regime stability (full panel, COVID Mar–May 2020 excluded) …")
+    print(f"\nFilter 2 - Regime stability (full panel, COVID Mar–May 2020 excluded) …")
     regime_records = []
     for i, fac in enumerate(summary_df["factor"].tolist(), 1):
         res = regime_stability(panel, fac)
@@ -552,7 +552,7 @@ def main():
 
     # ── Quintile Backtest + Turnover + RAS ───────────────────────────────────────
     print(f"\nRunning quintile backtests, turnover & RAS tests (train: {TRAIN_START[:4]}–{TRAIN_END[:4]}) …")
-    print(f"  (RAS uses 100 random permutations per factor — takes ~2 min)")
+    print(f"  (RAS uses 100 random permutations per factor - takes ~2 min)")
     quintile_records = []
     quintile_frames  = {}
     for i, fac in enumerate(top20, 1):
@@ -614,7 +614,7 @@ def main():
     panel_oos = panel[panel["date"] >= oos_start].reset_index(drop=True)
     n_oos     = panel_oos["date"].nunique()
     if n_oos == 0:
-        print("  No OOS data available — skipping.")
+        print("  No OOS data available - skipping.")
     else:
         print(f"  OOS months: {n_oos}  "
               f"({panel_oos['date'].min().date()} → {panel_oos['date'].max().date()})")

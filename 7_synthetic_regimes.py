@@ -1,5 +1,5 @@
 """
-7_synthetic_regimes.py — Diffusion-based regime stress test for the CS-T IE strategy.
+7_synthetic_regimes.py - Diffusion-based regime stress test for the CS-T IE strategy.
 
 The real test period (2023-2025) has only 7 risk-off months, giving an IR
 confidence interval around ±0.6. This script trains a tiny conditional DDPM on
@@ -65,7 +65,7 @@ def load_macro_features() -> pd.DataFrame:
     needed = ["date", "ticker"] + MACRO_COLS
     panel  = pd.read_parquet(PANEL_PATH, columns=needed)
 
-    # One row per month — macro cols are the same across all tickers in a month
+    # One row per month - macro cols are the same across all tickers in a month
     macro = (panel.groupby("date")[MACRO_COLS]
                   .first()
                   .reset_index()
@@ -222,7 +222,7 @@ def fit_linear_bridge(macro: pd.DataFrame) -> tuple:
     cst = pd.read_csv(CST_PATH, parse_dates=["date"])
     merged = cst.merge(macro[["date"] + MACRO_COLS], on="date", how="inner")
     if len(merged) < 10:
-        print("  Warning: insufficient overlap for linear bridge — using fallback.")
+        print("  Warning: insufficient overlap for linear bridge - using fallback.")
         return np.zeros(len(MACRO_COLS)), 0.0, 0.0
 
     X = merged[MACRO_COLS].values
@@ -363,7 +363,7 @@ def make_figure(macro: pd.DataFrame, X_norm: np.ndarray,
         ax2.axvline(0, color="black", lw=1.0)
         ax2.set_xlabel("Monthly Active Return (%)")
         ax2.set_ylabel("Density")
-        ax2.set_title("B.  Active Return Distribution — Bear Regime",
+        ax2.set_title("B.  Active Return Distribution - Bear Regime",
                       fontsize=10, fontweight="semibold")
         ax2.legend(fontsize=8, framealpha=0.7)
 
@@ -412,7 +412,7 @@ def make_figure(macro: pd.DataFrame, X_norm: np.ndarray,
         ax4.legend(fontsize=9, loc="upper right")
 
         fig.suptitle(
-            "Regime-Conditional Diffusion Model — Stress Testing the CS-Transformer IE Strategy\n"
+            "Regime-Conditional Diffusion Model - Stress Testing the CS-Transformer IE Strategy\n"
             f"DDPM: T={T_STEPS} steps, {N_EPOCHS} epochs | {N_SAMPLES:,} synthetic bear months generated",
             fontsize=11, fontweight="bold", y=0.98,
         )
@@ -428,7 +428,7 @@ def make_figure(macro: pd.DataFrame, X_norm: np.ndarray,
 
 def main():
     print("=" * 65)
-    print(" 7_synthetic_regimes.py — Regime-Conditional DDPM Stress Test")
+    print(" 7_synthetic_regimes.py - Regime-Conditional DDPM Stress Test")
     print("=" * 65)
 
     if not TORCH_AVAILABLE:
@@ -458,7 +458,7 @@ def main():
         model, betas, alphas, alpha_bar,
         regime_label=1, n_samples=N_SAMPLES, x_dim=len(MACRO_COLS), T=T_STEPS,
     )
-    print(f"  Synthetic bear features — mean: {X_synth_bear.mean(axis=0).round(3)}")
+    print(f"  Synthetic bear features - mean: {X_synth_bear.mean(axis=0).round(3)}")
 
     # ── Linear bridge: features → active returns
     print("\nFitting linear bridge (active_ret ~ macro features) ...")
@@ -495,8 +495,8 @@ def main():
     print(f"  Real CS-T full period IR:            {real_stats['full_ir']:>7.3f}")
     print(f"  Real CS-T risk-off IR (n={len(s_bear):2d} months):  {real_stats['riskoff_ir']:>7.3f}")
     print(f"  Synthetic bear IR (mean):             {synth_stats['ir']:>7.3f}")
-    print(f"  Synthetic bear IR — 5th percentile:  {synth_stats['ir_p5']:>7.3f}")
-    print(f"  Synthetic bear IR — 95th percentile: {synth_stats['ir_p95']:>7.3f}")
+    print(f"  Synthetic bear IR - 5th percentile:  {synth_stats['ir_p5']:>7.3f}")
+    print(f"  Synthetic bear IR - 95th percentile: {synth_stats['ir_p95']:>7.3f}")
     print(f"  Probability of positive monthly α:   {synth_stats['prob_pos']:>6.1f}%")
     print(f"  Synthetic ann. alpha:                {synth_stats['ann_alpha']:>7.2f}%")
     print(f"  Synthetic tracking error:            {synth_stats['te']:>7.2f}%")

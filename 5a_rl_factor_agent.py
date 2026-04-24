@@ -1,5 +1,5 @@
 """
-5a_rl_factor_agent.py — Layer 1 SAC: Adaptive Factor Weighting
+5a_rl_factor_agent.py - Layer 1 SAC: Adaptive Factor Weighting
 ===============================================================
 Replaces fixed IC-optimised factor weights with a dynamic RL policy that
 adapts which factors to trust each month based on recent IC history and
@@ -9,7 +9,7 @@ State  : rolling 6m IC per factor (43) + rolling 12m IC per factor (43)
          + IC momentum per factor (43) + macro state (4) = 133-dim
 Action : 43-dim weight vector via softmax over Gaussian samples
 Reward : IC of combined factor signal this month (direct IC maximisation)
-Policy : MLP only — no recurrence, no memory (Markov)
+Policy : MLP only - no recurrence, no memory (Markov)
 
 Baselines compared:
   - Equal weights (1/43 per factor)
@@ -46,7 +46,7 @@ try:
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
-    print("Warning: PyTorch not found — will use numpy fallback.")
+    print("Warning: PyTorch not found - will use numpy fallback.")
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 DATA_DIR    = Path("data")
@@ -203,7 +203,7 @@ if HAS_TORCH:
         """
         Outputs a 43-dim weight vector via softmax.
         Each weight controls how much to trust that factor this month.
-        No memory — each call is fully independent (Markov).
+        No memory - each call is fully independent (Markov).
         """
         def __init__(self, state_dim=STATE_DIM, n_factors=N_FACTORS, hidden=HIDDEN_DIM):
             super().__init__()
@@ -272,7 +272,7 @@ if HAS_TORCH:
         SAC agent for adaptive factor weighting.
         Action = 43-dim weight vector (softmax normalised).
         Reward = IC of combined signal this month.
-        No memory — Markov policy only.
+        No memory - Markov policy only.
         """
         def __init__(self):
             self.actor         = FactorActor()
@@ -356,7 +356,7 @@ if HAS_TORCH:
 def precompute_month_data(panel, factor_names, signs_vec, months):
     """
     Precompute z-scored factor matrices and returns for all months.
-    Called ONCE before training — avoids rescanning the panel 91,200 times.
+    Called ONCE before training - avoids rescanning the panel 91,200 times.
     Returns dict {date: (Xz_signed, y_norm)} ready for fast dot product.
     """
     print("  Precomputing factor matrices for all months ...")
@@ -381,7 +381,7 @@ def precompute_month_data(panel, factor_names, signs_vec, months):
 
 
 def ic_from_cache(cache, weights_vec, dt):
-    """Fast IC computation using precomputed matrices — just a dot product."""
+    """Fast IC computation using precomputed matrices - just a dot product."""
     if dt not in cache:
         return 0.0
     Xz_signed, y_norm = cache[dt]
@@ -395,7 +395,7 @@ def ic_from_cache(cache, weights_vec, dt):
 
 def train_agent(agent, state_records, panel, factor_names, signs_vec, train_months):
     """Run SAC training loop with precomputed IC cache."""
-    # Precompute once — avoids 91,200 full panel scans
+    # Precompute once - avoids 91,200 full panel scans
     cache     = precompute_month_data(panel, factor_names, signs_vec, train_months)
     train_set = [r for r in state_records if r["date"] in cache]
 
@@ -417,7 +417,7 @@ def train_agent(agent, state_records, panel, factor_names, signs_vec, train_mont
             reward  = ic_from_cache(cache, weights, dt)
             epoch_rewards.append(reward)
 
-            # Next state (use index directly — no linear search)
+            # Next state (use index directly - no linear search)
             if i + 1 < len(train_set):
                 next_state = np.nan_to_num(train_set[i + 1]["state"], nan=0.0)
                 done = 0.0
@@ -499,7 +499,7 @@ def plot_results(ic_train, ic_val, ic_test, reward_hist, rl_weights_over_time, f
     ax.set_ylabel("IC")
     ax.grid(True, alpha=0.3)
 
-    # 2. IC comparison — test period
+    # 2. IC comparison - test period
     ax = axes[0, 1]
     methods = list(ic_test.columns)
     colors  = {"rl": "#2196F3", "equal": "#9E9E9E", "ic_decay": "#FF9800", "ic_optimised": "#4CAF50"}
@@ -508,7 +508,7 @@ def plot_results(ic_train, ic_val, ic_test, reward_hist, rl_weights_over_time, f
         c = colors.get(m, "#607D8B")
         ax.plot(s.index, s.cumsum(), label=m, color=c, linewidth=1.5)
     ax.axhline(0, color="gray", linewidth=0.5, linestyle="--")
-    ax.set_title("Cumulative IC — Test Period (2023+)")
+    ax.set_title("Cumulative IC - Test Period (2023+)")
     ax.set_xlabel("Date")
     ax.set_ylabel("Cumulative IC")
     ax.legend(fontsize=8)
@@ -526,7 +526,7 @@ def plot_results(ic_train, ic_val, ic_test, reward_hist, rl_weights_over_time, f
         ax.set_ylabel("Weight")
         ax.grid(True, alpha=0.3, axis="y")
 
-    # 4. Monthly IC bar — test period RL vs IC-optimised
+    # 4. Monthly IC bar - test period RL vs IC-optimised
     ax = axes[1, 1]
     if "rl" in ic_test.columns and "ic_optimised" in ic_test.columns:
         months = ic_test.index
@@ -580,7 +580,7 @@ def numpy_baseline(state_records, panel, factor_names, signs_vec,
 
 def main():
     print("=" * 65)
-    print("5a_rl_factor_agent.py — Layer 1 SAC: Adaptive Factor Weighting")
+    print("5a_rl_factor_agent.py - Layer 1 SAC: Adaptive Factor Weighting")
     print("=" * 65)
 
     # ── Load data ─────────────────────────────────────────────────────────────
@@ -682,7 +682,7 @@ def main():
 
     # ── Compare val IC improvement ─────────────────────────────────────────────
     print(f"\n{'='*65}")
-    print("SUMMARY — Mean IC by period")
+    print("SUMMARY - Mean IC by period")
     print(f"{'='*65}")
     print(f"  {'Method':<25}  {'Train':>8}  {'Val':>8}  {'Test':>8}")
     print(f"  {'─'*25}  {'─'*8}  {'─'*8}  {'─'*8}")

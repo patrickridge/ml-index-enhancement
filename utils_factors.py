@@ -13,21 +13,21 @@ Convention:
   - Each add_*() function takes prices and returns prices with NEW columns appended in-place.
   - Intermediate columns used only as building blocks are prefixed with an underscore or
     kept only if explicitly listed in NEW COLUMNS comments.
-  - Cross-sectional ranking happens LATER in 1h_feature_engineering.py — these functions
+  - Cross-sectional ranking happens LATER in 1h_feature_engineering.py - these functions
     produce raw (unranked) values.
   - Macro functions return a date-indexed DataFrame (one row per date, merged on date).
 
 Factor categories:
-  Cat 1  — Multi-Horizon Momentum         (6 new daily-computed factors)
-  Cat 2  — Volatility Regimes             (8 new factors)
-  Cat 3  — Tail Risk                      (6 new factors)
-  Cat 4  — Price Level / Trend            (11 new factors)
-  Cat 5  — Volume & Liquidity             (6 new factors, requires volume)
-  Cat 6  — Market Beta / Correlation      (8 new factors, requires spx_ret)
-  Cat 7  — Intraday / Microstructure      (5 new factors)
-  Cat 8  — Cross-Sectional Relative       (6 new monthly factors)
-  Cat 9  — Fundamental / Quality          (12 optional factors)
-  Cat 10 — Macro / Regime                 (9 factors, fetched from yfinance)
+  Cat 1  - Multi-Horizon Momentum         (6 new daily-computed factors)
+  Cat 2  - Volatility Regimes             (8 new factors)
+  Cat 3  - Tail Risk                      (6 new factors)
+  Cat 4  - Price Level / Trend            (11 new factors)
+  Cat 5  - Volume & Liquidity             (6 new factors, requires volume)
+  Cat 6  - Market Beta / Correlation      (8 new factors, requires spx_ret)
+  Cat 7  - Intraday / Microstructure      (5 new factors)
+  Cat 8  - Cross-Sectional Relative       (6 new monthly factors)
+  Cat 9  - Fundamental / Quality          (12 optional factors)
+  Cat 10 - Macro / Regime                 (9 factors, fetched from yfinance)
 """
 
 import numpy as np
@@ -112,7 +112,7 @@ def _trend_r2(x: pd.Series, w: int) -> pd.Series:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 1 — MULTI-HORIZON MOMENTUM  (6 new daily-computed factors)
+# CAT 1 - MULTI-HORIZON MOMENTUM  (6 new daily-computed factors)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def add_momentum_daily(prices: pd.DataFrame) -> pd.DataFrame:
@@ -145,7 +145,7 @@ def add_momentum_daily(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 2 — VOLATILITY REGIMES  (8 new factors)
+# CAT 2 - VOLATILITY REGIMES  (8 new factors)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def add_volatility_features(prices: pd.DataFrame) -> pd.DataFrame:
@@ -153,11 +153,11 @@ def add_volatility_features(prices: pd.DataFrame) -> pd.DataFrame:
     Add volatility regime features to daily prices.
 
     NEW COLUMNS:
-      vol_5d, vol_21d, vol_126d      — rolling realised vol (std of ret_d)
-      vol_ratio_st                   — vol_5d / vol_21d  (short-term regime)
-      vol_trend                      — vol_21d / vol_63d (trend of vol)
-      downvol_21d                    — downside deviation over 21d
-      beta_21d, beta_63d             — CAPM beta to market (if spx_ret present)
+      vol_5d, vol_21d, vol_126d      - rolling realised vol (std of ret_d)
+      vol_ratio_st                   - vol_5d / vol_21d  (short-term regime)
+      vol_trend                      - vol_21d / vol_63d (trend of vol)
+      downvol_21d                    - downside deviation over 21d
+      beta_21d, beta_63d             - CAPM beta to market (if spx_ret present)
 
     Requires: ret_d
     Optional: spx_ret (needed for beta_21d, beta_63d)
@@ -178,7 +178,7 @@ def add_volatility_features(prices: pd.DataFrame) -> pd.DataFrame:
         lambda x: x.rolling(21, min_periods=10).std()
     )
 
-    # CAPM betas — only when market returns are available
+    # CAPM betas - only when market returns are available
     if "spx_ret" in prices.columns:
         for w, col in [(21, "beta_21d"), (63, "beta_63d")]:
             def _beta(g, w=w):
@@ -192,7 +192,7 @@ def add_volatility_features(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 3 — TAIL RISK  (6 new factors)
+# CAT 3 - TAIL RISK  (6 new factors)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def add_tail_risk(prices: pd.DataFrame) -> pd.DataFrame:
@@ -200,12 +200,12 @@ def add_tail_risk(prices: pd.DataFrame) -> pd.DataFrame:
     Add tail-risk features to daily prices.
 
     NEW COLUMNS:
-      kurt_60d        — rolling kurtosis (fat-tail signal)
-      maxdd_21d       — 21-day rolling max drawdown
-      maxdd_126d      — 126-day rolling max drawdown
-      var_95_21d      — 5th percentile of daily returns over 21d (Value-at-Risk proxy)
-      cvar_95_21d     — Conditional VaR: mean return below var_95_21d
-      omega_ratio_21d — sum of positive returns / |sum of negative returns| over 21d
+      kurt_60d        - rolling kurtosis (fat-tail signal)
+      maxdd_21d       - 21-day rolling max drawdown
+      maxdd_126d      - 126-day rolling max drawdown
+      var_95_21d      - 5th percentile of daily returns over 21d (Value-at-Risk proxy)
+      cvar_95_21d     - Conditional VaR: mean return below var_95_21d
+      omega_ratio_21d - sum of positive returns / |sum of negative returns| over 21d
 
     Requires: ret_d
     """
@@ -226,7 +226,7 @@ def add_tail_risk(prices: pd.DataFrame) -> pd.DataFrame:
     )
 
     def _cvar(x: pd.Series, w: int = 21) -> pd.Series:
-        """Mean of returns below the 5th percentile — rolling CVaR."""
+        """Mean of returns below the 5th percentile - rolling CVaR."""
         results = np.full(len(x), np.nan)
         for i in range(w - 1, len(x)):
             window = x.iloc[max(0, i - w + 1): i + 1].dropna().values
@@ -240,7 +240,7 @@ def add_tail_risk(prices: pd.DataFrame) -> pd.DataFrame:
 
     prices["cvar_95_21d"] = grp["ret_d"].transform(_cvar)
 
-    # Omega ratio — upside / downside mass
+    # Omega ratio - upside / downside mass
     def _omega(x: pd.Series, w: int = 21) -> pd.Series:
         pos = x.clip(lower=0).rolling(w, min_periods=10).sum()
         neg = (-x.clip(upper=0)).rolling(w, min_periods=10).sum()
@@ -252,7 +252,7 @@ def add_tail_risk(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 4 — PRICE LEVEL / TREND  (11 new factors)
+# CAT 4 - PRICE LEVEL / TREND  (11 new factors)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def add_price_trend(prices: pd.DataFrame) -> pd.DataFrame:
@@ -260,14 +260,14 @@ def add_price_trend(prices: pd.DataFrame) -> pd.DataFrame:
     Add price level and trend features to daily prices.
 
     NEW COLUMNS:
-      price_to_ma10, price_to_ma50, price_to_ma100  — close relative to MAs
-      nearness_52w_low    — close / 52-week low (distance from bottom)
-      rsi_14, rsi_21      — Wilder RSI
-      macd_signal         — (EMA12 - EMA26) / close  (normalized MACD)
-      bollinger_pct       — Bollinger Band %B: (close - lower) / (upper - lower)
-      trend_slope_21d     — OLS slope / price mean over 21d
-      trend_slope_63d     — OLS slope / price mean over 63d
-      trend_r2_21d        — R² of 21d OLS trend
+      price_to_ma10, price_to_ma50, price_to_ma100  - close relative to MAs
+      nearness_52w_low    - close / 52-week low (distance from bottom)
+      rsi_14, rsi_21      - Wilder RSI
+      macd_signal         - (EMA12 - EMA26) / close  (normalized MACD)
+      bollinger_pct       - Bollinger Band %B: (close - lower) / (upper - lower)
+      trend_slope_21d     - OLS slope / price mean over 21d
+      trend_slope_63d     - OLS slope / price mean over 63d
+      trend_r2_21d        - R² of 21d OLS trend
 
     Requires: close
     """
@@ -286,7 +286,7 @@ def add_price_trend(prices: pd.DataFrame) -> pd.DataFrame:
     prices["ma_cross_10_50"]  = prices["_ma_10d"]  / (prices["_ma_50d"]  + 1e-9) - 1
     prices["ma_cross_50_200"] = prices["_ma_50d"]  / (prices["_ma_200d"] + 1e-9) - 1
 
-    # 52-week low nearness (distance from 52-week low — high = stock broke out of bottom)
+    # 52-week low nearness (distance from 52-week low - high = stock broke out of bottom)
     prices["_low_52w"] = grp["close"].transform(
         lambda x: x.rolling(252, min_periods=120).min()
     )
@@ -294,7 +294,7 @@ def add_price_trend(prices: pd.DataFrame) -> pd.DataFrame:
 
     # Wilder RSI
     prices["rsi_14"] = grp["close"].transform(lambda x: _wilder_rsi(x, w=14))
-    # rsi_21 removed — R²=0.99 vs rsi_14, near-exact duplicate (VIF > 100)
+    # rsi_21 removed - R²=0.99 vs rsi_14, near-exact duplicate (VIF > 100)
 
     # MACD: line = (EMA12 - EMA26) / close, histogram = line - 9-day EMA of line
     ema12 = grp["close"].transform(lambda x: x.ewm(span=12, adjust=False).mean())
@@ -329,7 +329,7 @@ def add_price_trend(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 5 — VOLUME & LIQUIDITY  (6 new factors; degrades gracefully without volume)
+# CAT 5 - VOLUME & LIQUIDITY  (6 new factors; degrades gracefully without volume)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def add_volume_liquidity(prices: pd.DataFrame) -> pd.DataFrame:
@@ -337,11 +337,11 @@ def add_volume_liquidity(prices: pd.DataFrame) -> pd.DataFrame:
     Add volume and liquidity features to daily prices.
 
     NEW COLUMNS (requires 'volume' column):
-      dollar_vol_21d    — rolling 21d mean of close * volume
-      dollar_vol_63d    — rolling 63d mean of close * volume
-      vol_momentum_21d  — volume / 21d_avg_volume - 1  (volume surge signal)
-      vol_trend_ratio   — 21d_avg_volume / 63d_avg_volume
-      obv_signal        — OBV momentum: 21d pct change in cumulative OBV
+      dollar_vol_21d    - rolling 21d mean of close * volume
+      dollar_vol_63d    - rolling 63d mean of close * volume
+      vol_momentum_21d  - volume / 21d_avg_volume - 1  (volume surge signal)
+      vol_trend_ratio   - 21d_avg_volume / 63d_avg_volume
+      obv_signal        - OBV momentum: 21d pct change in cumulative OBV
 
     NEW COLUMNS (always, without volume):
       [hl_ratio_d and amihud_21d are computed in 1h_feature_engineering.py existing code;
@@ -350,7 +350,7 @@ def add_volume_liquidity(prices: pd.DataFrame) -> pd.DataFrame:
     Degrades gracefully: if 'volume' not in prices.columns, skips all volume factors.
     """
     if "volume" not in prices.columns:
-        return prices   # no volume data — skip silently
+        return prices   # no volume data - skip silently
 
     grp = prices.groupby("ticker", group_keys=False)
 
@@ -388,7 +388,7 @@ def add_volume_liquidity(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 6 — MARKET BETA / CORRELATION  (8 new factors)
+# CAT 6 - MARKET BETA / CORRELATION  (8 new factors)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def add_beta_correlation(prices: pd.DataFrame) -> pd.DataFrame:
@@ -396,12 +396,12 @@ def add_beta_correlation(prices: pd.DataFrame) -> pd.DataFrame:
     Add market beta and correlation features.
 
     NEW COLUMNS (requires spx_ret):
-      beta_252d       — rolling 252d CAPM beta to SPX
-      corr_spx_21d    — rolling 21d Pearson correlation with SPX
-      corr_spx_63d    — rolling 63d Pearson correlation with SPX
-      idio_vol_252d   — std of (ret_d - beta_252d * spx_ret) over 252d
-      up_beta_63d     — beta on up-market days (spx_ret > 0)
-      down_beta_63d   — beta on down-market days (spx_ret < 0)
+      beta_252d       - rolling 252d CAPM beta to SPX
+      corr_spx_21d    - rolling 21d Pearson correlation with SPX
+      corr_spx_63d    - rolling 63d Pearson correlation with SPX
+      idio_vol_252d   - std of (ret_d - beta_252d * spx_ret) over 252d
+      up_beta_63d     - beta on up-market days (spx_ret > 0)
+      down_beta_63d   - beta on down-market days (spx_ret < 0)
 
     Note: beta_21d and beta_63d may already be present from add_volatility_features;
     this function skips them if already computed.
@@ -468,7 +468,7 @@ def add_beta_correlation(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 7 — INTRADAY / MICROSTRUCTURE  (5 new factors)
+# CAT 7 - INTRADAY / MICROSTRUCTURE  (5 new factors)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def add_microstructure(prices: pd.DataFrame) -> pd.DataFrame:
@@ -476,11 +476,11 @@ def add_microstructure(prices: pd.DataFrame) -> pd.DataFrame:
     Add intraday and microstructure features.
 
     NEW COLUMNS:
-      avg_hl_range_21d   — average (high-low)/close over 21d (range proxy)
-      avg_gap_21d        — average |open/prev_close - 1| over 21d (overnight gap)
-      open_to_close_21d  — average (close-open)/open over 21d (intraday direction)
-      atr_21d_norm       — 14-period EWM ATR normalised by close
-      intraday_vol_21d   — rolling std of (close-open)/open over 21d
+      avg_hl_range_21d   - average (high-low)/close over 21d (range proxy)
+      avg_gap_21d        - average |open/prev_close - 1| over 21d (overnight gap)
+      open_to_close_21d  - average (close-open)/open over 21d (intraday direction)
+      atr_21d_norm       - 14-period EWM ATR normalised by close
+      intraday_vol_21d   - rolling std of (close-open)/open over 21d
 
     Requires: open, high, low, close
     """
@@ -534,7 +534,7 @@ def add_microstructure(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 8 — CROSS-SECTIONAL RELATIVE  (6 new monthly factors)
+# CAT 8 - CROSS-SECTIONAL RELATIVE  (6 new monthly factors)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def add_cross_sectional_relative(
@@ -554,12 +554,12 @@ def add_cross_sectional_relative(
         spx_ret_12m, spx_vol_63d  (market monthly returns and vol).
 
     NEW COLUMNS:
-      residual_ret_12m  — ret_12m - beta_252d * spx_ret_12m  (CAPM alpha proxy)
+      residual_ret_12m  - ret_12m - beta_252d * spx_ret_12m  (CAPM alpha proxy)
 
     REMOVED (were exact duplicates after cross-sectional rank normalisation):
-      ret_rel_spx_1m/3m/6m — identical to ret_1m/3m/6m (SPX return is constant cross-sectionally)
-      vol_rel_spx_63d       — identical to vol_21d (denominator spx_vol_63d is constant)
-      beta_adj_ret_12m      — alias of residual_ret_12m
+      ret_rel_spx_1m/3m/6m - identical to ret_1m/3m/6m (SPX return is constant cross-sectionally)
+      vol_rel_spx_63d       - identical to vol_21d (denominator spx_vol_63d is constant)
+      beta_adj_ret_12m      - alias of residual_ret_12m
 
     spx_ret_* and spx_vol_63d are kept in panel for MACRO_COLS time-series z-scoring.
     """
@@ -580,7 +580,7 @@ def add_cross_sectional_relative(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 9 — FUNDAMENTAL / QUALITY  (12 factors, optional)
+# CAT 9 - FUNDAMENTAL / QUALITY  (12 factors, optional)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 FUNDAMENTAL_COLS = [
@@ -622,7 +622,7 @@ def add_fundamental_factors(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 10 — MACRO / REGIME  (9 factors, fetched from yfinance)
+# CAT 10 - MACRO / REGIME  (9 factors, fetched from yfinance)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 MACRO_TICKERS = {
@@ -644,20 +644,20 @@ def fetch_macro_data(
     Returns a date-indexed DataFrame with daily macro observations.
 
     Outputs:
-      vix_level           — VIX closing level
-      vix_change_21d      — 21-day pct change in VIX
-      yield_10y           — 10Y Treasury yield (decimal)
-      yield_spread_10y2y  — proxy: yield_10y - yield_3m  (2Y not available free)
-      yield_change_21d    — 21-day change in yield_10y
-      dollar_index        — DXY level
-      credit_proxy_change — 21-day pct change in HYG (high-yield ETF)
-      market_trend_spx    — SPX close / 200d MA - 1  (from spx_daily if provided)
-      market_vol_regime   — VIX / 20.0  (continuous normalised; >1 = high-vol regime)
+      vix_level           - VIX closing level
+      vix_change_21d      - 21-day pct change in VIX
+      yield_10y           - 10Y Treasury yield (decimal)
+      yield_spread_10y2y  - proxy: yield_10y - yield_3m  (2Y not available free)
+      yield_change_21d    - 21-day change in yield_10y
+      dollar_index        - DXY level
+      credit_proxy_change - 21-day pct change in HYG (high-yield ETF)
+      market_trend_spx    - SPX close / 200d MA - 1  (from spx_daily if provided)
+      market_vol_regime   - VIX / 20.0  (continuous normalised; >1 = high-vol regime)
     """
     try:
         import yfinance as yf
     except ImportError:
-        print("  [WARN] yfinance not installed — skipping macro factors")
+        print("  [WARN] yfinance not installed - skipping macro factors")
         return pd.DataFrame()
 
     tickers = list(MACRO_TICKERS.keys())
@@ -736,8 +736,8 @@ def add_macro_factors(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 11 — TIME SIGNAL FACTORS  (5 new factors)
-# Trend quality, momentum consistency, skewness — regime-sensitive signals
+# CAT 11 - TIME SIGNAL FACTORS  (5 new factors)
+# Trend quality, momentum consistency, skewness - regime-sensitive signals
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def add_time_signal_factors(prices: pd.DataFrame) -> pd.DataFrame:
@@ -745,11 +745,11 @@ def add_time_signal_factors(prices: pd.DataFrame) -> pd.DataFrame:
     Add time-series signal quality factors.
 
     NEW COLUMNS:
-      ir_6m               — 6m info ratio: ret_6m / vol_126d
-      trend_r2_126d       — R² of 126d OLS linear trend (trend persistence)
-      ret_consistency_12m — fraction of last 252 trading days with positive return
-      skew_60d            — 60d rolling return skewness (negative = crash risk)
-      drawdown_pct_252d   — current price / 252d rolling max - 1 (distance from ATH)
+      ir_6m               - 6m info ratio: ret_6m / vol_126d
+      trend_r2_126d       - R² of 126d OLS linear trend (trend persistence)
+      ret_consistency_12m - fraction of last 252 trading days with positive return
+      skew_60d            - 60d rolling return skewness (negative = crash risk)
+      drawdown_pct_252d   - current price / 252d rolling max - 1 (distance from ATH)
 
     Requires: close, ret_d
     """
@@ -769,7 +769,7 @@ def add_time_signal_factors(prices: pd.DataFrame) -> pd.DataFrame:
     )
     prices["ir_6m"] = prices[ret_6m_col] / (vol_126 + 1e-9)
 
-    # 126d trend R² (persistence of trend — higher = more trending)
+    # 126d trend R² (persistence of trend - higher = more trending)
     prices["trend_r2_126d"] = grp["close"].transform(
         lambda x: _trend_r2(x, w=126)
     )
@@ -796,8 +796,8 @@ def add_time_signal_factors(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 12 — BARRA-STYLE FACTORS  (4 new factors)
-# Size proxy, vol-of-vol, beta stability — cross-sectional risk exposures
+# CAT 12 - BARRA-STYLE FACTORS  (4 new factors)
+# Size proxy, vol-of-vol, beta stability - cross-sectional risk exposures
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def add_barra_style_factors(prices: pd.DataFrame) -> pd.DataFrame:
@@ -805,11 +805,11 @@ def add_barra_style_factors(prices: pd.DataFrame) -> pd.DataFrame:
     Add Barra-inspired cross-sectional risk exposure factors.
 
     NEW COLUMNS:
-      amihud_illiq_21d  — Amihud illiquidity: mean(|ret_d| / dollar_vol) over 21d
+      amihud_illiq_21d  - Amihud illiquidity: mean(|ret_d| / dollar_vol) over 21d
                           High = illiquid = small-cap proxy (Barra "SIZE" factor)
-      vol_of_vol_63d    — rolling std of vol_21d over 63d (Barra "DASTD" factor)
-      beta_stability_63d — rolling std of beta_21d over 63d (unstable beta → risk)
-      size_proxy        — log(dollar_vol_63d + 1) as continuous size proxy
+      vol_of_vol_63d    - rolling std of vol_21d over 63d (Barra "DASTD" factor)
+      beta_stability_63d - rolling std of beta_21d over 63d (unstable beta → risk)
+      size_proxy        - log(dollar_vol_63d + 1) as continuous size proxy
 
     amihud_illiq_21d and size_proxy require 'volume' column.
     vol_of_vol_63d and beta_stability_63d require vol_21d and beta_21d columns.
@@ -822,7 +822,7 @@ def add_barra_style_factors(prices: pd.DataFrame) -> pd.DataFrame:
         dollar_vol = prices["close"] * prices["volume"]
         prices["_dollar_vol_d"] = dollar_vol
 
-        # Amihud: mean(|ret_d| / dollar_vol) — high = illiquid = small
+        # Amihud: mean(|ret_d| / dollar_vol) - high = illiquid = small
         prices["_amihud_d"] = prices["ret_d"].abs() / (dollar_vol + 1e-9)
         prices["amihud_illiq_21d"] = grp["_amihud_d"].transform(
             lambda x: x.rolling(21, min_periods=10).mean() * 1e6  # scale for readability
@@ -857,7 +857,7 @@ def add_barra_style_factors(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 13 — CROSS-SECTIONAL INTERACTION FACTORS  (5 new factors, monthly level)
+# CAT 13 - CROSS-SECTIONAL INTERACTION FACTORS  (5 new factors, monthly level)
 # Multi-dimensional cross-sectional signals and CAPM residuals
 # Called AFTER add_macro_factors() so spx_ret_* cols are present in panel
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -872,12 +872,12 @@ def add_macro_interaction_factors(panel: pd.DataFrame) -> pd.DataFrame:
     with a market-relative benchmark, producing genuinely 2D cross-sectional signals.
 
     NEW COLUMNS:
-      residual_ret_1m     — ret_1m - beta_252d × spx_ret_1m   (1m CAPM alpha)
-      beta_x_idiovol      — beta_252d × idio_vol_252d          (systematic × idiosyncratic risk)
-      up_down_beta_spread — up_beta_63d - down_beta_63d         (directional beta asymmetry)
-      vol_excess          — vol_21d / (|beta_252d| × spx_vol_63d + ε) - 1
+      residual_ret_1m     - ret_1m - beta_252d × spx_ret_1m   (1m CAPM alpha)
+      beta_x_idiovol      - beta_252d × idio_vol_252d          (systematic × idiosyncratic risk)
+      up_down_beta_spread - up_beta_63d - down_beta_63d         (directional beta asymmetry)
+      vol_excess          - vol_21d / (|beta_252d| × spx_vol_63d + ε) - 1
                             (stock vol in excess of market-implied vol)
-      mom_decel           — ret_1m / (|ret_6m| / 6 + ε) - 1   (short-term vs avg 6m momentum)
+      mom_decel           - ret_1m / (|ret_6m| / 6 + ε) - 1   (short-term vs avg 6m momentum)
 
     All degrade gracefully if underlying columns are missing.
     """
@@ -927,7 +927,7 @@ def add_macro_interaction_factors(panel: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 14 — SIZE FACTOR  (log market cap, fetched from yfinance with caching)
+# CAT 14 - SIZE FACTOR  (log market cap, fetched from yfinance with caching)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def fetch_market_cap_data(
@@ -940,13 +940,13 @@ def fetch_market_cap_data(
     Fetch current shares outstanding from yfinance for each ticker.
     Returns long-form DataFrame: [date, ticker, shares].
     Uses fast_info.shares (lightweight endpoint, ~0.3s/ticker, no 404 spam).
-    Caches to cache_path after first run — subsequent runs load instantly.
+    Caches to cache_path after first run - subsequent runs load instantly.
     """
     import warnings as _warnings
     try:
         import yfinance as yf
     except ImportError:
-        print("  [WARN] yfinance not installed — skipping market cap (Cat 14)")
+        print("  [WARN] yfinance not installed - skipping market cap (Cat 14)")
         return pd.DataFrame()
 
     cache = Path(cache_path) if cache_path else None
@@ -968,7 +968,7 @@ def fetch_market_cap_data(
                 _warnings.simplefilter("ignore")
                 t  = yf.Ticker(tk)
                 so = None
-                # fast_info.shares — quickest, no full info page needed
+                # fast_info.shares - quickest, no full info page needed
                 try:
                     fi = t.fast_info
                     v  = getattr(fi, "shares", None)
@@ -1024,7 +1024,7 @@ def add_size_factor(
     Requires 'close_me' in panel (month-end close price, added in build_daily_features).
     Market cap = shares_outstanding × close_me.
 
-    NEW COLUMN: log_mktcap — log(market cap in $).
+    NEW COLUMN: log_mktcap - log(market cap in $).
     Cross-sectionally ranked in 1g (higher rank = larger cap).
     Falls back to NaN (→ filled with 0 = neutral rank) if data unavailable.
     """
@@ -1069,7 +1069,7 @@ def add_size_factor(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CAT 15 — TAIL RANKING FEATURES
+# CAT 15 - TAIL RANKING FEATURES
 # ══════════════════════════════════════════════════════════════════════════════
 
 def add_tail_ranking_features(
@@ -1083,7 +1083,7 @@ def add_tail_ranking_features(
 
     Rationale:
       The CS-Transformer sees continuous ranks [0, 1]. Explicit tail dummies
-      give it a hard signal — "this stock is in the extreme top/bottom decile" —
+      give it a hard signal - "this stock is in the extreme top/bottom decile" -
       which the model might under-weight from smooth inputs alone. Also lets us
       capture contrarian / quintile-test effects cleanly.
 
@@ -1093,7 +1093,7 @@ def add_tail_ranking_features(
       {f}_tail : +1 top, -1 bottom, 0 middle              (signed tail indicator)
 
     These are computed CROSS-SECTIONALLY within each month so there is no
-    lookahead.  The resulting columns are already in {0,1} / {-1,0,+1} space —
+    lookahead.  The resulting columns are already in {0,1} / {-1,0,+1} space -
     no additional CS ranking is applied (marked via TAIL_COLS list in 1g).
 
     Parameters
@@ -1139,7 +1139,7 @@ def add_tail_ranking_features(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CAT 16 — FACTOR MINING (new alpha signals from prices)
+# CAT 16 - FACTOR MINING (new alpha signals from prices)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
@@ -1147,9 +1147,9 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
     Cat 16: New alpha factors mined from prices only.
 
     Mix of:
-      • Time-signal factors  — WHEN to use a signal (regime-conditional)
-      • Ordinary alpha       — raw price-derived signals with academic backing
-      • Non-linear combos    — interaction / ratio factors prices can support
+      • Time-signal factors  - WHEN to use a signal (regime-conditional)
+      • Ordinary alpha       - raw price-derived signals with academic backing
+      • Non-linear combos    - interaction / ratio factors prices can support
 
     NEW COLUMNS (all computed per-ticker):
       nearness_52w_high      George & Hwang (2004): close / 252d high. Strong predictor
@@ -1159,7 +1159,7 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
       risk_adj_mom_6m        Sharpe-weighted momentum: ret_6m / vol_126d. Strips out
                              the volatility component of momentum; more stable OOS.
       risk_adj_mom_12m       Same as above for 12-month horizon.
-      residual_mom_6m        ret_6m minus beta × spx_ret_6m. Market-neutral momentum —
+      residual_mom_6m        ret_6m minus beta × spx_ret_6m. Market-neutral momentum -
                              strips common factor, gives idiosyncratic 6m momentum.
       residual_mom_12m       Same for 12m horizon.
       up_down_vol_ratio      upvol_63d / downvol_63d. Values > 1 = more upside realized
@@ -1265,7 +1265,7 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
         prices.loc[idx, "mom_quality"] = ret_252 * monthly_pos_frac
 
         # ── price_range_ratio ────────────────────────────────────────────────
-        # (52w high - 52w low) / close  — uncertainty / ambiguity premium
+        # (52w high - 52w low) / close  - uncertainty / ambiguity premium
         low_252 = pd.Series(close).rolling(252, min_periods=126).min().values
         prices.loc[idx, "price_range_ratio"] = _safe_div(high_252 - low_252, close)
 
@@ -1293,7 +1293,7 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CAT 17 — TIME-SIGNAL FACTORS (WHEN to apply a signal)
+# CAT 17 - TIME-SIGNAL FACTORS (WHEN to apply a signal)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
@@ -1349,7 +1349,7 @@ def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
 
         # ── CAT A: Time-Series Momentum ───────────────────────────────────────
         # Moskowitz, Ooi & Pedersen (2012): sign of own past return.
-        # BINARY {+1, -1} per stock — not ranked cross-sectionally.
+        # BINARY {+1, -1} per stock - not ranked cross-sectionally.
         ret_252 = cls_s.pct_change(252)   # ~12-month return (1 year of trading days)
         ret_126 = cls_s.pct_change(126)   # ~6-month return
 
@@ -1361,7 +1361,7 @@ def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
 
         # ── CAT B: Moving Average Regime ──────────────────────────────────────
         # Han, Kim & Mukherjee (2013): above MA = uptrend for THIS stock.
-        # Binary flag — not ranked vs peers.
+        # Binary flag - not ranked vs peers.
         ma200 = cls_s.rolling(200, min_periods=100).mean()
         ma50  = cls_s.rolling(50,  min_periods=25).mean()
 
@@ -1466,7 +1466,7 @@ def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
 
         # ── CAT F: Serial Correlation Sign ────────────────────────────────────
         # Lo & MacKinlay (1988): each stock has its own autocorrelation character.
-        # BINARY {+1, -1} — is THIS stock in momentum or mean-reversion state?
+        # BINARY {+1, -1} - is THIS stock in momentum or mean-reversion state?
         # NOT ranked vs other stocks.
         def _autocorr_1(x):
             if len(x) < 5:
@@ -1524,7 +1524,7 @@ add_time_signal_v2 = add_proper_time_signals
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CAT 18 — SEASONALITY FACTORS
+# CAT 18 - SEASONALITY FACTORS
 # ══════════════════════════════════════════════════════════════════════════════
 
 def add_seasonality_factors(prices: pd.DataFrame) -> pd.DataFrame:
@@ -1533,11 +1533,11 @@ def add_seasonality_factors(prices: pd.DataFrame) -> pd.DataFrame:
 
     Academic basis:
       Heston & Sadka (2008) "Seasonality in the Cross-Section of Stock Returns"
-        — A stock's return in calendar month M last year predicts its return in
+        - A stock's return in calendar month M last year predicts its return in
           month M this year. IC ~2-4%, persistent OOS across decades.
-      Ariel (1990) turn-of-month effect — returns concentrate in last 1 + first 3
+      Ariel (1990) turn-of-month effect - returns concentrate in last 1 + first 3
         trading days of each month.
-      Keim (1983) January effect — small caps outperform in January.
+      Keim (1983) January effect - small caps outperform in January.
 
     NEW COLUMNS:
       ret_same_month_1y   Total return for same calendar month, 1 year ago.
@@ -1624,11 +1624,11 @@ def add_seasonality_factors(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 19 — Short Interest Factors
+# CAT 19 - Short Interest Factors
 # ═══════════════════════════════════════════════════════════════════════════════
-# Drechsler & Drechsler (2016) — short interest cost and equity returns
-# Asquith, Pathak & Ritter (2005) — short interest and returns
-# Diether, Lee & Werner (2009) — short-selling
+# Drechsler & Drechsler (2016) - short interest cost and equity returns
+# Asquith, Pathak & Ritter (2005) - short interest and returns
+# Diether, Lee & Werner (2009) - short-selling
 
 SHORT_INTEREST_COLS = [
     "short_pct_float", "short_interest_ratio", "short_change_2w", "short_squeeze_risk",
@@ -1654,7 +1654,7 @@ def add_short_interest_factors(
     """
     si_cols = [c for c in SHORT_INTEREST_COLS if c in short_df.columns]
     if not si_cols:
-        print("  Cat 19: no short interest columns found — skipping")
+        print("  Cat 19: no short interest columns found - skipping")
         return panel
 
     si_sub = short_df[["date", "ticker"] + si_cols].copy()
@@ -1676,12 +1676,12 @@ def add_short_interest_factors(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CAT 20 — Institutional Ownership Factors
+# CAT 20 - Institutional Ownership Factors
 # ═══════════════════════════════════════════════════════════════════════════════
-# Gompers & Metrick (2001) — institutional ownership and stock returns
-# Yan & Zhang (2009) — institutional investors and cross-section
-# Chen, Hong & Stein (2002) — breadth of ownership
-# Hartzell & Starks (2003) — institutional investors and executive compensation
+# Gompers & Metrick (2001) - institutional ownership and stock returns
+# Yan & Zhang (2009) - institutional investors and cross-section
+# Chen, Hong & Stein (2002) - breadth of ownership
+# Hartzell & Starks (2003) - institutional investors and executive compensation
 
 INSTITUTIONAL_COLS = [
     "inst_own_pct", "inst_own_change", "num_institutions", "inst_concentration",
@@ -1707,7 +1707,7 @@ def add_institutional_factors(
     """
     inst_cols = [c for c in INSTITUTIONAL_COLS if c in inst_df.columns]
     if not inst_cols:
-        print("  Cat 20: no institutional ownership columns found — skipping")
+        print("  Cat 20: no institutional ownership columns found - skipping")
         return panel
 
     inst_sub = inst_df[["date", "ticker"] + inst_cols].copy()

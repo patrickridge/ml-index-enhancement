@@ -6,7 +6,7 @@ PCA residualization of the factor panel.
 Reads:   data/panel_monthly_enriched.parquet
 Writes:  data/panel_monthly_orthogonalized.parquet
 
-Method (PCA Residualization — industry standard):
+Method (PCA Residualization - industry standard):
   1. Stack all (date × ticker) observations → X matrix (n_obs, N_features)
   2. Fit PCA with K components, where K explains >= PCA_VARIANCE_THRESHOLD of shared variance
   3. Project X onto K-dimensional PCA subspace: X_proj = pca.inverse_transform(pca.transform(X))
@@ -31,7 +31,7 @@ Walk-forward note:
   recent data at the feature level. For strict OOS, a walk-forward PCA wrapper
   can be added in a future version.
 
-Macro columns (MACRO_COLS) are excluded from residualization — they are already
+Macro columns (MACRO_COLS) are excluded from residualization - they are already
 time-series z-scored and carry regime-level information, not cross-sectional alpha.
 
 Run time: < 1 minute (pure numpy/sklearn).
@@ -92,7 +92,7 @@ def pca_residualize(
     # Fit K-component PCA and project X onto it
     pca_k = PCA(n_components=K, random_state=42)
     scores = pca_k.fit_transform(X)          # (n_obs, K)
-    X_proj = pca_k.inverse_transform(scores)  # (n_obs, n_features) — PCA projection
+    X_proj = pca_k.inverse_transform(scores)  # (n_obs, n_features) - PCA projection
     X_resid = X - X_proj                      # residuals: orthogonal to all K PCs
 
     return X_resid, K, cum_var
@@ -100,7 +100,7 @@ def pca_residualize(
 
 def main():
     print("=" * 60)
-    print("FACTOR ORTHOGONALIZATION — PCA Residualization")
+    print("FACTOR ORTHOGONALIZATION - PCA Residualization")
     print("=" * 60)
 
     # Load enriched panel
@@ -110,7 +110,7 @@ def main():
     panel = panel.sort_values(["date", "ticker"]).reset_index(drop=True)
     print(f"Panel: {panel.shape}")
 
-    # Identify feature columns (exclude macro — already z-scored, not cs-ranked)
+    # Identify feature columns (exclude macro - already z-scored, not cs-ranked)
     always_exclude = {"date", "ticker", "fwd_ret_1m"}
     macro_in_panel = [c for c in MACRO_COLS if c in panel.columns]
     feat_cols = [

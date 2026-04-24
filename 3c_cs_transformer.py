@@ -4,13 +4,13 @@
 Cross-Sectional Transformer for S&P 500 stock ranking.
 
 Architecture (two-stage):
-  Stage 1 — Per-Stock Feature Attention:
+  Stage 1 - Per-Stock Feature Attention:
     Each stock's 100+ features are tokenized (one d_model-dim embedding per feature),
     a learnable [CLS] token is prepended, and a TransformerEncoder attends over the
     feature dimension. The CLS output becomes the stock's summary embedding.
     Weights are SHARED across all stocks (like a shared encoder in set transformers).
 
-  Stage 2 — Cross-Stock Attention:
+  Stage 2 - Cross-Stock Attention:
     All stock embeddings for one month are stacked into a sequence of length N_stocks.
     A MARKET_CLS token is prepended. A second TransformerEncoder attends across the
     full cross-section so each stock "sees" its peers before generating its score.
@@ -110,7 +110,7 @@ class FeatureTokenizer(nn.Module):
     Per-feature linear projection: each scalar → d_model-dim embedding.
     Separate weights per feature (same as in FTTransformer).
 
-    Built-in L1/L2 penalty on per-feature weight norms — lets the model
+    Built-in L1/L2 penalty on per-feature weight norms - lets the model
     learn to zero out useless features instead of manual pre-filtering.
     """
     def __init__(self, n_features: int, d_model: int):
@@ -132,7 +132,7 @@ class FeatureTokenizer(nn.Module):
 
         Returns scalar penalty to add to the loss.
         """
-        # Per-feature norm: (n_features,) — L2 norm of each feature's embedding
+        # Per-feature norm: (n_features,) - L2 norm of each feature's embedding
         feat_norms = self.weight.norm(dim=1)  # (n_features,)
         l1_penalty = l1_lambda * feat_norms.sum()
         l2_penalty = l2_lambda * (feat_norms ** 2).sum()
@@ -173,7 +173,7 @@ class MacroFiLMLayer(nn.Module):
     Given macro embedding and per-stock feature tokens, produces per-feature
     (gamma, beta) and modulates: tokens_out = gamma * tokens + beta.
 
-    This creates implicit n_features × n_macro interactions — the model learns
+    This creates implicit n_features × n_macro interactions - the model learns
     which factors to trust/distrust under each macro regime.
 
     Identity-initialized (gamma=1, beta=0) so pre-trained weights still work.
@@ -250,7 +250,7 @@ class CrossSectionalTransformer(nn.Module):
     Two-stage cross-sectional transformer for monthly stock ranking.
 
     Stage 1 (feature attention):
-      - Input: (MAX_N, n_features) — all stocks in a month (padded)
+      - Input: (MAX_N, n_features) - all stocks in a month (padded)
       - FeatureTokenizer → (MAX_N, n_features, d_model)
       - Prepend CLS_S1 → (MAX_N, n_features+1, d_model)
       - TransformerEncoder over feature dim → (MAX_N, n_features+1, d_model)
@@ -333,17 +333,17 @@ class CrossSectionalTransformer(nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor,            # (MAX_N, n_features) — stock features only
-        padding_mask: torch.Tensor,  # (MAX_N,) bool — True = padded/invalid stock
-        x_macro: torch.Tensor = None,  # (n_macro,) — macro features (one per month)
-        corr_matrix: torch.Tensor = None,  # (F, F) — factor correlation matrix
+        x: torch.Tensor,            # (MAX_N, n_features) - stock features only
+        padding_mask: torch.Tensor,  # (MAX_N,) bool - True = padded/invalid stock
+        x_macro: torch.Tensor = None,  # (n_macro,) - macro features (one per month)
+        corr_matrix: torch.Tensor = None,  # (F, F) - factor correlation matrix
     ) -> torch.Tensor:              # (MAX_N,) scores
         """
-        x:            (MAX_N, F)  — stock feature matrix (padded)
-        padding_mask: (MAX_N,)    — True for padded positions
-        x_macro:      (n_macro,)  — macro features (same for all stocks in month)
-        corr_matrix:  (F, F)      — Spearman correlation matrix of stock features
-        Returns:      (MAX_N,)    — scores; caller masks out padded positions
+        x:            (MAX_N, F)  - stock feature matrix (padded)
+        padding_mask: (MAX_N,)    - True for padded positions
+        x_macro:      (n_macro,)  - macro features (same for all stocks in month)
+        corr_matrix:  (F, F)      - Spearman correlation matrix of stock features
+        Returns:      (MAX_N,)    - scores; caller masks out padded positions
         """
         MAX_N = x.shape[0]
 
@@ -367,7 +367,7 @@ class CrossSectionalTransformer(nn.Module):
         else:
             out_s1 = self.transformer_s1(tokens)             # (MAX_N, F+1, d)
 
-        stock_emb = out_s1[:, 0, :]                          # (MAX_N, d) — CLS output
+        stock_emb = out_s1[:, 0, :]                          # (MAX_N, d) - CLS output
 
         # ── Stage 2: cross-stock attention ────────────────────────────────────
         stock_seq = stock_emb.unsqueeze(0)                   # (1, MAX_N, d)
@@ -388,7 +388,7 @@ class CrossSectionalTransformer(nn.Module):
     def forward_enriched(
         self,
         x: torch.Tensor,            # (MAX_N, n_features)
-        padding_mask: torch.Tensor,  # (MAX_N,) bool — True = padded
+        padding_mask: torch.Tensor,  # (MAX_N,) bool - True = padded
         x_macro: torch.Tensor = None,
         corr_matrix: torch.Tensor = None,
     ) -> tuple:
@@ -548,7 +548,7 @@ def masked_ic_loss(
 ) -> torch.Tensor:
     """
     Negative Pearson IC computed over valid stocks. Differentiable proxy for
-    rank-IC — on monthly returns it tracks Spearman IC very closely without
+    rank-IC - on monthly returns it tracks Spearman IC very closely without
     needing sorting networks.
 
     Minimising this objective = maximising IC. Same direction as "optimise
@@ -656,7 +656,7 @@ def train_cs_model(
 
         scheduler.step()
 
-        # ── Validate (always MSE — comparable across configs) ──
+        # ── Validate (always MSE - comparable across configs) ──
         model.eval()
         val_losses = []
         with torch.no_grad():
@@ -681,7 +681,7 @@ def train_cs_model(
             n_batches = max(len(train_cs), 1)
             loss_label = "train_ic" if loss_type == "ic" else "train_mse"
             train_val = epoch_loss / n_batches
-            # IC loss is stored as negative — flip sign for readable print
+            # IC loss is stored as negative - flip sign for readable print
             if loss_type == "ic":
                 train_val = -train_val
             print(f"    Epoch {epoch+1:3d} | "
@@ -726,7 +726,7 @@ def portfolio_reward(
         top_k = max(1, n // 4)
         bottom_k = max(1, n // 4)
 
-    # Sort scores descending — gradient flows through sorted_idx
+    # Sort scores descending - gradient flows through sorted_idx
     sorted_scores, sorted_idx = scores.sort(descending=True)
     sorted_returns = returns[sorted_idx]
 
@@ -835,7 +835,7 @@ def _compute_val_rank_ic(
 ) -> float:
     """
     Validation metric: mean Spearman rank IC across validation months.
-    Uses rank correlation between predicted scores and realized returns —
+    Uses rank correlation between predicted scores and realized returns -
     no return leakage since this is a read-only evaluation.
     """
     model.eval()
@@ -1185,7 +1185,7 @@ def main():
         print(f"Zombie filter: {pre_rows:,} → {len(panel):,} rows "
               f"({pre_rows - len(panel):,} non-SPX pairs dropped)")
     else:
-        print(f"[WARN] {spx_weights_path} not found — skipping zombie filter")
+        print(f"[WARN] {spx_weights_path} not found - skipping zombie filter")
 
     # ── Separate stock vs macro features ─────────────────────────────────────
     exclude   = {"date", "ticker", "fwd_ret_1m"}
@@ -1240,7 +1240,7 @@ def main():
     rl_method = RL_FINETUNE_PARAMS["method"]
     loss_type = p.get("loss_type", "mse")
     if n_seeds > 1:
-        print(f"\nTraining ensemble ({n_seeds} seeds) — loss={loss_type.upper()}, "
+        print(f"\nTraining ensemble ({n_seeds} seeds) - loss={loss_type.upper()}, "
               f"RL={rl_method.upper()}")
     else:
         print(f"\nStage 1: pre-training (loss={loss_type.upper()})...")
@@ -1311,7 +1311,7 @@ def main():
 
     # ── Print results ─────────────────────────────────────────────────────────
     print("\n" + "=" * 65)
-    print("CROSS-SECTIONAL TRANSFORMER — TEST PERIOD RESULTS")
+    print("CROSS-SECTIONAL TRANSFORMER - TEST PERIOD RESULTS")
     print("=" * 65)
     print_stats(f"Long-Only Top{TOP_N} (equal weight)", lo_rets["port_ret"])
     print_stats(f"Long-Short top/bot {int(LONG_FRAC*100)}%",  ls_rets["ls_ret"])

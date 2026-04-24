@@ -1,7 +1,7 @@
-# Feature Audit — Existing 205-Feature Factor Library
+# Feature Audit - Existing 205-Feature Factor Library
 
 **Date:** 2026-04-06
-**Panel:** `data/panel_monthly_enriched.parquet` — 147,733 rows × 208 columns
+**Panel:** `data/panel_monthly_enriched.parquet` - 147,733 rows × 208 columns
 **Date range:** 2005-01 to 2025-11 | **Tickers:** 697 historical S&P 500 constituents
 
 ---
@@ -19,7 +19,7 @@ All factor functions are in `utils_factors.py` (1,600+ lines). Cross-sectional r
 
 ## Feature Inventory by Category
 
-### Cat 1 — Multi-Horizon Momentum (6 factors)
+### Cat 1 - Multi-Horizon Momentum (6 factors)
 | Factor | Description | Window |
 |--------|-------------|--------|
 | `ret_1w` | 5-day return | 5d |
@@ -33,7 +33,7 @@ All factor functions are in `utils_factors.py` (1,600+ lines). Cross-sectional r
 
 **Gap:** No 1-3 month intermediate reversal factor explicitly separated from momentum.
 
-### Cat 2 — Volatility Regimes (8 factors)
+### Cat 2 - Volatility Regimes (8 factors)
 | Factor | Description |
 |--------|-------------|
 | `vol_5d`, `vol_21d`, `vol_126d` | Rolling realized vol |
@@ -46,7 +46,7 @@ All factor functions are in `utils_factors.py` (1,600+ lines). Cross-sectional r
 
 **Gap:** No vol term structure across 3+ horizons (e.g., vol_5d/vol_126d). No realized variance vs realized vol comparison.
 
-### Cat 3 — Tail Risk (6 factors)
+### Cat 3 - Tail Risk (6 factors)
 | Factor | Description |
 |--------|-------------|
 | `kurt_60d` | Rolling kurtosis |
@@ -57,7 +57,7 @@ All factor functions are in `utils_factors.py` (1,600+ lines). Cross-sectional r
 
 **Gap:** No drawdown duration, no time-since-max-drawdown, no recovery speed metrics.
 
-### Cat 4 — Price Level / Trend (15 factors)
+### Cat 4 - Price Level / Trend (15 factors)
 | Factor | Description |
 |--------|-------------|
 | `price_to_ma10/20/50/100/200` | Close relative to MAs |
@@ -71,7 +71,7 @@ All factor functions are in `utils_factors.py` (1,600+ lines). Cross-sectional r
 
 **Gap:** No ADX/DMI directional movement. No Choppiness Index. No trend efficiency ratio (net move / total path).
 
-### Cat 5 — Volume & Liquidity (5 factors)
+### Cat 5 - Volume & Liquidity (5 factors)
 | Factor | Description |
 |--------|-------------|
 | `dollar_vol_21d/63d` | Rolling mean dollar volume |
@@ -81,7 +81,7 @@ All factor functions are in `utils_factors.py` (1,600+ lines). Cross-sectional r
 
 **Gap:** No price-volume correlation. No volume-weighted return features. No Klinger oscillator.
 
-### Cat 6 — Market Beta / Correlation (8 factors)
+### Cat 6 - Market Beta / Correlation (8 factors)
 | Factor | Description |
 |--------|-------------|
 | `beta_252d` | 252d CAPM beta |
@@ -89,7 +89,7 @@ All factor functions are in `utils_factors.py` (1,600+ lines). Cross-sectional r
 | `idio_vol_252d` | Idiosyncratic vol |
 | `up_beta_63d`, `down_beta_63d` | Conditional (asymmetric) beta |
 
-### Cat 7 — Microstructure (5 factors)
+### Cat 7 - Microstructure (5 factors)
 | Factor | Description |
 |--------|-------------|
 | `avg_hl_range_21d` | Average (H-L)/C |
@@ -100,38 +100,38 @@ All factor functions are in `utils_factors.py` (1,600+ lines). Cross-sectional r
 
 **Gap:** No cumulative gap returns. No gap reversal tendency. No overnight vs intraday return decomposition.
 
-### Cat 8 — Cross-Sectional Relative (1 factor)
+### Cat 8 - Cross-Sectional Relative (1 factor)
 | Factor | Description |
 |--------|-------------|
 | `residual_ret_12m` | ret_12m - beta × spx_ret_12m |
 
-### Cat 9 — Fundamental / Quality (12 factors, optional)
+### Cat 9 - Fundamental / Quality (12 factors, optional)
 `pe_ratio`, `pb_ratio`, `ps_ratio`, `ev_ebitda`, `roe`, `roa`, `gross_margin`, `revenue_growth_yoy`, `eps_growth_yoy`, `debt_to_equity`, `earnings_quality`, `buyback_yield`
 
-### Cat 10 — Macro / Regime (9 factors, time-series z-scored)
+### Cat 10 - Macro / Regime (9 factors, time-series z-scored)
 `vix_level`, `vix_change_21d`, `yield_10y`, `yield_spread_10y2y`, `yield_change_21d`, `dollar_index`, `credit_proxy_change`, `market_trend_spx`, `market_vol_regime`
 
-### Cat 11 — Time Signal Factors (5 factors)
+### Cat 11 - Time Signal Factors (5 factors)
 `ir_6m`, `ir_3m` (if computed), `trend_r2_126d`, `ret_consistency_12m`, `skew_60d`, `drawdown_pct_252d`
 
-### Cat 12 — Barra-Style (4 factors)
+### Cat 12 - Barra-Style (4 factors)
 `amihud_illiq_21d`, `vol_of_vol_63d`, `beta_stability_63d`, `size_proxy`
 
-### Cat 13 — Interaction Factors (5 factors, monthly)
+### Cat 13 - Interaction Factors (5 factors, monthly)
 `residual_ret_1m`, `beta_x_idiovol`, `up_down_beta_spread`, `vol_excess`, `mom_decel`
 
-### Cat 14 — Size (1 factor)
+### Cat 14 - Size (1 factor)
 `log_mktcap`
 
-### Cat 15 — Tail Rankings (~60 factors)
+### Cat 15 - Tail Rankings (~60 factors)
 Binary top/bot/tail flags for ~20 base factors (3 cols each). Already in {0, 1, -1} space.
 
 **Base factors with tails:** `ret_1w`, `ret_2w`, `ret_6m`, `ret_9m`, `ret_12m`, `ret_18m`, `ret_24m`, `ret_1m`, `vol_21d`, `vol_252d`, `maxdd_126d`, `beta_252d`, `idio_vol_252d`, `log_mktcap`, `size_proxy`, `vol_momentum_21d`, `amihud_illiq_21d`
 
-### Cat 16 — Mined Alpha Signals (12 factors)
+### Cat 16 - Mined Alpha Signals (12 factors)
 `nearness_52w_high`, `max_ret_21d`, `risk_adj_mom_6m/12m`, `residual_mom_6m/12m`, `up_down_vol_ratio`, `co_skewness_63d`, `vol_contraction_signal`, `mom_quality`, `price_range_ratio`, `reversal_size`
 
-### Cat 17 — Time Signals v2 (17 factors, per-stock binary/directional)
+### Cat 17 - Time Signals v2 (17 factors, per-stock binary/directional)
 - TSMOM: `tsmom_sign_12m/6m`, `tsmom_magnitude`
 - MA regime: `above_ma_200/50`, `ma_200_slope`, `price_pct_above_ma200`
 - 52w high: `new_52w_high/low`, `ret_since_52w_low`
@@ -139,16 +139,16 @@ Binary top/bot/tail flags for ~20 base factors (3 cols each). Already in {0, 1, 
 - Earnings proxy: `earnings_gap`, `post_earnings_drift`
 - Serial corr: `serial_corr_sign`, `hurst_63d`
 
-### Cat 18 — Seasonality (5 factors)
+### Cat 18 - Seasonality (5 factors)
 `ret_same_month_1y/2y`, `ret_same_month_avg`, `turn_of_month`, `january_dummy`
 
-### Cat 19 — Short Interest (4 factors, optional)
+### Cat 19 - Short Interest (4 factors, optional)
 `short_pct_float`, `short_interest_ratio`, `short_change_2w`, `short_squeeze_risk`
 
-### Cat 20 — Institutional Ownership (4 factors, optional)
+### Cat 20 - Institutional Ownership (4 factors, optional)
 `inst_own_pct`, `inst_own_change`, `num_institutions`, `inst_concentration`
 
-### Cat 21 — Prediction Markets (6 factors, macro/time-series)
+### Cat 21 - Prediction Markets (6 factors, macro/time-series)
 `fed_hike_prob`, `fed_cut_prob`, `recession_prob`, `policy_uncertainty`, `vix_term_structure`, `pred_market_sentiment`
 
 ---
@@ -159,7 +159,7 @@ Binary top/bot/tail flags for ~20 base factors (3 cols each). Already in {0, 1, 
 
 | Cluster | Highly Correlated Pairs |
 |---------|------------------------|
-| **Price-to-MA family** | price_to_ma10/20/50/100/200 — monotonic overlap at longer horizons |
+| **Price-to-MA family** | price_to_ma10/20/50/100/200 - monotonic overlap at longer horizons |
 | **Momentum family** | ret_6m ↔ ret_9m, ret_12m ↔ ret_18m, risk_adj_mom ↔ ret variants |
 | **Volatility family** | vol_5d/21d/60d/126d/252d form a correlated chain |
 | **Beta variants** | beta_21d ↔ beta_63d ↔ beta_252d |
@@ -171,18 +171,18 @@ Binary top/bot/tail flags for ~20 base factors (3 cols each). Already in {0, 1, 
 ## Identified Gaps for Factor Mining
 
 ### 1. Path-Dependent Return Features (NOT COVERED)
-- Signed path length: sum(|daily ret|) / net return — measures path efficiency
+- Signed path length: sum(|daily ret|) / net return - measures path efficiency
 - Up-path vs down-path ratio
 - Max consecutive up/down days
 - Return dispersion within windows
 
 ### 2. Trend Efficiency / Choppiness (NOT COVERED)
-- Efficiency ratio: |net move| / sum(|daily moves|) — Kaufman (1995)
+- Efficiency ratio: |net move| / sum(|daily moves|) - Kaufman (1995)
 - Choppiness Index: log(sum(ATR_n)) / log(High_n - Low_n)
 - ADX / directional movement index
 - Fractal dimension proxy
 
-### 3. Drawdown Dynamics (PARTIALLY COVERED — only maxdd)
+### 3. Drawdown Dynamics (PARTIALLY COVERED - only maxdd)
 - Time since 52w high (NOT just nearness to it)
 - Drawdown duration (how many days in current drawdown)
 - Recovery speed from max drawdown
@@ -200,7 +200,7 @@ Binary top/bot/tail flags for ~20 base factors (3 cols each). Already in {0, 1, 
 - Volume at new highs vs volume at new lows
 - Accumulation/distribution line variants
 
-### 6. Gap / Overnight Decomposition (PARTIALLY COVERED — only avg_gap_21d)
+### 6. Gap / Overnight Decomposition (PARTIALLY COVERED - only avg_gap_21d)
 - Cumulative gap return over window
 - Gap reversal tendency (do gaps fill?)
 - Overnight return vs intraday return split

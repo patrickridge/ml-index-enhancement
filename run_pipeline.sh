@@ -1,5 +1,5 @@
 #!/bin/bash
-# run_pipeline.sh — Full data fetch + feature rebuild + analysis pipeline
+# run_pipeline.sh - Full data fetch + feature rebuild + analysis pipeline
 # Usage: bash run_pipeline.sh [--skip-fetch]
 # Runs: 1j-1m (data fetch) → 1h (feature engineering) → 2a (analysis) → 2g+2h (diagnostics)
 
@@ -19,7 +19,7 @@ if [ "$1" != "--skip-fetch" ]; then
     echo "  (Use --skip-fetch to skip if data is already downloaded)"
     echo ""
 
-    # 1j: Simfin fundamentals (slowest — 10-20 min via yfinance fallback)
+    # 1j: Simfin fundamentals (slowest - 10-20 min via yfinance fallback)
     echo "  Starting 1j (fundamentals)..."
     $PY 1j_fetch_simfin.py > logs/1j.log 2>&1 &
     PID_1J=$!
@@ -30,7 +30,7 @@ if [ "$1" != "--skip-fetch" ]; then
     PID_1M=$!
 
     # Wait for fast fetches first
-    wait $PID_1M && echo "  [1m] Done ✓" || echo "  [1m] FAILED — check logs/1m.log"
+    wait $PID_1M && echo "  [1m] Done ✓" || echo "  [1m] FAILED - check logs/1m.log"
 
     # 1k: Short interest (~10-20 min, depends on yfinance rate limits)
     echo "  Starting 1k (short interest)..."
@@ -43,9 +43,9 @@ if [ "$1" != "--skip-fetch" ]; then
     PID_1L=$!
 
     # Wait for all remaining fetches
-    wait $PID_1J && echo "  [1j] Done ✓" || echo "  [1j] FAILED — check logs/1j.log"
-    wait $PID_1K && echo "  [1k] Done ✓" || echo "  [1k] FAILED — check logs/1k.log"
-    wait $PID_1L && echo "  [1l] Done ✓" || echo "  [1l] FAILED — check logs/1l.log"
+    wait $PID_1J && echo "  [1j] Done ✓" || echo "  [1j] FAILED - check logs/1j.log"
+    wait $PID_1K && echo "  [1k] Done ✓" || echo "  [1k] FAILED - check logs/1k.log"
+    wait $PID_1L && echo "  [1l] Done ✓" || echo "  [1l] FAILED - check logs/1l.log"
 
     echo ""
     echo "  Data fetch complete. Checking output files:"
@@ -53,7 +53,7 @@ if [ "$1" != "--skip-fetch" ]; then
         if [ -f "$f" ]; then
             echo "    ✓ $f"
         else
-            echo "    ✗ $f (missing — Cat will be skipped)"
+            echo "    ✗ $f (missing - Cat will be skipped)"
         fi
     done
 fi
@@ -65,15 +65,15 @@ $PY 2g_factor_decay_report.py > logs/2g.log 2>&1 &
 PID_2G=$!
 $PY 2h_factor_crowding.py     > logs/2h.log 2>&1 &
 PID_2H=$!
-wait $PID_2G && echo "  [2g] Done ✓" || echo "  [2g] FAILED — check logs/2g.log"
-wait $PID_2H && echo "  [2h] Done ✓" || echo "  [2h] FAILED — check logs/2h.log"
+wait $PID_2G && echo "  [2g] Done ✓" || echo "  [2g] FAILED - check logs/2g.log"
+wait $PID_2H && echo "  [2h] Done ✓" || echo "  [2h] FAILED - check logs/2h.log"
 
 # ── Step 2: Rebuild panel with all Cats ───────────────────────────────
 echo ""
 echo "Step 2: Rebuilding panel (Cats 1-21)..."
 $PY 1h_feature_engineering.py 2>&1 | tee logs/1h.log
 if [ $? -ne 0 ]; then
-    echo "  [1h] FAILED — check logs/1h.log"
+    echo "  [1h] FAILED - check logs/1h.log"
     exit 1
 fi
 echo "  [1h] Done ✓"
@@ -83,7 +83,7 @@ echo ""
 echo "Step 3: Factor analysis on full panel (2a)..."
 $PY 2a_factor_analysis.py 2>&1 | tee logs/2a.log
 if [ $? -ne 0 ]; then
-    echo "  [2a] FAILED — check logs/2a.log"
+    echo "  [2a] FAILED - check logs/2a.log"
     exit 1
 fi
 echo "  [2a] Done ✓"

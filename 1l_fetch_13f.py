@@ -1,5 +1,5 @@
 """
-1l_fetch_13f.py — Fetch Institutional Ownership from SEC EDGAR 13F Filings
+1l_fetch_13f.py - Fetch Institutional Ownership from SEC EDGAR 13F Filings
 ============================================================================
 Downloads quarterly 13F filings from SEC EDGAR (completely free, no API key)
 to compute institutional ownership factors.
@@ -13,12 +13,12 @@ Approach:
 Alternative (faster): Use yfinance .institutional_holders for current snapshot.
 
 Academic basis:
-  Gompers & Metrick (2001) — institutional ownership and stock returns
-  Yan & Zhang (2009) — institutional investors and cross-section of returns
-  Chen, Hong & Stein (2002) — breadth of ownership and stock returns
+  Gompers & Metrick (2001) - institutional ownership and stock returns
+  Yan & Zhang (2009) - institutional investors and cross-section of returns
+  Chen, Hong & Stein (2002) - breadth of ownership and stock returns
 
 Output:
-  data/institutional_ownership.parquet — quarterly: date, ticker, inst_own_pct,
+  data/institutional_ownership.parquet - quarterly: date, ticker, inst_own_pct,
                                           inst_own_change, num_institutions, inst_concentration
 
 Run time: ~15-30 min (EDGAR + OpenFIGI API calls).
@@ -47,7 +47,7 @@ try:
     our_tickers = panel["ticker"].unique().tolist()
     print(f"Pipeline tickers: {len(our_tickers)}")
 except FileNotFoundError:
-    print("[ERROR] panel_monthly.parquet not found — run 1h first.")
+    print("[ERROR] panel_monthly.parquet not found - run 1h first.")
     raise SystemExit(1)
 
 
@@ -126,7 +126,7 @@ for i, tk in enumerate(our_tickers):
             rec["num_institutions"] = np.nan
             rec["inst_concentration"] = np.nan
 
-        # inst_own_change — need prior quarter data, set NaN for first snapshot
+        # inst_own_change - need prior quarter data, set NaN for first snapshot
         rec["inst_own_change"] = np.nan
 
         records.append(rec)
@@ -159,7 +159,7 @@ current_df["date"] = pd.to_datetime(current_df["date"])
 
 # ── Append to existing file if present ───────────────────────────────────────
 if OUT_PATH.exists():
-    print(f"\n  Found existing {OUT_PATH} — appending new snapshot...")
+    print(f"\n  Found existing {OUT_PATH} - appending new snapshot...")
     existing = pd.read_parquet(OUT_PATH)
     existing["date"] = pd.to_datetime(existing["date"])
 

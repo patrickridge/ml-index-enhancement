@@ -1,5 +1,5 @@
 """
-4e_stock_pitch_backtest.py — InvestSoc Fundamental Stock Pitch Backtest
+4e_stock_pitch_backtest.py - InvestSoc Fundamental Stock Pitch Backtest
 =========================================================================
 Backtest of the 6 fundamental analyst picks:
   Mercado Libre (MELI), CME Group (CME), Salesforce (CRM),
@@ -96,7 +96,7 @@ def ie_stats(port: pd.Series, bench: pd.Series) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 1 — Monthly returns for the 6 picks
+# STEP 1 - Monthly returns for the 6 picks
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def month_end_returns_from_prices(prices: pd.DataFrame, ticker: str) -> pd.Series:
@@ -166,7 +166,7 @@ def build_monthly_returns() -> pd.DataFrame:
     rets = pd.DataFrame(ret_dict).sort_index()
     rets.index = pd.to_datetime(rets.index)
 
-    # Align to month-end — normalize to last-day-of-month
+    # Align to month-end - normalize to last-day-of-month
     rets.index = rets.index + pd.offsets.MonthEnd(0)
     # Deduplicate any duplicate month-end indices
     rets = rets[~rets.index.duplicated(keep="last")]
@@ -184,7 +184,7 @@ def build_monthly_returns() -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 2 — Build the 1%-tilt over SPX portfolio
+# STEP 2 - Build the 1%-tilt over SPX portfolio
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def build_tilt_returns(picks_rets: pd.DataFrame) -> pd.DataFrame:
@@ -241,7 +241,7 @@ def build_tilt_returns(picks_rets: pd.DataFrame) -> pd.DataFrame:
                 wr_tilt.loc[mask, "w"] = wr_tilt.loc[mask, "w"] + TILT
                 in_spx_overweight += TILT
             else:
-                # Pick not in SPX this month — treat as overlay instead
+                # Pick not in SPX this month - treat as overlay instead
                 in_spx_overweight += 0.0
 
         # Non-SPX overlays (MELI, Maersk): add rows with +1pp each
@@ -269,7 +269,7 @@ def build_tilt_returns(picks_rets: pd.DataFrame) -> pd.DataFrame:
         non_pick_mask = ~wr_tilt["ticker"].isin(pick_tickers_in_spx)
         non_pick_sum = wr_tilt.loc[non_pick_mask, "w"].sum()
         scale = (1.0 - total_tilt - in_spx_overweight) / non_pick_sum if non_pick_sum > 0 else 1.0
-        # Wait — correct math:
+        # Wait - correct math:
         # Before tilt, sum(w) = 1.0. After adding TILT to each of k in-SPX picks, sum = 1 + k*TILT.
         # After adding overlays, sum = 1 + (k + m)*TILT where m = overlay count.
         # To restore sum=1, rescale non-pick rows by: (1 - TILT*(k+m)) / non_pick_sum_original.
@@ -313,7 +313,7 @@ def build_tilt_returns(picks_rets: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 3 — ML opinion on these 6 stocks
+# STEP 3 - ML opinion on these 6 stocks
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def ml_rank_percentile() -> float:
@@ -340,7 +340,7 @@ def main():
     # Step 1: monthly returns for the 6 picks
     picks_rets = build_monthly_returns()
     if picks_rets.empty:
-        raise RuntimeError("No pick returns — aborting")
+        raise RuntimeError("No pick returns - aborting")
 
     # Step 2: 1% tilt portfolio
     bt = build_tilt_returns(picks_rets)
@@ -373,7 +373,7 @@ def main():
 
     # ── Print results ─────────────────────────────────────────────────────
     print("\n" + "=" * 70)
-    print("RESULTS — Validation Window 2023-01 → 2024-06")
+    print("RESULTS - Validation Window 2023-01 → 2024-06")
     print("=" * 70)
     hdr = f"{'Strategy':<30} {'Ann Ret':>8} {'Vol':>7} {'Sharpe':>7} {'MaxDD':>8}" \
           f" {'α vs SPX':>9} {'TE':>7} {'IR':>6}"
@@ -390,7 +390,7 @@ def main():
                       f" {ie.get('track_err', np.nan)*100:>6.2f}%"
                       f" {ie.get('info_ratio', np.nan):>6.2f}")
         else:
-            extras = f" {'—':>9} {'—':>7} {'—':>6}"
+            extras = f" {'-':>9} {'-':>7} {'-':>6}"
         print(f"{label:<30} {ann*100:>7.2f}% {vol*100:>6.2f}% "
               f"{shp:>7.2f} {dd*100:>7.2f}%" + extras + f"  [n={n}]")
 

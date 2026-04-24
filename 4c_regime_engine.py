@@ -1,13 +1,13 @@
 """
-4c_regime_engine.py — Per-Regime Backtest Breakdown
+4c_regime_engine.py - Per-Regime Backtest Breakdown
 ====================================================
 Loads existing index enhancement backtest results and breaks performance
 out by market regime to answer: does the strategy hold up in bear markets,
 not just the AI bull run?
 
 Two regime methods:
-  1. Rule-based (default) — same 4 hardcoded regimes as 2a_factor_analysis.py
-  2. HMM (optional, --hmm flag) — 2-state Hidden Markov Model fitted to
+  1. Rule-based (default) - same 4 hardcoded regimes as 2a_factor_analysis.py
+  2. HMM (optional, --hmm flag) - 2-state Hidden Markov Model fitted to
      SPX monthly returns + VIX (detects risk-on / risk-off dynamically)
 
 Metrics per regime:
@@ -15,7 +15,7 @@ Metrics per regime:
 
 Outputs:
   data/ie_regime_breakdown.csv
-  figures/ie_regime_breakdown.png  — IR bar chart per model × regime
+  figures/ie_regime_breakdown.png  - IR bar chart per model × regime
 
 Usage:
   python 4c_regime_engine.py          # rule-based regimes
@@ -113,7 +113,7 @@ def label_regimes_hmm(dates: pd.Series) -> pd.Series:
     try:
         from hmmlearn.hmm import GaussianHMM
     except ImportError:
-        print("  hmmlearn not installed — falling back to rule-based regimes.")
+        print("  hmmlearn not installed - falling back to rule-based regimes.")
         print("  Install with:  pip install hmmlearn")
         return label_regimes_rule(dates)
 
@@ -122,7 +122,7 @@ def label_regimes_hmm(dates: pd.Series) -> pd.Series:
                           columns=["date", "ticker", "spx_ret_1m", "vix_level"]).to_pandas()
     panel["date"] = pd.to_datetime(panel["date"])
 
-    # One row per month (any ticker — macro cols are same for all)
+    # One row per month (any ticker - macro cols are same for all)
     macro = panel.groupby("date")[["spx_ret_1m", "vix_level"]].first().reset_index()
     macro = macro.sort_values("date").dropna()
 
@@ -163,7 +163,7 @@ def main():
     all_dfs = {}
     for model_name, fpath in MODELS.items():
         if not fpath.exists():
-            print(f"  SKIP {model_name} — {fpath} not found")
+            print(f"  SKIP {model_name} - {fpath} not found")
             continue
         df = pd.read_csv(fpath)
         df["date"] = pd.to_datetime(df["date"])
@@ -214,9 +214,9 @@ def main():
     for _, row in results.iterrows():
         regime_str = row["regime"]
         if row["n_months"] < 2:
-            print(f"  {row['model']:<18} {regime_str:<28} {'—':>7} {'—':>6} {'—':>7} {'—':>6} {'—':>7} {row['n_months']:>4}")
+            print(f"  {row['model']:<18} {regime_str:<28} {'-':>7} {'-':>6} {'-':>7} {'-':>6} {'-':>7} {row['n_months']:>4}")
             continue
-        ir_str = f"{row['info_ratio']:>7.3f}" if not np.isnan(row['info_ratio']) else f"{'—':>7}"
+        ir_str = f"{row['info_ratio']:>7.3f}" if not np.isnan(row['info_ratio']) else f"{'-':>7}"
         print(f"  {row['model']:<18} {regime_str:<28} "
               f"{row['ann_alpha']:>6.1f}% {row['track_err']:>5.1f}% "
               f"{ir_str} {row['hit_rate']:>5.1f}% "
@@ -275,7 +275,7 @@ def main():
         plt.close(fig)
         print(f"Saved → {out_png}")
     else:
-        print("  (Not enough data per regime to plot — test period mostly in one regime)")
+        print("  (Not enough data per regime to plot - test period mostly in one regime)")
 
     print(f"\nDone in {(_time.time() - _t0) / 60:.1f} min")
 

@@ -24,20 +24,20 @@ from typing import List
 
 def add_path_dependent(prices: pd.DataFrame) -> pd.DataFrame:
     """
-    Path-dependent return features — capture how prices got from A to B.
+    Path-dependent return features - capture how prices got from A to B.
 
     NEW COLUMNS:
-      cand_path_efficiency_21d   — |net return| / sum(|daily returns|) over 21d
+      cand_path_efficiency_21d   - |net return| / sum(|daily returns|) over 21d
                                    (1 = straight line, 0 = choppy path)
-      cand_path_efficiency_63d   — same over 63d
-      cand_up_path_ratio_21d     — sum(positive rets) / sum(|all rets|) over 21d
-      cand_max_consec_up_63d     — max consecutive up-days in past 63d
-      cand_max_consec_down_63d   — max consecutive down-days in past 63d
-      cand_signed_path_21d       — sum(|daily ret|) × sign(net return)
+      cand_path_efficiency_63d   - same over 63d
+      cand_up_path_ratio_21d     - sum(positive rets) / sum(|all rets|) over 21d
+      cand_max_consec_up_63d     - max consecutive up-days in past 63d
+      cand_max_consec_down_63d   - max consecutive down-days in past 63d
+      cand_signed_path_21d       - sum(|daily ret|) × sign(net return)
                                    (measures path length with direction)
-      cand_return_dispersion_21d — std of daily returns / |mean daily return| over 21d
+      cand_return_dispersion_21d - std of daily returns / |mean daily return| over 21d
                                    (coefficient of variation of daily returns)
-      cand_path_skew_21d         — asymmetry of daily return distribution within window
+      cand_path_skew_21d         - asymmetry of daily return distribution within window
     """
     for tk, grp in prices.groupby("ticker", sort=False):
         idx = grp.index
@@ -115,16 +115,16 @@ def add_trend_efficiency(prices: pd.DataFrame) -> pd.DataFrame:
                                   DIFFERENT from path_efficiency: uses close-to-close
                                   vs day-by-day returns. ER is close[t]-close[t-n] /
                                   sum(|close[i]-close[i-1]|). Standard TA indicator.
-      cand_kaufman_er_63d      — same over 63d
-      cand_choppiness_14d      — Choppiness Index: 100 × log(sum(ATR)/range) / log(n)
+      cand_kaufman_er_63d      - same over 63d
+      cand_choppiness_14d      - Choppiness Index: 100 × log(sum(ATR)/range) / log(n)
                                   High = choppy/sideways, Low = trending
-      cand_fractal_dim_63d     — Fractal dimension proxy from Higuchi method
+      cand_fractal_dim_63d     - Fractal dimension proxy from Higuchi method
                                   D ≈ 1.0 = trending, D ≈ 1.5 = random, D ≈ 2.0 = mean-reverting
-      cand_directional_persist — Fraction of days where sign(ret[t]) == sign(ret[t-1])
+      cand_directional_persist - Fraction of days where sign(ret[t]) == sign(ret[t-1])
                                   High = persistent trends, Low = frequent reversals
-      cand_adx_proxy_14d       — ADX proxy: ratio of directional movement to true range
-      cand_trend_break_63d     — Number of MA crossovers in 63d (low = persistent trend)
-      cand_trend_acceleration   — d(trend_slope_21d)/dt — is the trend accelerating?
+      cand_adx_proxy_14d       - ADX proxy: ratio of directional movement to true range
+      cand_trend_break_63d     - Number of MA crossovers in 63d (low = persistent trend)
+      cand_trend_acceleration   - d(trend_slope_21d)/dt - is the trend accelerating?
     """
     for tk, grp in prices.groupby("ticker", sort=False):
         idx = grp.index
@@ -228,14 +228,14 @@ def add_drawdown_dynamics(prices: pd.DataFrame) -> pd.DataFrame:
     Drawdown and recovery dynamics features.
 
     NEW COLUMNS:
-      cand_time_since_high_252d  — Trading days since 252d rolling high (0 = at high)
-      cand_drawdown_duration     — Consecutive days in current drawdown
-      cand_recovery_speed_63d    — Average daily return during recovery from drawdown
-      cand_time_underwater_126d  — Fraction of last 126d spent below prior peak
-      cand_drawdown_depth_speed  — maxdd_21d / max(1, days_in_drawdown) — how fast did it drop?
-      cand_bounce_from_low_21d   — Return from 21d low to current price
-      cand_recovery_ratio_63d    — (current - 63d_low) / (63d_high - 63d_low) — where in range?
-      cand_pain_index_63d        — Mean of drawdowns over 63d (not just max)
+      cand_time_since_high_252d  - Trading days since 252d rolling high (0 = at high)
+      cand_drawdown_duration     - Consecutive days in current drawdown
+      cand_recovery_speed_63d    - Average daily return during recovery from drawdown
+      cand_time_underwater_126d  - Fraction of last 126d spent below prior peak
+      cand_drawdown_depth_speed  - maxdd_21d / max(1, days_in_drawdown) - how fast did it drop?
+      cand_bounce_from_low_21d   - Return from 21d low to current price
+      cand_recovery_ratio_63d    - (current - 63d_low) / (63d_high - 63d_low) - where in range?
+      cand_pain_index_63d        - Mean of drawdowns over 63d (not just max)
     """
     for tk, grp in prices.groupby("ticker", sort=False):
         idx = grp.index
@@ -314,7 +314,7 @@ def add_drawdown_dynamics(prices: pd.DataFrame) -> pd.DataFrame:
 
 # ═════��═════════════════════════════════════════════��═══════════════════════════
 # FAMILY 4: VOLATILITY SHAPE & HIGHER MOMENTS
-# Beyond simple vol levels — captures vol dynamics and distribution shape.
+# Beyond simple vol levels - captures vol dynamics and distribution shape.
 # ═════════════════════════════════════════════════════════���═════════════════════
 
 def add_vol_shape(prices: pd.DataFrame) -> pd.DataFrame:
@@ -322,13 +322,13 @@ def add_vol_shape(prices: pd.DataFrame) -> pd.DataFrame:
     Volatility shape and higher moment features.
 
     NEW COLUMNS:
-      cand_realized_skew_21d     — Rolling skewness of returns, 21d
-      cand_realized_skew_63d     — Rolling skewness, 63d (partially overlaps skew_60d)
-      cand_kurt_change_63d       — Change in kurtosis over 63d (fat-tail momentum)
-      cand_vol_term_slope        — vol_5d / vol_126d (wider term structure than existing)
-      cand_jump_intensity_63d    — Count of |ret| > 3σ days in past 63d
-      cand_vol_asymmetry_63d     — (upvol - downvol) / (upvol + downvol) — vol skew
-      cand_realized_var_ratio    — realized variance / (realized vol)² — should be 1 for normal
+      cand_realized_skew_21d     - Rolling skewness of returns, 21d
+      cand_realized_skew_63d     - Rolling skewness, 63d (partially overlaps skew_60d)
+      cand_kurt_change_63d       - Change in kurtosis over 63d (fat-tail momentum)
+      cand_vol_term_slope        - vol_5d / vol_126d (wider term structure than existing)
+      cand_jump_intensity_63d    - Count of |ret| > 3σ days in past 63d
+      cand_vol_asymmetry_63d     - (upvol - downvol) / (upvol + downvol) - vol skew
+      cand_realized_var_ratio    - realized variance / (realized vol)² - should be 1 for normal
                                    dist, deviates for fat tails / jumps
     """
     for tk, grp in prices.groupby("ticker", sort=False):
@@ -379,7 +379,7 @@ def add_vol_shape(prices: pd.DataFrame) -> pd.DataFrame:
 
 # ═══════════════════════════════════════════════���═══════════════════════════════
 # FAMILY 5: VOLUME-PRICE INTERACTIONS
-# How volume relates to price movement — beyond simple volume metrics.
+# How volume relates to price movement - beyond simple volume metrics.
 # ══════════��═══════════��════════════════════════════════════════════════════════
 
 def add_volume_price(prices: pd.DataFrame) -> pd.DataFrame:
@@ -387,14 +387,14 @@ def add_volume_price(prices: pd.DataFrame) -> pd.DataFrame:
     Volume-price interaction features.
 
     NEW COLUMNS:
-      cand_price_vol_corr_21d    — Pearson corr(return, volume) over 21d
-      cand_price_vol_corr_63d    — same over 63d
-      cand_vwap_deviation_21d    — close / 21d VWAP - 1 (above/below volume-weighted avg)
-      cand_volume_at_highs       — avg volume on up days / avg volume on down days (63d)
-      cand_volume_return_mom_21d — 21d return weighted by volume rank
-      cand_accumulation_21d      — (close - low) / (high - low) × volume, cumulated 21d
-      cand_smart_money_flow_21d  — volume × sign(close - (high+low)/2), cumulated 21d
-      cand_vol_price_divergence  — sign(21d ret) != sign(21d vol change) → divergence
+      cand_price_vol_corr_21d    - Pearson corr(return, volume) over 21d
+      cand_price_vol_corr_63d    - same over 63d
+      cand_vwap_deviation_21d    - close / 21d VWAP - 1 (above/below volume-weighted avg)
+      cand_volume_at_highs       - avg volume on up days / avg volume on down days (63d)
+      cand_volume_return_mom_21d - 21d return weighted by volume rank
+      cand_accumulation_21d      - (close - low) / (high - low) × volume, cumulated 21d
+      cand_smart_money_flow_21d  - volume × sign(close - (high+low)/2), cumulated 21d
+      cand_vol_price_divergence  - sign(21d ret) != sign(21d vol change) → divergence
     """
     if "volume" not in prices.columns:
         return prices
@@ -470,14 +470,14 @@ def add_gap_features(prices: pd.DataFrame) -> pd.DataFrame:
     Gap and overnight return features.
 
     NEW COLUMNS:
-      cand_cum_gap_ret_21d       — Cumulative overnight gap return over 21d
-      cand_cum_intraday_ret_21d  — Cumulative intraday return over 21d
-      cand_gap_reversal_21d      — Correlation between gap and subsequent intraday move
+      cand_cum_gap_ret_21d       - Cumulative overnight gap return over 21d
+      cand_cum_intraday_ret_21d  - Cumulative intraday return over 21d
+      cand_gap_reversal_21d      - Correlation between gap and subsequent intraday move
                                    (negative = gaps tend to fill)
-      cand_gap_persistence_21d   — Autocorrelation of gap direction over 21d
-      cand_overnight_vs_intra    — overnight_ret_21d / (intraday_ret_21d + overnight_ret_21d)
-                                   — which component drives total return?
-      cand_large_gap_count_63d   — Count of gaps > 2% in past 63d
+      cand_gap_persistence_21d   - Autocorrelation of gap direction over 21d
+      cand_overnight_vs_intra    - overnight_ret_21d / (intraday_ret_21d + overnight_ret_21d)
+                                   - which component drives total return?
+      cand_large_gap_count_63d   - Count of gaps > 2% in past 63d
     """
     if "open" not in prices.columns:
         return prices
@@ -544,18 +544,18 @@ def add_alt_momentum(prices: pd.DataFrame) -> pd.DataFrame:
     Alternative momentum constructions.
 
     NEW COLUMNS:
-      cand_frog_in_pan_6m        — Da, Gurun, Warachka (2014): continuous small moves
+      cand_frog_in_pan_6m        - Da, Gurun, Warachka (2014): continuous small moves
                                    (many same-sign days) vs discrete jumps. FIP = sign(ret_6m) ×
                                    fraction of same-sign days. High FIP = underreaction.
-      cand_mom_breadth_63d       — Fraction of positive daily returns in past 63d
-      cand_mom_acceleration_63d  — ret_21d - ret_42d (short-term momentum picking up?)
-      cand_expected_shortfall_mom — Mean of worst 10% daily returns over 126d as signal
-      cand_idio_mom_6m           — 6m return after removing top-5-PC exposure
+      cand_mom_breadth_63d       - Fraction of positive daily returns in past 63d
+      cand_mom_acceleration_63d  - ret_21d - ret_42d (short-term momentum picking up?)
+      cand_expected_shortfall_mom - Mean of worst 10% daily returns over 126d as signal
+      cand_idio_mom_6m           - 6m return after removing top-5-PC exposure
                                    (SIMPLIFIED: residual_mom already captures single-factor;
                                     this uses vol-adjusted version)
-      cand_neg_mom_6m            — -ret_6m (intermediate reversal signal, 1-6 month)
-      cand_mom_vol_interaction   — ret_12m × vol_contraction_signal (momentum + low-vol timing)
-      cand_momentum_gap          — ret_12m - ret_1m (Jegadeesh 1990 skip-month purity)
+      cand_neg_mom_6m            - -ret_6m (intermediate reversal signal, 1-6 month)
+      cand_mom_vol_interaction   - ret_12m × vol_contraction_signal (momentum + low-vol timing)
+      cand_momentum_gap          - ret_12m - ret_1m (Jegadeesh 1990 skip-month purity)
     """
     for tk, grp in prices.groupby("ticker", sort=False):
         idx = grp.index
@@ -623,25 +623,25 @@ def add_nonlinear_interactions(prices: pd.DataFrame) -> pd.DataFrame:
     Nonlinear interaction features combining existing primitives.
 
     NEW COLUMNS:
-      cand_mom_x_vol_regime      — ret_12m × (1 if vol_ratio_st > 1.5 else 0)
+      cand_mom_x_vol_regime      - ret_12m × (1 if vol_ratio_st > 1.5 else 0)
                                    (momentum only when vol is spiking)
-      cand_reversal_x_vol_spike  — ret_1m × (1 if vol_momentum_21d > 1 else 0)
+      cand_reversal_x_vol_spike  - ret_1m × (1 if vol_momentum_21d > 1 else 0)
                                    (reversal stronger with volume spike)
-      cand_trend_eff_x_mom_sign  — path_efficiency × sign(ret_6m)
+      cand_trend_eff_x_mom_sign  - path_efficiency × sign(ret_6m)
                                    (efficient trends with positive direction)
-      cand_beta_change_x_vol     — diff(beta_63d, 21) × vol_21d
+      cand_beta_change_x_vol     - diff(beta_63d, 21) × vol_21d
                                    (beta increasing while vol rising = risk)
-      cand_hurst_x_mom           — hurst_63d × ret_12m
+      cand_hurst_x_mom           - hurst_63d × ret_12m
                                    (trending stock with positive momentum)
-      cand_gap_x_volume          — avg_gap_21d × vol_momentum_21d
+      cand_gap_x_volume          - avg_gap_21d × vol_momentum_21d
                                    (big gaps with volume confirmation)
-      cand_skew_x_mom            — skew_60d × ret_6m
+      cand_skew_x_mom            - skew_60d × ret_6m
                                    (negatively skewed + positive momentum = risk premium)
-      cand_drawdown_x_recovery   — maxdd_21d × recovery_speed_63d
+      cand_drawdown_x_recovery   - maxdd_21d × recovery_speed_63d
                                    (deep drawdown + fast recovery)
-      cand_vol_of_vol_x_mom      — vol_of_vol_63d × abs(ret_12m)
+      cand_vol_of_vol_x_mom      - vol_of_vol_63d × abs(ret_12m)
                                    (unstable vol + strong momentum = lottery)
-      cand_corr_change_x_ret     — diff(corr_spx_63d, 21) × ret_1m
+      cand_corr_change_x_ret     - diff(corr_spx_63d, 21) × ret_1m
                                    (correlation regime change with recent return)
     """
     prices = prices.copy()
@@ -724,13 +724,13 @@ def add_microstructure_proxies(prices: pd.DataFrame) -> pd.DataFrame:
     Microstructure proxies estimated from OHLCV data.
 
     NEW COLUMNS:
-      cand_corwin_schultz_21d    — Corwin-Schultz (2012) bid-ask spread estimator
+      cand_corwin_schultz_21d    - Corwin-Schultz (2012) bid-ask spread estimator
                                    from daily high-low prices. Higher = less liquid.
-      cand_roll_spread_21d       — Roll (1984) implied spread from autocov of returns.
+      cand_roll_spread_21d       - Roll (1984) implied spread from autocov of returns.
                                    sqrt(-2 × cov(ret[t], ret[t-1])).
-      cand_kyle_lambda_21d       — Kyle's lambda proxy: abs(ret) / sqrt(volume)
+      cand_kyle_lambda_21d       - Kyle's lambda proxy: abs(ret) / sqrt(volume)
                                    averaged over 21d. Price impact per unit of volume.
-      cand_price_impact_asym_21d — Asymmetric price impact: lambda on down days /
+      cand_price_impact_asym_21d - Asymmetric price impact: lambda on down days /
                                    lambda on up days. > 1 = more impact selling.
     """
     for tk, grp in prices.groupby("ticker", sort=False):
@@ -837,7 +837,7 @@ def get_candidate_metadata() -> pd.DataFrame:
     """Return metadata about all candidates for the catalog."""
     candidates = [
         # Family 1: Path-Dependent
-        ("cand_path_efficiency_21d", "path_dependent", "|net ret| / sum(|daily ret|) 21d — path straightness"),
+        ("cand_path_efficiency_21d", "path_dependent", "|net ret| / sum(|daily ret|) 21d - path straightness"),
         ("cand_path_efficiency_63d", "path_dependent", "|net ret| / sum(|daily ret|) 63d"),
         ("cand_up_path_ratio_21d", "path_dependent", "Fraction of total path that is upward 21d"),
         ("cand_max_consec_up_63d", "path_dependent", "Max consecutive up-days in 63d"),
@@ -865,7 +865,7 @@ def get_candidate_metadata() -> pd.DataFrame:
         ("cand_pain_index_63d", "drawdown_dynamics", "Mean drawdown over 63d"),
         # Family 4: Vol Shape
         ("cand_realized_skew_21d", "vol_shape", "Rolling skewness 21d"),
-        ("cand_realized_skew_63d", "vol_shape", "Rolling skewness 63d (near skew_60d — check dedup)"),
+        ("cand_realized_skew_63d", "vol_shape", "Rolling skewness 63d (near skew_60d - check dedup)"),
         ("cand_kurt_change_63d", "vol_shape", "Change in kurtosis over 63d"),
         ("cand_vol_term_slope", "vol_shape", "vol_5d / vol_126d (wider term structure)"),
         ("cand_jump_intensity_63d", "vol_shape", "Count of |ret| > 3σ days in 63d"),
@@ -883,7 +883,7 @@ def get_candidate_metadata() -> pd.DataFrame:
         # Family 6: Gap Features
         ("cand_cum_gap_ret_21d", "gap_features", "Cumulative overnight gap return 21d"),
         ("cand_cum_intraday_ret_21d", "gap_features", "Cumulative intraday return 21d"),
-        ("cand_gap_reversal_21d", "gap_features", "Corr(gap, intraday) 21d — negative=fills"),
+        ("cand_gap_reversal_21d", "gap_features", "Corr(gap, intraday) 21d - negative=fills"),
         ("cand_gap_persistence_21d", "gap_features", "Autocorr of gap direction 21d"),
         ("cand_overnight_vs_intra", "gap_features", "Overnight share of total return 21d"),
         ("cand_large_gap_count_63d", "gap_features", "Count of >2% gaps in 63d"),

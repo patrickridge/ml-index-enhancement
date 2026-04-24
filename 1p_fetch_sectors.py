@@ -1,5 +1,5 @@
 """
-1p_fetch_sectors.py — Fetch GICS sector mapping for all tickers
+1p_fetch_sectors.py - Fetch GICS sector mapping for all tickers
 ==================================================================
 One-off script to build a ticker → GICS sector mapping by calling
 yfinance `.info` for each ticker. Caches to data/sectors.parquet.
@@ -52,7 +52,7 @@ print(f"Remaining to fetch: {len(to_fetch)}")
 records = existing.to_dict("records")
 for i, base in enumerate(to_fetch):
     if (i + 1) % 25 == 0:
-        print(f"  Progress: {i+1}/{len(to_fetch)} — {base}")
+        print(f"  Progress: {i+1}/{len(to_fetch)} - {base}")
     try:
         info = yf.Ticker(base).info
         sector   = info.get("sector")
@@ -65,7 +65,7 @@ for i, base in enumerate(to_fetch):
     if (i + 1) % 50 == 0:
         pd.DataFrame(records).to_parquet(OUT_PATH, index=False)
 
-# Final save — also write a ticker-level table (with exchange suffix) for merge ease
+# Final save - also write a ticker-level table (with exchange suffix) for merge ease
 sectors = pd.DataFrame(records).drop_duplicates("base_ticker")
 
 expanded = []

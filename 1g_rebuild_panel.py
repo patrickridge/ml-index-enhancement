@@ -1,5 +1,5 @@
 """
-1g_rebuild_panel.py — Rebuild panel_monthly.parquet from prices.parquet
+1g_rebuild_panel.py - Rebuild panel_monthly.parquet from prices.parquet
 =============================================================================
 The original panel_monthly.parquet was built from data.xlsx (Wind platform
 export), which has been deleted. This script recreates it directly from
@@ -7,18 +7,18 @@ prices.parquet, now containing 692 tickers including historical S&P 500
 members added by 1d_fetch_missing_tickers.py.
 
 Columns produced (matching original panel_monthly.parquet schema):
-  date        — month-end date
-  ticker      — ticker symbol
-  ret_1m      — 1-month return
-  ret_3m      — 3-month return
-  ret_6m      — 6-month return
-  ret_12m     — 12-month return
-  rev_1m      — reversal signal (-ret_1m, kept for backward compatibility)
-  vol_20d     — 20-day realised volatility (annualised), sampled at month-end
-  vol_60d     — 60-day realised volatility (annualised)
-  vol_252d    — 252-day realised volatility (annualised)
-  hl_range    — normalised high-low range (monthly avg daily (H-L)/close)
-  fwd_ret_1m  — forward 1-month return (target variable)
+  date        - month-end date
+  ticker      - ticker symbol
+  ret_1m      - 1-month return
+  ret_3m      - 3-month return
+  ret_6m      - 6-month return
+  ret_12m     - 12-month return
+  rev_1m      - reversal signal (-ret_1m, kept for backward compatibility)
+  vol_20d     - 20-day realised volatility (annualised), sampled at month-end
+  vol_60d     - 60-day realised volatility (annualised)
+  vol_252d    - 252-day realised volatility (annualised)
+  hl_range    - normalised high-low range (monthly avg daily (H-L)/close)
+  fwd_ret_1m  - forward 1-month return (target variable)
 
 Run AFTER 1d_fetch_missing_tickers.py.
 Run BEFORE 1h_feature_engineering.py.

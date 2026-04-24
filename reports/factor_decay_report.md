@@ -7,9 +7,9 @@
 
 ## 1. Executive Summary
 
-- **70 factors are GREEN** (OOS IC stable, decay ratio ≥ 0.7) — safe to use
-- **7 factors are AMBER** (some decay, ratio 0.3–0.7) — use with caution
-- **74 factors are RED** (severe decay or sign flip OOS) — review or drop
+- **70 factors are GREEN** (OOS IC stable, decay ratio ≥ 0.7) - safe to use
+- **7 factors are AMBER** (some decay, ratio 0.3–0.7) - use with caution
+- **74 factors are RED** (severe decay or sign flip OOS) - review or drop
 - **69 factors flipped sign OOS**: `macd_signal, trend_slope_21d, ma_cross_10_50, price_to_ma50, ret_1m, omega_ratio_21d, open_to_close_21d, ret_1m_bot, ret_1m_tail, mom_decel, rsi_14, residual_ret_1m, price_to_ma20, maxdd_126d_top, up_down_vol_ratio, cum_vol_ratio, co_skewness_63d, price_to_ma100, ir_3m, skew_60d, cvar_95_21d, ret_2w, ret_2w_bot, ret_1m_top, bollinger_pct, avg_hl_range_21d, high_low_range_21d, beta_252d_top, hl_range, idio_vol_252d, log_mktcap_tail, ret_3m, atr_21d_norm, reversal_size, ret_2w_tail, obv_signal, trend_slope_63d, price_to_ma10, idio_vol_252d_bot, macd_hist, max_ret_21d, log_mktcap, avg_gap_21d, vol_252d_bot, kurt_60d, adx_regime, amihud_illiq_21d, vol_5d, adx_14, vol_21d_bot, vol_252d, vol_of_vol_63d, dollar_vol_63d, size_proxy, beta_252d_bot, size_proxy_tail, ret_1w_top, vol_expansion, ret_1w, vol_126d, ret_2w_top, ret_1w_tail, vol_momentum_21d_top, dollar_vol_21d, vol_trend_ratio, vol_contraction_signal, beta_x_idiovol, ret_1w_bot, price_range_ratio`
 
 ### Top 5 Factors by |OOS IC|
@@ -50,10 +50,10 @@
 3. **Crowding**: Widely-used factors (momentum, RSI) get arbitraged away.
    OOS ICIR < 0.1 suggests the alpha is crowded out.
 4. **Market structure change**: The 2023–2024 'Magnificent 7' concentration means
-   cross-sectional models face structural headwinds — 7 stocks drive 60% of SPX
+   cross-sectional models face structural headwinds - 7 stocks drive 60% of SPX
    returns, and no within-S&P cross-section factor captures this.
 
-### Green factors — what's working OOS
+### Green factors - what's working OOS
 
 ```
 ret_36m
@@ -131,7 +131,7 @@ vol_ratio_st
 These have consistent IC across both IS and OOS periods. Prioritise these in
 the CS-Transformer feature set.
 
-### Red/Amber factors — what needs investigation
+### Red/Amber factors - what needs investigation
 
 ```
 macd_signal
@@ -226,14 +226,14 @@ or (c) orthogonalising against known regime exposures before use.
 
 1. **Retrain CS-Transformer** with GREEN factors prioritised; use extended
    training window (2010–2022) and 18-month validation (Jan 2023 – Jun 2024).
-2. **Add log_mktcap** (size factor via yfinance shares × price) — directly
+2. **Add log_mktcap** (size factor via yfinance shares × price) - directly
    addresses the 2024 mega-cap underperformance.
 3. **Investigate AMBER factors by regime**: run `2f_factor_diagnostics.py`
    and check if the decay is concentrated in one specific regime.
 4. **Apply IC-weighted combination**: in `2d_factor_weights.py`, weight factors
    by OOS ICIR rather than IS ICIR to avoid overweighting decayed signals.
 5. **Add residual momentum**: `ret_6m - beta × spx_ret_6m` (distinct from
-   `residual_ret_12m` already in the panel — add a 6m version).
+   `residual_ret_12m` already in the panel - add a 6m version).
 
 ---
 

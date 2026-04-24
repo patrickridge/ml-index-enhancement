@@ -1,5 +1,5 @@
 """
-5f_dynamic_portfolio_rl.py — Dynamic Portfolio RL with Asymmetric Tilt
+5f_dynamic_portfolio_rl.py - Dynamic Portfolio RL with Asymmetric Tilt
 =======================================================================
 Conservative extension of 5e: the agent independently controls the
 long and short tilt, but n_frac (bucket size) stays fixed at 0.20.
@@ -11,17 +11,17 @@ shorts. In practice, the optimal long and short tilts are not always equal:
   - Bear regime: reduce long alpha (protect against wrong calls), larger
     short alpha (more conviction in avoiding the bottom stocks)
 
-  Action dim 1 — alpha_long  ∈ [0.002, 0.05]
+  Action dim 1 - alpha_long  ∈ [0.002, 0.05]
     Overweight tilt applied to the top 20% of stocks (by ML score).
 
-  Action dim 2 — alpha_short ∈ [0.002, 0.05]
+  Action dim 2 - alpha_short ∈ [0.002, 0.05]
     Underweight tilt applied to the bottom 20% of stocks.
     Learned independently of alpha_long.
 
 n_frac is intentionally kept fixed at 0.20 (top/bottom 100 stocks).
 Once asymmetric tilts are validated, n_frac can be added as action dim 3.
 
-Algorithm: GRPO + KL (best from 5e) — critic-free group advantage.
+Algorithm: GRPO + KL (best from 5e) - critic-free group advantage.
 Regime: 2-state HMM on [bench_vol, bench_ret] per fold (same as 5e).
 Walk-forward: same 5-fold expanding window.
 
@@ -82,7 +82,7 @@ TRAIN_START_GLOBAL = "2010-01-01"
 ALPHA_L_MIN, ALPHA_L_MAX = 0.002, 0.050   # long tilt
 ALPHA_S_MIN, ALPHA_S_MAX = 0.002, 0.050   # short tilt
 
-ACTION_DIM   = 2      # (alpha_long, alpha_short) — n_frac fixed for now
+ACTION_DIM   = 2      # (alpha_long, alpha_short) - n_frac fixed for now
 FIXED_N_FRAC = 0.20   # top/bottom 20% of universe (unchanged from 5e)
 
 # Fixed symmetric baseline (same as 5e fixed)
@@ -161,7 +161,7 @@ def build_scores(panel_slice, factor_names, signed_w):
 
 
 # =============================================================================
-# PORTFOLIO SIMULATION — 3D action
+# PORTFOLIO SIMULATION - 3D action
 # =============================================================================
 
 def _prep_month(scores_month, weights_month):
@@ -319,7 +319,7 @@ def build_episodes(scores, weights, ref_alpha_l=0.01, ref_alpha_s=0.01,
 
 
 # =============================================================================
-# NEURAL NETWORK — 3D action output
+# NEURAL NETWORK - 3D action output
 # =============================================================================
 
 if HAS_TORCH:
@@ -331,7 +331,7 @@ if HAS_TORCH:
           dim 0: alpha_long  ∈ [ALPHA_L_MIN, ALPHA_L_MAX]
           dim 1: alpha_short ∈ [ALPHA_S_MIN, ALPHA_S_MAX]
 
-        n_frac is fixed at FIXED_N_FRAC — not learned yet.
+        n_frac is fixed at FIXED_N_FRAC - not learned yet.
         Same architecture as 5e GaussianActor, just with 2D output.
         """
         def __init__(self, state_dim, hidden=HIDDEN):
@@ -382,7 +382,7 @@ if HAS_TORCH:
 
 
 # =============================================================================
-# GRPO TRAINING — 3D action
+# GRPO TRAINING - 3D action
 # =============================================================================
 
 def _safe_state(row):
@@ -498,7 +498,7 @@ def ie_stats(bt):
 def plot_results(all_bt, fold_summary):
     fig, axes = plt.subplots(2, 1, figsize=(13, 10))
     fig.suptitle(
-        "Dynamic Portfolio RL — 3D Action Space (α_long, α_short, n_frac)\n"
+        "Dynamic Portfolio RL - 3D Action Space (α_long, α_short, n_frac)\n"
         "GRPO with HMM regime detection · Walk-Forward 5-Fold",
         fontsize=13, fontweight="bold")
 
@@ -514,7 +514,7 @@ def plot_results(all_bt, fold_summary):
                 lw=2, linestyle="--" if name == "Fixed" else "-")
     ax.axhline(0, color="black", lw=0.8, linestyle=":")
     ax.set_ylabel("Cumulative Active Return (%)")
-    ax.set_title("Cumulative Active Return — Dynamic RL vs Fixed")
+    ax.set_title("Cumulative Active Return - Dynamic RL vs Fixed")
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
@@ -534,7 +534,7 @@ def plot_results(all_bt, fold_summary):
     ax.set_xticks(x)
     ax.set_xticklabels(lbls, fontsize=9)
     ax.set_ylabel("Information Ratio")
-    ax.set_title("Per-Fold IR — Dynamic RL vs Fixed Symmetric Alpha")
+    ax.set_title("Per-Fold IR - Dynamic RL vs Fixed Symmetric Alpha")
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3, axis="y")
 
@@ -551,7 +551,7 @@ def plot_results(all_bt, fold_summary):
 
 def main():
     print("=" * 70)
-    print("5f_dynamic_portfolio_rl.py — 3D Action Space Portfolio RL")
+    print("5f_dynamic_portfolio_rl.py - 3D Action Space Portfolio RL")
     print("Actions: alpha_long ∈ [0.002, 0.05]  |  alpha_short ∈ [0.002, 0.05]"
           "  |  n_frac ∈ [0.05, 0.30]")
     print("Algorithm: GRPO + KL  |  HMM regime detection  |  5-fold walk-forward")
@@ -581,7 +581,7 @@ def main():
 
     for fold_idx, (train_end, test_start, test_end, label) in enumerate(FOLDS):
         print(f"\n{'='*70}")
-        print(f"FOLD {fold_idx+1}/5 — {label}  |  train ≤ {train_end}"
+        print(f"FOLD {fold_idx+1}/5 - {label}  |  train ≤ {train_end}"
               f"  |  test {test_start} → {test_end}")
         print("="*70)
 
@@ -591,7 +591,7 @@ def main():
                             (panel["date"] <= test_end)].copy()
 
         if len(panel_train) < 500 or len(panel_test) < 50:
-            print("  Skipping — insufficient data.")
+            print("  Skipping - insufficient data.")
             continue
 
         print("  Computing factor weights (training data only) ...")
@@ -605,7 +605,7 @@ def main():
         ep_test,  _      = build_episodes(sc_test,  weights, norm_params=norm_p)
 
         if ep_train.empty or ep_test.empty:
-            print("  Skipping — empty episodes.")
+            print("  Skipping - empty episodes.")
             continue
 
         train_rows = [(dt, ep_train.loc[dt]) for dt in ep_train.index]
@@ -643,10 +643,10 @@ def main():
         })
 
         print(f"\n  Fold results:")
-        print(f"    Dynamic RL  — IR: {rl_ir:+.3f}  |  "
+        print(f"    Dynamic RL  - IR: {rl_ir:+.3f}  |  "
               f"alpha: {rl_stats.get('ann_alpha', 0)*100:.2f}%  |  "
               f"TE: {rl_stats.get('track_err', 0)*100:.2f}%")
-        print(f"    Fixed       — IR: {fixed_ir:+.3f}  |  "
+        print(f"    Fixed       - IR: {fixed_ir:+.3f}  |  "
               f"alpha: {fixed_stats.get('ann_alpha', 0)*100:.2f}%  |  "
               f"TE: {fixed_stats.get('track_err', 0)*100:.2f}%")
 
@@ -674,9 +674,9 @@ def main():
     fixed_irs = fold_df["fixed_ir"].dropna().tolist()
     beats     = sum(a > b for a, b in zip(rl_irs, fixed_irs))
 
-    print(f"  Dynamic RL — avg IR: {np.mean(rl_irs):.3f}  "
+    print(f"  Dynamic RL - avg IR: {np.mean(rl_irs):.3f}  "
           f"(folds: {' '.join(f'{v:.3f}' for v in rl_irs)})  beats Fixed: {beats}/{len(rl_irs)}")
-    print(f"  Fixed      — avg IR: {np.mean(fixed_irs):.3f}  "
+    print(f"  Fixed      - avg IR: {np.mean(fixed_irs):.3f}  "
           f"(folds: {' '.join(f'{v:.3f}' for v in fixed_irs)})")
 
     # ── Save ──────────────────────────────────────────────────────────────────

@@ -1,26 +1,26 @@
 """
-5b_rl_portfolio_agent.py — SAC agent that picks the monthly tilt α.
+5b_rl_portfolio_agent.py - SAC agent that picks the monthly tilt α.
 
 Instead of a fixed α in 4b_index_enhancement.py, this trains a Soft
 Actor-Critic agent that observes the current market state and picks the tilt
-for that month. Deliberately Markov — no LSTM, no GRU, no recurrence. Each
+for that month. Deliberately Markov - no LSTM, no GRU, no recurrence. Each
 month's decision is self-contained and the policy is a plain MLP.
 
 Architecture:
   State  (9 features): signal strength, signal dispersion, benchmark vol,
                         recent active return, regime, rolling tracking error,
                         vix_level, yield_10y, yield_spread_10y2y
-  Action : alpha in [0.002, 0.05]  (continuous — how much to tilt this month)
+  Action : alpha in [0.002, 0.05]  (continuous - how much to tilt this month)
   Reward : Sharpe of active return = IR proxy
            active_ret × 12 − TE_penalty − bench_vol_penalty
            (total-portfolio Sharpe doesn't work: benchmark dominates
            numerator+denominator, agent gets no learning signal)
-  Policy : MLP(9 -> 64 -> 64 -> 1)  — NO memory
+  Policy : MLP(9 -> 64 -> 64 -> 1)  - NO memory
 
-Two-layer RL design — objectives are complementary, not conflicting:
+Two-layer RL design - objectives are complementary, not conflicting:
   Layer 1 (5a_rl_factor_agent.py) : maximises IC / ICIR of the combined
-    factor signal — optimises WHAT signal to generate.
-  Layer 2 (this file)             : maximises portfolio Sharpe ratio —
+    factor signal - optimises WHAT signal to generate.
+  Layer 2 (this file)             : maximises portfolio Sharpe ratio -
     optimises HOW AGGRESSIVELY to act on that signal each month.
   No conflict: L1 never sees portfolio vol; L2 takes signal quality as given
   and adjusts tilt to maximise risk-adjusted total return.
@@ -32,16 +32,16 @@ SAC (Soft Actor-Critic):
   - Auto-tuned temperature parameter
 
 Training: builds factor-combo signal from panel_monthly_enriched.parquet
-  for 2010-2022 (12 years of history) — sufficient for RL convergence.
+  for 2010-2022 (12 years of history) - sufficient for RL convergence.
 Evaluation: uses CS-Transformer scores on test period 2023-2025.
 
 Run:
   python 5b_rl_portfolio_agent.py
 
 Outputs:
-  data/bt_ie_rl_agent.csv         — monthly backtest (port/bench/active ret)
-  data/rl_agent_actions.csv       — alpha decisions per month
-  figures/rl_agent_comparison.png — RL vs fixed-alpha cumulative return
+  data/bt_ie_rl_agent.csv         - monthly backtest (port/bench/active ret)
+  data/rl_agent_actions.csv       - alpha decisions per month
+  figures/rl_agent_comparison.png - RL vs fixed-alpha cumulative return
 """
 
 import warnings
@@ -57,7 +57,7 @@ from pathlib import Path
 from collections import deque
 import random
 
-# ── PyTorch (optional — falls back to rule-based if not available) ─────────────
+# ── PyTorch (optional - falls back to rule-based if not available) ─────────────
 try:
     import torch
     import torch.nn as nn
@@ -76,14 +76,14 @@ PANEL_FILE   = DATA_DIR / "panel_monthly_enriched.parquet"
 FACTORS_FILE = DATA_DIR / "factor_selected_optimised.csv"
 SCORES_FILE  = DATA_DIR / "scores_cs_transformer.parquet"
 WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
-L1_IC_FILE   = DATA_DIR / "l1_rl_ic_full.csv"   # Layer 1 IC — produced by 5a_rl_factor_agent.py
+L1_IC_FILE   = DATA_DIR / "l1_rl_ic_full.csv"   # Layer 1 IC - produced by 5a_rl_factor_agent.py
 
 # ── Hyperparameters ────────────────────────────────────────────────────────────
 ALPHA_MIN   = 0.002
 ALPHA_MAX   = 0.050
 TE_TARGET   = 0.030          # 3% annualised tracking error (used in state feature only)
-TE_PENALTY  = 5.0            # legacy — no longer used in reward (kept for reference)
-RF_ANNUAL   = 0.042          # approximate risk-free rate (4.2% — US 3m T-bill 2024 avg)
+TE_PENALTY  = 5.0            # legacy - no longer used in reward (kept for reference)
+RF_ANNUAL   = 0.042          # approximate risk-free rate (4.2% - US 3m T-bill 2024 avg)
 RF_MONTHLY  = RF_ANNUAL / 12 # monthly risk-free rate for Sharpe calculation
 
 TRAIN_START = "2010-01-01"
@@ -115,7 +115,7 @@ BASE_STATE_COLS = [
 MACRO_STATE_COLS = ["vix_level", "yield_10y", "yield_spread_10y2y"]
 # STATE_COLS is set in main() after checking whether L1 IC data is available.
 # If l1_rl_ic_full.csv exists, "l1_ic" is appended as a 10th state feature.
-STATE_COLS = BASE_STATE_COLS.copy()   # default — overridden in main() if L1 data found
+STATE_COLS = BASE_STATE_COLS.copy()   # default - overridden in main() if L1 data found
 
 
 # =============================================================================
@@ -205,7 +205,7 @@ def build_episodes(scores, weights, ref_alpha=0.01, l1_ic_df=None, macro_df=None
 
     If l1_ic_df is provided (output of 5a_rl_factor_agent.py), the rolling
     3-month mean of Layer 1's IC is appended as a 7th state feature ("l1_ic").
-    This lets Layer 2 know whether Layer 1's signal is currently reliable —
+    This lets Layer 2 know whether Layer 1's signal is currently reliable -
     completing the L1→L2 end-to-end pipeline connection.
     """
     scores  = scores.copy()
@@ -281,7 +281,7 @@ def build_episodes(scores, weights, ref_alpha=0.01, l1_ic_df=None, macro_df=None
 
 
 # =============================================================================
-# SAC COMPONENTS — MLP only, no memory
+# SAC COMPONENTS - MLP only, no memory
 # =============================================================================
 
 if HAS_TORCH:
@@ -299,7 +299,7 @@ if HAS_TORCH:
             return self.net(x)
 
     class GaussianActor(nn.Module):
-        """MLP policy — no recurrence. Each call is independent."""
+        """MLP policy - no recurrence. Each call is independent."""
         def __init__(self, state_dim, hidden=HIDDEN_DIM):
             super().__init__()
             self.mean_net    = MLP(state_dim, 1, hidden)
@@ -361,7 +361,7 @@ class ReplayBuffer:
 # =============================================================================
 
 class SACAgent:
-    """SAC with auto-tuned temperature. Stateless MLP — no memory."""
+    """SAC with auto-tuned temperature. Stateless MLP - no memory."""
 
     def __init__(self, state_dim):
         if not HAS_TORCH:
@@ -449,7 +449,7 @@ def compute_reward(active_ret: float, bench_vol_ann: float = 0.0,
 
     The TE constraint is implicit: high alpha × weak signal → negative active_ret
     → agent learns to reduce alpha when signal quality is low.
-    No explicit TE penalty needed — and it cannot be applied here anyway because
+    No explicit TE penalty needed - and it cannot be applied here anyway because
     rolling_te in the state vector is z-score normalised (STATE_COLS), so comparing
     it against TE_TARGET=0.03 (raw %) produces massive spurious penalties (avg -3.5).
     """
@@ -637,12 +637,12 @@ def plot_results(rl_bt, fixed_bt):
 
 def main():
     print("=" * 65)
-    print("5b_rl_portfolio_agent.py — SAC Portfolio Tilt Agent")
+    print("5b_rl_portfolio_agent.py - SAC Portfolio Tilt Agent")
     print("No memory: MLP policy, each month independent (Markov)")
     print("=" * 65)
 
     if not HAS_TORCH:
-        print("\nWARNING: PyTorch not installed — using fallback rule-based agent.")
+        print("\nWARNING: PyTorch not installed - using fallback rule-based agent.")
         print("Install: pip install torch\n")
 
     print("\nLoading data ...")

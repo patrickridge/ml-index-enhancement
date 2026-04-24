@@ -1,4 +1,4 @@
-# RL Portfolio Agent — Full Technical Report
+# RL Portfolio Agent - Full Technical Report
 
 Complete explanation of every variable, design choice, and algorithm used in the
 reinforcement learning layer (`5b`, `5c`, `5d`, `5e`).
@@ -10,7 +10,7 @@ reinforcement learning layer (`5b`, `5c`, `5d`, `5e`).
 Every month we have a ranked list of ~500 S&P 500 stocks from our ML model (CS-Transformer
 or LightGBM). We want to build a portfolio that beats the S&P 500 index.
 
-The ML model answers **"which stocks to favour"** — but not **"how aggressively to tilt"**.
+The ML model answers **"which stocks to favour"** - but not **"how aggressively to tilt"**.
 Tilting too hard increases tracking error and drawdown. Tilting too softly wastes the signal.
 
 The RL agent answers the second question: given the current market environment, what is the
@@ -34,7 +34,7 @@ Bottom 100 stocks: portfolio_weight_i = w_SPX_i − α   (underweight)
 Weights are clipped at 0 (no shorting) and renormalised to sum to 1.
 
 **α (alpha)** is the single number the RL agent controls each month.
-- Range: **[0.002, 0.05]** — 0.2% to 5% tilt per stock
+- Range: **[0.002, 0.05]** - 0.2% to 5% tilt per stock
 - Low α → stay close to index, low tracking error, low upside
 - High α → bigger active bets, higher upside but also higher risk
 
@@ -43,7 +43,7 @@ The agent's goal is to maximise risk-adjusted active return (Information Ratio).
 
 ---
 
-## 3. The State Vector — What the Agent "Sees"
+## 3. The State Vector - What the Agent "Sees"
 
 Each month the agent observes a 6-dimensional state vector before deciding α.
 All features are z-scored using training data statistics (mean subtracted, divided by std),
@@ -55,12 +55,12 @@ clipped to [−5, +5] to remove outliers.
 | 1 | `signal_dispersion` | Std dev of z-scored ML scores | How spread out the scores are. High dispersion = big gap between top and bottom stocks, strong long-short opportunity. |
 | 2 | `bench_vol` | Rolling 3-month std dev of S&P 500 monthly returns × √12 (annualised) | Market volatility regime. High = volatile market, tilting tends to generate unpredictable outcomes. |
 | 3 | `recent_active_ret` | 3-month rolling mean of active returns using fixed α=1% | Has the factor signal been working recently? Positive = strategy has momentum, keep tilting. Negative = signal has been failing, reduce tilt. |
-| 4 | `regime` | 1 if `bench_vol > rolling median bench_vol`, else 0 | Binary risk-on/risk-off flag. **Not z-scored** — stays as 0.0 or 1.0. Used by DAPOSwitch to detect regime transitions. |
+| 4 | `regime` | 1 if `bench_vol > rolling median bench_vol`, else 0 | Binary risk-on/risk-off flag. **Not z-scored** - stays as 0.0 or 1.0. Used by DAPOSwitch to detect regime transitions. |
 | 5 | `rolling_te` | Rolling 3-month std dev of active returns × √12 (annualised) | Recent tracking error. High TE = strategy has been making large active bets (for better or worse). |
 
 **Why z-score?** Raw values are not comparable across time. Benchmark vol of 15% in 2015 means
 something different to 15% in 2020 (COVID). Z-scoring makes the same number mean the same
-thing regardless of when you're looking at it. Exception: `regime` is a binary flag — z-scoring
+thing regardless of when you're looking at it. Exception: `regime` is a binary flag - z-scoring
 would destroy its meaning.
 
 ---
@@ -88,12 +88,12 @@ reward = active_ret × 12
 ```
 
 `active_ret` is the monthly active return (portfolio return minus benchmark return) from
-simulating the chosen α for that month. Multiplying by 12 annualises it — the agent thinks
+simulating the chosen α for that month. Multiplying by 12 annualises it - the agent thinks
 in terms of annual active return.
 
 **Why not penalise tracking error directly?** The KL penalty (in GRPO) and the clip
 mechanism (in DAPO) act as implicit regularisers on how much the policy can change per
-update. Tracking error is captured indirectly — if the agent tilts aggressively and
+update. Tracking error is captured indirectly - if the agent tilts aggressively and
 the signal fails, it gets a negative reward, and it learns to reduce α.
 
 ---
@@ -113,12 +113,12 @@ GaussianActor:
   Output: Normal distribution parameterised by (μ, σ) over action space
 ```
 
-64 hidden units per layer. Small by ML standards — appropriate because we only have
+64 hidden units per layer. Small by ML standards - appropriate because we only have
 ~50–100 training months per fold, so a larger network would overfit badly.
 
 ---
 
-## 7. Walk-Forward Structure — No Data Leakage
+## 7. Walk-Forward Structure - No Data Leakage
 
 5 folds, each using an expanding training window:
 
@@ -134,7 +134,7 @@ For each fold:
 1. Factor IC weights are computed from training data only
 2. Episode state features (z-score normalisation params) are computed from training data only
 3. The RL agent is trained from scratch on training episodes
-4. The agent is evaluated on test episodes — never seen during training
+4. The agent is evaluated on test episodes - never seen during training
 
 All 95 test months concatenated give the out-of-sample IR.
 
@@ -153,12 +153,12 @@ Converts the raw panel data into a sequence of `(state, simulation_function)` pa
 6. Z-score all features except `regime` using training statistics
 7. Store a reference to the raw scores + benchmark weights for the simulation function
 
-The "simulation function" is not called until the agent chooses its α — this is what makes
+The "simulation function" is not called until the agent chooses its α - this is what makes
 it reinforcement learning: the agent's action determines the outcome it observes.
 
 ---
 
-## 9. GRPO — Group Relative Policy Optimisation
+## 9. GRPO - Group Relative Policy Optimisation
 
 **Origin:** DeepSeek-R1 (2025). Designed for LLMs, adapted here for portfolio tilting.
 
@@ -186,12 +186,12 @@ ranking as the advantage signal.
 ```
 
 **Why no value function?** Estimating V(s) requires many samples per state. With only
-~50–100 training months (states), a learned value function would overfit — the noise in
+~50–100 training months (states), a learned value function would overfit - the noise in
 V̂(s) would be larger than the signal. Group relative advantage bypasses this entirely.
 
 ---
 
-## 10. DAPO — Dynamic Sampling Policy Optimisation
+## 10. DAPO - Dynamic Sampling Policy Optimisation
 
 **Origin:** ByteDance/Seed (2025). Three improvements over GRPO.
 
@@ -205,7 +205,7 @@ For positive advantage (good action):   clip ratio to [1 − ε_low, 1 + ε_high
 For negative advantage (bad action):    clip ratio to [1 − ε_low, 1 + ε_low]   = [0.80, 1.20]
 ```
 
-Where `ratio = π_new(α) / π_old(α)` — how much the probability of taking action α
+Where `ratio = π_new(α) / π_old(α)` - how much the probability of taking action α
 changed after the update.
 
 **Effect:** The policy is allowed to move more aggressively toward rewarding actions
@@ -223,7 +223,7 @@ Else:
     keep G=4 (easy/certain state)
 ```
 
-Hard states = months where outcomes are volatile (e.g. rate hike month — some alphas
+Hard states = months where outcomes are volatile (e.g. rate hike month - some alphas
 work well, others blow up). More candidates → better estimate of the advantage distribution.
 Easy states = outcomes are predictable regardless of α choice, extra samples add noise.
 
@@ -235,7 +235,7 @@ helpful when the optimal policy is far from the initial random policy.
 
 ---
 
-## 11. DAPOSwitch — Regime-Aware Algorithm Selection
+## 11. DAPOSwitch - Regime-Aware Algorithm Selection
 
 **New (29 Mar 2026).** Combines DAPO and GRPO depending on market regime stability.
 
@@ -272,12 +272,12 @@ Transition month (regime just changed):
 | **GRPO** | **0.629** | −1.168, 1.961, −0.173, 1.132, 1.394 | 4/5 |
 | DAPOSwitch | 0.566 | −1.191, 1.954, −0.176, 1.114, 1.128 | 4/5 |
 | DAPO | 0.525 | −1.222, 1.963, −0.238, 1.156, 0.965 | 4/5 |
-| Fixed α=1% | 0.235 | −1.659, 1.778, −0.073, 0.751, 0.380 | — |
+| Fixed α=1% | 0.235 | −1.659, 1.778, −0.073, 0.751, 0.380 | - |
 
 All three RL algorithms beat fixed alpha by 2× or more in average IR.
 
 **Bad folds (2014–15 and 2018–19):** All algorithms produce negative IR. These periods
-correspond to choppy, directionless markets where the factor signal had low IC — no RL
+correspond to choppy, directionless markets where the factor signal had low IC - no RL
 algorithm can generate alpha from a weak signal. The RL advantage is that it sometimes
 reduces α during these periods (lower max drawdown), but the signal itself is the
 binding constraint.
@@ -309,7 +309,7 @@ binding constraint.
 |------|------|
 | `5a_rl_factor_agent.py` | Layer 1: RL agent that adapts *which factors to trust* each month (maximises IC/ICIR) |
 | `5b_rl_portfolio_agent.py` | Layer 2: SAC agent for adaptive alpha (original implementation) |
-| `5c_walk_forward.py` | Walk-forward harness for SAC — establishes 5-fold evaluation structure |
+| `5c_walk_forward.py` | Walk-forward harness for SAC - establishes 5-fold evaluation structure |
 | `5d_algorithm_comparison.py` | SAC vs PPO vs GRPO comparison |
 | `5e_dapo_agent.py` | DAPO vs GRPO vs DAPOSwitch comparison (current main RL file) |
 
@@ -332,7 +332,7 @@ binding constraint.
 3. **Reward function:**
    Current reward = `active_ret × 12`. A Sharpe-shaped reward
    (`active_ret / rolling_te`) would explicitly incentivise risk-adjusted alpha rather
-   than raw alpha. Worth testing — may reduce tracking error in stress folds.
+   than raw alpha. Worth testing - may reduce tracking error in stress folds.
 
 4. **Connecting Layer 1 and Layer 2:**
    The Layer 1 agent's recent IC (how well the factor signal is working) should feed

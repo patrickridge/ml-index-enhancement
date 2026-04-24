@@ -389,7 +389,7 @@ def screen_candidate(
     result["max_corr_existing"] = max_corr
     result["pass_dedup"] = not is_dup
 
-    # Stage 5: RAS test — run for all non-duplicate factors (no IC/ICIR gate)
+    # Stage 5: RAS test - run for all non-duplicate factors (no IC/ICIR gate)
     # IC/ICIR are diagnostic, not gates. BHY on RAS is the real filter.
     if run_ras and result["pass_dedup"]:
         p_val, _ = ras_test_fast(panel, factor_col, target, n_sims=ras_n_sims, end_date=end_date)
@@ -398,7 +398,7 @@ def screen_candidate(
     else:
         result["pass_ras"] = False
 
-    # Overall (legacy — pass_all_final in screen_all_candidates uses BHY + dedup only)
+    # Overall (legacy - pass_all_final in screen_all_candidates uses BHY + dedup only)
     result["pass_all"] = all([
         result["pass_dedup"],
         result["pass_ras"],

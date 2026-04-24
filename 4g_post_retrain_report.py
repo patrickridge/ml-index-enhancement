@@ -1,5 +1,5 @@
 """
-4g_post_retrain_report.py — Post-retrain one-shot report
+4g_post_retrain_report.py - Post-retrain one-shot report
 ==========================================================
 Run this after dropping fresh Kaggle scores into data/scores_cs_transformer.parquet.
 
@@ -8,13 +8,13 @@ What it does:
      files and figures/agent_ensemble.png using the new CS-T scores.
   2. Prints a side-by-side "before vs after" table so you can see how the
      retrain changed each strategy's alpha and IR.
-  3. Flags any strategies that got worse — worth a second look before
+  3. Flags any strategies that got worse - worth a second look before
      declaring success.
 
 Prereqs:
   - data/scores_cs_transformer.parquet has been refreshed with the Kaggle output
   - Old bt_ie_ensemble_*.csv files still exist from the previous run (so we can
-    diff). If not, the report will still run — it just won't show a diff.
+    diff). If not, the report will still run - it just won't show a diff.
 
 Usage:
   python 4g_post_retrain_report.py
@@ -33,7 +33,7 @@ STRATEGIES = [
 
 # ── Archive the previous ensemble backtest files before overwriting ──────────
 print("=" * 70)
-print("POST-RETRAIN REPORT — CS-Transformer Ensemble")
+print("POST-RETRAIN REPORT - CS-Transformer Ensemble")
 print("=" * 70)
 
 before = {}
@@ -49,7 +49,7 @@ for s in STRATEGIES:
 if before:
     print(f"  Archived {len(before)} previous backtests → {archive_dir}/\n")
 else:
-    print("  No previous backtests found — report will show 'after' only.\n")
+    print("  No previous backtests found - report will show 'after' only.\n")
 
 
 # ── Re-run 4f with the new scores ────────────────────────────────────────────
@@ -95,7 +95,7 @@ def stats(bt, months=None):
 # ── Side-by-side diff ────────────────────────────────────────────────────────
 if before:
     print("\n" + "=" * 78)
-    print("BEFORE vs AFTER — retrain impact per strategy")
+    print("BEFORE vs AFTER - retrain impact per strategy")
     print("=" * 78)
     hdr = (f"{'Strategy':<18}{'Alpha':>10}{'IR':>8}{'Hit':>8}"
            f"{'Δ Alpha':>10}{'Δ IR':>8}{'Δ Hit':>8}")
@@ -124,7 +124,7 @@ if before:
     else:
         print("\n  No regressions. Safe to update the deck with the new numbers.")
 else:
-    print("\n(No 'before' data — skipped diff.)")
+    print("\n(No 'before' data - skipped diff.)")
 
 
 # ── Quick sanity: does the chart file exist? ─────────────────────────────────
@@ -132,6 +132,6 @@ chart = Path("figures/agent_ensemble.png")
 if chart.exists():
     print(f"\n  Chart refreshed: {chart}")
 else:
-    print(f"\n  [WARN] {chart} not regenerated — check 4f output")
+    print(f"\n  [WARN] {chart} not regenerated - check 4f output")
 
 print("\nDone.")

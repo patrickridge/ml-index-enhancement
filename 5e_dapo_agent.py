@@ -1,5 +1,5 @@
 """
-5e_dapo_agent.py — Hybrid GRPO/DAPO with Multi-Feature Regime Detection
+5e_dapo_agent.py - Hybrid GRPO/DAPO with Multi-Feature Regime Detection
 =======================================================================
 Rebuilds the DAPO portfolio tilt agent with two key improvements over the
 prior version:
@@ -20,19 +20,19 @@ prior version:
        Single shared actor + reference network (no separate per-regime networks).
 
 State space (8 dims):
-  signal_strength   — mean |z-score| of cross-sectional ML scores
-  signal_dispersion — std of z-scores (cross-sectional spread)
-  bench_vol         — rolling 3m annualised SPX volatility
-  recent_active_ret — rolling 3m mean active return at ref alpha
-  rolling_te        — rolling 3m tracking error
-  bench_momentum    — 3m cumulative SPX return (trend feature)
-  regime_id_norm    — regime / 2.0  (0.0 risk-on, 0.5 transition, 1.0 risk-off)
-  regime_conf       — HMM posterior probability of predicted state
+  signal_strength   - mean |z-score| of cross-sectional ML scores
+  signal_dispersion - std of z-scores (cross-sectional spread)
+  bench_vol         - rolling 3m annualised SPX volatility
+  recent_active_ret - rolling 3m mean active return at ref alpha
+  rolling_te        - rolling 3m tracking error
+  bench_momentum    - 3m cumulative SPX return (trend feature)
+  regime_id_norm    - regime / 2.0  (0.0 risk-on, 0.5 transition, 1.0 risk-off)
+  regime_conf       - HMM posterior probability of predicted state
 
 Walk-forward: 5 expanding folds (same dates as 5c / 5d).
 Outputs:
-  data/dapo_comparison.csv    — per-fold metrics (HybridDAPO, PureGRPO, PureDAPO, Fixed)
-  figures/dapo_comparison.png — cumulative active return + per-fold IR bars
+  data/dapo_comparison.csv    - per-fold metrics (HybridDAPO, PureGRPO, PureDAPO, Fixed)
+  figures/dapo_comparison.png - cumulative active return + per-fold IR bars
 """
 
 import warnings
@@ -55,7 +55,7 @@ try:
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
-    print("WARNING: PyTorch not installed — rule-based fallback only.")
+    print("WARNING: PyTorch not installed - rule-based fallback only.")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 DATA_DIR = Path("data")
@@ -102,7 +102,7 @@ REGIME_RISK_ON     = 0
 REGIME_TRANSITION  = 1
 REGIME_RISK_OFF    = 2
 
-# State column names (excluding regime cols — those are added by build_episodes)
+# State column names (excluding regime cols - those are added by build_episodes)
 BASE_STATE_COLS = [
     "signal_strength",
     "signal_dispersion",
@@ -241,14 +241,14 @@ class MarketRegimeDetector:
     3-state regime detector based on a composite market stress score.
 
     Composite stress score = weighted sum of percentile ranks (fitted on training):
-      +0.4 × prank(bench_vol)       — high vol      → stress
-      −0.3 × prank(bench_momentum)  — neg momentum  → stress
-      +0.2 × prank(vol_trend)       — rising vol    → stress
-      +0.1 × prank(cs_dispersion)   — wide cs disp  → stress
+      +0.4 × prank(bench_vol)       - high vol      → stress
+      −0.3 × prank(bench_momentum)  - neg momentum  → stress
+      +0.2 × prank(vol_trend)       - rising vol    → stress
+      +0.1 × prank(cs_dispersion)   - wide cs disp  → stress
 
     Training: ranks computed within the training set → p33/p67 thresholds stored.
     Prediction: each test month ranked against the TRAINING distribution via
-    searchsorted — avoids the sigmoid-clustering bug where everything scored
+    searchsorted - avoids the sigmoid-clustering bug where everything scored
     near the mean fell into Transition.
 
     Regimes:
@@ -326,7 +326,7 @@ class MarketRegimeDetector:
         """
         Returns (regime_ids, regime_confs).
         Test months are ranked against the training distribution (searchsorted),
-        not against each other — so regimes are consistently calibrated OOS.
+        not against each other - so regimes are consistently calibrated OOS.
         """
         X_raw  = self._build_features(df)
         p33, p67 = self._thresholds
@@ -363,12 +363,12 @@ def build_episodes(scores_df, weights_df, scores_panel, ref_alpha=0.01,
     """
     Build a per-month episode table with state features and precomputed prep dicts.
 
-    scores_df    — output of build_scores (date, ticker, score, fwd_ret_1m)
-    weights_df   — SPX weights parquet (date, ticker, spx_weight)
-    scores_panel — raw panel (needed for cs_dispersion from stock returns)
-    norm_params  — dict of (mean, std) per BASE_STATE_COLS col; fitted on train
-    fit_norm     — if True, fit norm_params from this slice (training fold)
-    regime_detector — MarketRegimeDetector instance (fitted externally on train)
+    scores_df    - output of build_scores (date, ticker, score, fwd_ret_1m)
+    weights_df   - SPX weights parquet (date, ticker, spx_weight)
+    scores_panel - raw panel (needed for cs_dispersion from stock returns)
+    norm_params  - dict of (mean, std) per BASE_STATE_COLS col; fitted on train
+    fit_norm     - if True, fit norm_params from this slice (training fold)
+    regime_detector - MarketRegimeDetector instance (fitted externally on train)
     """
     scores_df  = scores_df.copy()
     weights_df = weights_df.copy()
@@ -424,7 +424,7 @@ def build_episodes(scores_df, weights_df, scores_panel, ref_alpha=0.01,
                             .rolling(3, min_periods=2).std()
                             .fillna(df["bench_ret"].expanding().std())
                             .fillna(0.0)) * np.sqrt(12)
-    # 3-month compounded return — use log-sum for speed (no rolling().apply())
+    # 3-month compounded return - use log-sum for speed (no rolling().apply())
     log1r = np.log1p(df["bench_ret"].fillna(0.0))
     df["bench_momentum"] = np.expm1(log1r.rolling(3, min_periods=1).sum())
     df["vol_trend"]      = df["bench_vol"].diff(2).fillna(0.0)
@@ -629,9 +629,9 @@ class HybridDAPOAgent:
     Regime-adaptive hybrid agent.
 
     Update rule per timestep:
-      REGIME_RISK_ON    → DAPO (clip-higher, dynamic G, no KL)   — explore freely
-      REGIME_RISK_OFF   → GRPO (KL β=0.01)                       — stay conservative
-      REGIME_TRANSITION → GRPO (KL β=0.02)                       — maximum caution
+      REGIME_RISK_ON    → DAPO (clip-higher, dynamic G, no KL)   - explore freely
+      REGIME_RISK_OFF   → GRPO (KL β=0.01)                       - stay conservative
+      REGIME_TRANSITION → GRPO (KL β=0.02)                       - maximum caution
     """
     name = "HybridDAPO"
 
@@ -698,7 +698,7 @@ class HybridDAPOAgent:
 
 
 # =============================================================================
-# PURE GRPO AGENT  (baseline — always KL-anchored)
+# PURE GRPO AGENT  (baseline - always KL-anchored)
 # =============================================================================
 
 class PureGRPOAgent:
@@ -744,7 +744,7 @@ class PureGRPOAgent:
 
 
 # =============================================================================
-# PURE DAPO AGENT  (baseline — always clip-higher, no KL)
+# PURE DAPO AGENT  (baseline - always clip-higher, no KL)
 # =============================================================================
 
 class PureDAPOAgent:
@@ -873,7 +873,7 @@ COLORS = {
 def plot_comparison(all_bt, fold_df, algo_names):
     fig, axes = plt.subplots(2, 1, figsize=(13, 10))
     fig.suptitle(
-        "Hybrid GRPO/DAPO vs Pure GRPO vs Pure DAPO — Walk-Forward Out-of-Sample\n"
+        "Hybrid GRPO/DAPO vs Pure GRPO vs Pure DAPO - Walk-Forward Out-of-Sample\n"
         "HybridDAPO: DAPO on Risk-On, GRPO+KL on Risk-Off/Transition (3-state HMM regime)",
         fontsize=12, fontweight="bold",
     )
@@ -930,13 +930,13 @@ def plot_comparison(all_bt, fold_df, algo_names):
 
 def main():
     print("=" * 72)
-    print("5e_dapo_agent.py — Hybrid GRPO/DAPO + 3-State Market Regime Detection")
+    print("5e_dapo_agent.py - Hybrid GRPO/DAPO + 3-State Market Regime Detection")
     print("  HybridDAPO : DAPO on Risk-On, GRPO+KL on Risk-Off, GRPO+2xKL on Transition")
     print("  Regime     : 3-state HMM on vol / ret / momentum / vol-trend / cross-sec-disp")
     print("=" * 72)
 
     if not HAS_TORCH:
-        print("WARNING: PyTorch not available — using rule-based fallback agents.\n")
+        print("WARNING: PyTorch not available - using rule-based fallback agents.\n")
 
     # ── Load data ─────────────────────────────────────────────────────────────
     print("\nLoading data ...")
@@ -964,7 +964,7 @@ def main():
 
     for fold_idx, (train_end, test_start, test_end, label) in enumerate(FOLDS):
         print(f"\n{'=' * 72}")
-        print(f"FOLD {fold_idx + 1}/5 — {label}  |  train ≤ {train_end}  |"
+        print(f"FOLD {fold_idx + 1}/5 - {label}  |  train ≤ {train_end}  |"
               f"  test {test_start} → {test_end}")
         print("=" * 72)
 
@@ -974,7 +974,7 @@ def main():
                             (panel["date"] <= test_end)].copy()
 
         if len(panel_train) < 500 or len(panel_test) < 50:
-            print("  Skipping — insufficient data.")
+            print("  Skipping - insufficient data.")
             continue
 
         # ── Factor weights (train only) ───────────────────────────────────────
@@ -1010,7 +1010,7 @@ def main():
             norm_params=norm_p, fit_norm=False, regime_detector=regime_det)
 
         if ep_train.empty or ep_test.empty:
-            print("  Skipping — empty episode table.")
+            print("  Skipping - empty episode table.")
             continue
 
         train_rows_list = [(dt, ep_train.loc[dt]) for dt in ep_train.index]

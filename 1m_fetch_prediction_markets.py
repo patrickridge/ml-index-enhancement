@@ -1,29 +1,29 @@
 """
-1m_fetch_prediction_markets.py — Fetch Prediction Market / Fed Futures Data
+1m_fetch_prediction_markets.py - Fetch Prediction Market / Fed Futures Data
 =============================================================================
 Downloads forward-looking market expectations from free sources:
 
-  1. CME Fed Funds Futures (via yfinance) — implied Fed rate expectations
+  1. CME Fed Funds Futures (via yfinance) - implied Fed rate expectations
      going back to 2000s. The spread between contract months implies
      market-expected rate changes.
 
-  2. Treasury yield curve — recession probability proxy from 10Y-2Y spread
+  2. Treasury yield curve - recession probability proxy from 10Y-2Y spread
      (already partially in Cat 10, but here we compute a calibrated probability).
 
-  3. VIX term structure — VIX futures spread (contango vs backwardation)
+  3. VIX term structure - VIX futures spread (contango vs backwardation)
      as a forward-looking risk sentiment indicator.
 
 These are macro-level time-signal factors: same for all stocks in a given month.
 They get TS z-scored (not CS-ranked) and added to MACRO_COLS.
 
 Academic basis:
-  Cieslak & Povala (2016) — Fed rate expectations predict equity returns
-  Wolfers & Zitzewitz (2004) — prediction market price = probability
-  Baker, Bloom & Davis (2016) — policy uncertainty and equity returns
-  Adrian & Estrella (2010) — yield curve predicts recessions
+  Cieslak & Povala (2016) - Fed rate expectations predict equity returns
+  Wolfers & Zitzewitz (2004) - prediction market price = probability
+  Baker, Bloom & Davis (2016) - policy uncertainty and equity returns
+  Adrian & Estrella (2010) - yield curve predicts recessions
 
 Output:
-  data/prediction_markets.parquet — daily time series of probability/expectation factors
+  data/prediction_markets.parquet - daily time series of probability/expectation factors
 
 Run time: ~1-2 min (yfinance downloads).
 """
@@ -77,10 +77,10 @@ for tk, name in tickers_fed.items():
     try:
         data = yf.download(tk, start=start, end=end, progress=False)
         if data.empty:
-            print(f"  [WARN] {tk} ({name}) — no data")
+            print(f"  [WARN] {tk} ({name}) - no data")
             continue
         s = data["Close"]
-        # yfinance may return MultiIndex columns — flatten
+        # yfinance may return MultiIndex columns - flatten
         if isinstance(s, pd.DataFrame):
             s = s.iloc[:, 0]
         s = s.dropna()
@@ -106,7 +106,7 @@ try:
         fed_frames.append(implied_rate)
         print(f"  ZQ=F (Fed Funds Futures): {len(implied_rate)} rows")
     else:
-        print("  [WARN] ZQ=F — no data (may need futures data subscription)")
+        print("  [WARN] ZQ=F - no data (may need futures data subscription)")
 except Exception as e:
     print(f"  [WARN] ZQ=F failed: {e}")
 
@@ -144,7 +144,7 @@ for tk, name in tickers_yc.items():
 # 3. VIX TERM STRUCTURE (contango/backwardation)
 # ═══════════════════════════════════════════════════════════════════════════════
 print("\n3. Fetching VIX term structure...")
-# VIX spot vs VIX 3-month futures — contango = complacency, backwardation = fear
+# VIX spot vs VIX 3-month futures - contango = complacency, backwardation = fear
 
 tickers_vix = {
     "^VIX":  "vix_spot",

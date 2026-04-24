@@ -1,5 +1,5 @@
 """
-2e_ic_optimise.py — Differentiable IC Optimisation of Factor Weights
+2e_ic_optimise.py - Differentiable IC Optimisation of Factor Weights
 =====================================================================
 Finds the optimal linear combination of the 43 selected factors that
 maximises mean cross-sectional IC on the training set (2010–2020).
@@ -12,18 +12,18 @@ Method:
   - Combined score per stock per month: score = Σ w_j × zscore(factor_j)
   - Contrarian factors (majority_sign == '-') are sign-flipped before combining
   - IC per month: Pearson correlation between score and fwd_ret_1m
-    (differentiable proxy for Spearman IC — valid when both are z-scored)
+    (differentiable proxy for Spearman IC - valid when both are z-scored)
   - Loss: -mean(IC) across all training months
   - Optimiser: Adam lr=0.01, 500 epochs
 
 Train / Val split:
   - Train : 2010–2020 (same as factor analysis training period)
   - Val   : 2021–2022 (held out from both training and model test period)
-  - Test  : 2023–     (model test period — not touched here)
+  - Test  : 2023–     (model test period - not touched here)
 
 Outputs:
-  data/factor_selected_optimised.csv   — factor_selected.csv + new weight column
-  figures/factor_weights_optimised.png — bar chart: current vs optimised weights
+  data/factor_selected_optimised.csv   - factor_selected.csv + new weight column
+  figures/factor_weights_optimised.png - bar chart: current vs optimised weights
 
 Usage:
   python 2e_ic_optimise.py
@@ -87,7 +87,7 @@ print(f"  Val:   {val['date'].nunique()}  months  ({TRAIN_END[:4]}–{VAL_END[:4
 # Check all factors present
 missing_facs = [f for f in factors if f not in panel.columns]
 if missing_facs:
-    print(f"  WARNING: {len(missing_facs)} factors not in panel — {missing_facs[:5]}")
+    print(f"  WARNING: {len(missing_facs)} factors not in panel - {missing_facs[:5]}")
     factors    = [f for f in factors if f in panel.columns]
     idx_keep   = [i for i, f in enumerate(factor_df["factor"]) if f in panel.columns]
     factor_df  = factor_df.iloc[idx_keep].reset_index(drop=True)
@@ -102,8 +102,8 @@ n_factors = len(factors)
 def build_monthly_data(df: pd.DataFrame) -> list[tuple]:
     """
     Returns list of (factor_matrix, fwd_ret) tuples per month.
-    factor_matrix: (n_stocks, n_factors) — cross-sectionally z-scored, sign-applied
-    fwd_ret:       (n_stocks,) — forward 1m return
+    factor_matrix: (n_stocks, n_factors) - cross-sectionally z-scored, sign-applied
+    fwd_ret:       (n_stocks,) - forward 1m return
     """
     months = []
     for dt, grp in df.groupby("date"):
@@ -180,7 +180,7 @@ try:
     USE_TORCH = True
     print("\nUsing PyTorch for gradient computation (faster)")
 except ImportError:
-    print("\nPyTorch not available — using finite-difference gradients (slower)")
+    print("\nPyTorch not available - using finite-difference gradients (slower)")
 
 
 def optimise_torch(train_months: list) -> np.ndarray:

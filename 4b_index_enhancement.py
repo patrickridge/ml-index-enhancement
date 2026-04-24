@@ -1,5 +1,5 @@
 """
-4b_index_enhancement.py — Index Enhancement Portfolio Construction
+4b_index_enhancement.py - Index Enhancement Portfolio Construction
 =================================================================
 Builds an index-enhanced portfolio by tilting S&P 500 market-cap weights
 using ML model scores (LGBM, FT-Transformer, CS-Transformer).
@@ -16,10 +16,10 @@ Requires (run first):
   python 1c_fetch_market_cap.py  → data/spx_weights.parquet
 
 Outputs:
-  data/bt_ie_lgbm.csv             — monthly port_ret and bench_ret (best α)
+  data/bt_ie_lgbm.csv             - monthly port_ret and bench_ret (best α)
   data/bt_ie_transformer.csv
   data/bt_ie_cs_transformer.csv
-  data/ie_summary.csv             — IR / TE table across all models and α values
+  data/ie_summary.csv             - IR / TE table across all models and α values
 """
 
 import time as _time
@@ -85,7 +85,7 @@ def build_enhanced_portfolio(
     # Transaction cost: one-way rate in decimals. 10 bps = 0.0010 per side.
     # Round-trip cost (buy + sell on a new name) = 2 × one_way × |weight change|.
     # Applied to each month's portfolio turnover vs previous month's weights.
-    one_way_cost = 0.0010  # 10 bps per side — conservative for S&P 500 names
+    one_way_cost = 0.0010  # 10 bps per side - conservative for S&P 500 names
 
     results = []
     prev_weights = {}      # ticker → weight last month
@@ -160,10 +160,10 @@ def ie_stats(bt: pd.DataFrame) -> dict:
     track_err  = r_active.std(ddof=1) * np.sqrt(12)
     info_ratio = ann_alpha / track_err if track_err > 0 else np.nan
 
-    # Hit rate — % of months portfolio beats benchmark
+    # Hit rate - % of months portfolio beats benchmark
     hit_rate = (r_active > 0).mean()
 
-    # Max active drawdown — worst sustained underperformance vs benchmark
+    # Max active drawdown - worst sustained underperformance vs benchmark
     active_nav    = (1 + r_active).cumprod()
     max_active_dd = (active_nav / active_nav.cummax() - 1).min()
 
@@ -267,7 +267,7 @@ def main():
             # Fallback: just pick α = 0.01
             bt = build_enhanced_portfolio(scores, weights, alpha=0.01)
             best_bt[model_name] = bt.copy()
-            print(f"  → No α hit target TE range — saved α=0.01 as fallback")
+            print(f"  → No α hit target TE range - saved α=0.01 as fallback")
 
     # ── Save best backtests ───────────────────────────────────────────────────────
     file_map = {
@@ -288,7 +288,7 @@ def main():
 
     # ── Final comparison table ────────────────────────────────────────────────────
     print("\n" + "=" * 70)
-    print("INDEX ENHANCEMENT — BEST RESULTS PER MODEL (target TE 2–4%)")
+    print("INDEX ENHANCEMENT - BEST RESULTS PER MODEL (target TE 2–4%)")
     print("=" * 70)
     print(f"{'Model':<22}  {'Ann α':>7}  {'TE':>7}  {'IR':>7}  {'Sharpe':>7}  {'MaxDD':>7}")
     print("-" * 70)

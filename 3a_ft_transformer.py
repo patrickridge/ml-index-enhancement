@@ -112,7 +112,7 @@ class FTTransformer(nn.Module):
     """
     Feature Tokenizer + Transformer for tabular regression.
 
-    Each feature is treated like a "word token" — the transformer learns
+    Each feature is treated like a "word token" - the transformer learns
     which combinations of features (feature × feature interactions) matter
     most for predicting stock returns.
     """
@@ -148,7 +148,7 @@ class FTTransformer(nn.Module):
         cls    = self.cls_token.expand(x.size(0), -1, -1) # (batch, 1, d_model)
         tokens = torch.cat([cls, tokens], dim=1)           # (batch, 1+n_feat, d_model)
         out    = self.transformer(tokens)                  # (batch, 1+n_feat, d_model)
-        cls_out = out[:, 0, :]                             # (batch, d_model)  — CLS output
+        cls_out = out[:, 0, :]                             # (batch, d_model)  - CLS output
         return self.head(cls_out).squeeze(-1)              # (batch,)
 
 

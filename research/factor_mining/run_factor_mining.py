@@ -134,13 +134,13 @@ def merge_candidates_to_panel(panel, monthly_candidates, cand_cols):
 
 
 def run_ml_screen(panel, all_feature_cols):
-    """Phase 3: Feed ALL features to penalized ML models — no pre-filtering.
+    """Phase 3: Feed ALL features to penalized ML models - no pre-filtering.
 
     Design choice: no manual filtering. L1/L2 penalties inside the models
     do the selection work, avoiding human-selection bias.
     """
     print("\n" + "=" * 70)
-    print("PHASE 3: ML SCREENING — ALL FEATURES, NO PRE-FILTER (IS-ONLY)")
+    print("PHASE 3: ML SCREENING - ALL FEATURES, NO PRE-FILTER (IS-ONLY)")
     print("=" * 70)
     print(f"  Total features fed to models: {len(all_feature_cols)}")
 
@@ -173,21 +173,21 @@ def run_ml_screen(panel, all_feature_cols):
 
 
 def run_validation(panel, selected_cols):
-    """Phase 4: Validation — BHY only, no hard IC/ICIR floors.
+    """Phase 4: Validation - BHY only, no hard IC/ICIR floors.
 
     Rationale: with weekly rebalancing, noisy factors are acceptable.
     BHY controls false discovery across the whole candidate set.
     IC/ICIR computed for documentation only, not as gates.
     """
     print("\n" + "=" * 70)
-    print("PHASE 4: VALIDATION (BHY + RAS + DEDUP — NO HARD IC/ICIR FLOORS)")
+    print("PHASE 4: VALIDATION (BHY + RAS + DEDUP - NO HARD IC/ICIR FLOORS)")
     print("=" * 70)
 
     if not selected_cols:
         print("  No features to validate!")
         return pd.DataFrame()
 
-    # Compute metrics for all — but pass/fail is BHY + dedup only
+    # Compute metrics for all - but pass/fail is BHY + dedup only
     catalog = screen_all_candidates(
         panel,
         candidate_cols=selected_cols,
@@ -223,7 +223,7 @@ def run_entropy_validation(panel):
     print("=" * 70)
 
     if "cand_low_entropy_regime" not in panel.columns:
-        print("  Entropy signal not in panel — skipping")
+        print("  Entropy signal not in panel - skipping")
         return
 
     result = validate_entropy_signal(panel)
@@ -338,7 +338,7 @@ def main():
             panel["date"] = pd.to_datetime(panel["date"])
             print(f"  Merged panel: {panel.shape[0]:,} rows × {panel.shape[1]} columns")
         else:
-            print("  No saved merged panel — recomputing candidates...")
+            print("  No saved merged panel - recomputing candidates...")
             prices, cand_cols = compute_candidates(prices)
             prices = add_entropy(prices)
             cand_cols = get_candidate_columns(prices)
@@ -366,7 +366,7 @@ def main():
                             and panel[c].notna().mean() > 0.3]
         print(f"\n  Unified feature set: {len(all_feature_cols)} features (existing + new)")
 
-        # Phase 3: ML screen — all features, no pre-filter, penalties do the work
+        # Phase 3: ML screen - all features, no pre-filter, penalties do the work
         selected = run_ml_screen(panel, all_feature_cols)
 
         # Save merged panel for fast --revalidate-only reruns
@@ -374,7 +374,7 @@ def main():
         panel.to_parquet(merged_panel_path, index=False)
         print(f"\n  Saved merged panel: {merged_panel_path}")
 
-    # Phase 4: Validation — dedup within survivors, no existing/new split
+    # Phase 4: Validation - dedup within survivors, no existing/new split
     catalog = run_validation(panel, selected)
 
     # Phase 5: Entropy validation
@@ -384,7 +384,7 @@ def main():
     write_summary(catalog)
 
     print(f"\n{'=' * 70}")
-    print(f"FACTOR MINING COMPLETE — Total time: {time.time()-t_start:.0f}s")
+    print(f"FACTOR MINING COMPLETE - Total time: {time.time()-t_start:.0f}s")
     print(f"{'=' * 70}")
 
 

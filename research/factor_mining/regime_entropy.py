@@ -57,10 +57,10 @@ def add_entropy_regime_signals(
     Add entropy-based volatility regime signals to daily prices.
 
     NEW COLUMNS:
-      cand_return_entropy_21d    — Rolling Shannon entropy of daily returns (21d)
-      cand_low_entropy_regime    — Binary: 1 if entropy < IS threshold (low entropy = stressed)
-      cand_entropy_transition    — Binary: 1 if entropy dropped below threshold this period
-      cand_entropy_zscore        — Z-scored entropy (per-stock, rolling 126d)
+      cand_return_entropy_21d    - Rolling Shannon entropy of daily returns (21d)
+      cand_low_entropy_regime    - Binary: 1 if entropy < IS threshold (low entropy = stressed)
+      cand_entropy_transition    - Binary: 1 if entropy dropped below threshold this period
+      cand_entropy_zscore        - Z-scored entropy (per-stock, rolling 126d)
 
     Parameters:
         prices: DataFrame with columns [date, ticker, ret_d]

@@ -1,5 +1,5 @@
 """
-6_regime_dashboard.py — Streamlit dashboard for regime-conditional IE analysis.
+6_regime_dashboard.py - Streamlit dashboard for regime-conditional IE analysis.
 
 Tabs: regime breakdown, block-bootstrap CIs, Monte Carlo projection, full stats
 table, 3-D cross-sectional vol surface, walk-forward RL, and a combined
@@ -23,7 +23,7 @@ import streamlit as st
 # ── Paths ───────────────────────────────────────────────────────────────────
 DATA_DIR = Path("data")
 
-# ── Regime definitions (no emoji — clean labels) ────────────────────────────
+# ── Regime definitions (no emoji - clean labels) ────────────────────────────
 ALL_REGIMES = {
     "GFC Crash (2008–2009)":         ("2008-01-01", "2009-12-31", "#7B241C"),
     "Post-GFC Recovery (2010–2012)": ("2010-01-01", "2012-12-31", "#1A5276"),
@@ -63,7 +63,7 @@ _LAYOUT = dict(
     margin=dict(t=60, b=40, l=50, r=30),
 )
 
-# ── Custom CSS — academic, clean ────────────────────────────────────────────
+# ── Custom CSS - academic, clean ────────────────────────────────────────────
 _CSS = """
 <style>
 /* Layout */
@@ -104,7 +104,7 @@ section[data-testid="stSidebar"] h2 { font-size: 0.75rem !important;
     text-transform: uppercase; letter-spacing: 0.06em; color: #6A7A8A;
     border-bottom: 1px solid #2A2D3A; padding-bottom: 0.2rem; }
 
-/* Captions / subtext — bright enough to read on dark bg */
+/* Captions / subtext - bright enough to read on dark bg */
 .stCaption, [data-testid="stCaptionContainer"] { color: #9AAABB !important;
     font-size: 0.8rem; font-style: normal; }
 
@@ -137,7 +137,7 @@ st.set_page_config(
 )
 st.markdown(_CSS, unsafe_allow_html=True)
 
-st.title("ML S&P 500 Index Enhancement — Regime Analysis Dashboard")
+st.title("ML S&P 500 Index Enhancement - Regime Analysis Dashboard")
 st.caption(
     "Out-of-sample performance (Jan 2023 – Nov 2025) decomposed by market regime. "
     "Models: CS-Transformer · FT-Transformer · LGBM · Factor-Combo baseline."
@@ -292,7 +292,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 1 — Regime Breakdown
+# TAB 1 - Regime Breakdown
 # ═════════════════════════════════════════════════════════════════════════════
 with tab1:
 
@@ -413,10 +413,10 @@ with tab1:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 2 — Bootstrap Analysis
+# TAB 2 - Bootstrap Analysis
 # ═════════════════════════════════════════════════════════════════════════════
 with tab2:
-    st.markdown("## Block Bootstrap — IR Confidence Intervals")
+    st.markdown("## Block Bootstrap - IR Confidence Intervals")
     st.caption(
         f"Block bootstrap ({n_bootstrap:,} iterations, block size = {block_size} months). "
         "Consecutive blocks preserve temporal autocorrelation. "
@@ -541,7 +541,7 @@ with tab2:
                      xaxis_title="IR",
                      yaxis_title="Count",
                      title=dict(
-                         text=f"{boot_model} — {boot_regime}  (n = {sub_sel.dropna().shape[0]} months)",
+                         text=f"{boot_model} - {boot_regime}  (n = {sub_sel.dropna().shape[0]} months)",
                          font=dict(size=11), x=0))
         st.plotly_chart(fig_dist, use_container_width=True)
 
@@ -552,11 +552,11 @@ with tab2:
         c4.metric("95th pct",  f"{p95:.3f}")
     else:
         st.warning(f"Insufficient data for {boot_model} / {boot_regime} "
-                   f"({sub_sel.dropna().shape[0]} months — minimum 6 required).")
+                   f"({sub_sel.dropna().shape[0]} months - minimum 6 required).")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 3 — Monte Carlo Projection
+# TAB 3 - Monte Carlo Projection
 # ═════════════════════════════════════════════════════════════════════════════
 with tab3:
     st.markdown("## Monte Carlo Forward Projection")
@@ -653,10 +653,10 @@ with tab3:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 4 — Statistics
+# TAB 4 - Statistics
 # ═════════════════════════════════════════════════════════════════════════════
 with tab4:
-    st.markdown("## Performance Statistics — All Models × Regimes")
+    st.markdown("## Performance Statistics - All Models × Regimes")
     st.caption("IR > 0.5 = good (institutional grade). IR > 1.0 = excellent (top-quartile).")
 
     disp_rows = []
@@ -694,7 +694,7 @@ with tab4:
               .applymap(colour_ir, subset=["IR"])
               .format({"Ann α (%)": "{:.2f}", "TE (%)": "{:.2f}",
                        "IR": "{:.3f}", "Hit Rate %": "{:.1f}",
-                       "Max DD %": "{:.2f}"}, na_rep="—")
+                       "Max DD %": "{:.2f}"}, na_rep="-")
               .set_table_styles([
                   {"selector": "th",
                    "props": [("font-size", "0.82rem"), ("font-weight", "600"),
@@ -716,7 +716,7 @@ with tab4:
     st.divider()
 
     # IR heatmap
-    st.markdown("## IR Heatmap — Models × Regimes")
+    st.markdown("## IR Heatmap - Models × Regimes")
     st.caption("Colour scale: red = negative IR, yellow = 0.5, green = 1.0+.")
     pivot = disp_df.pivot_table(values="IR", index="Model",
                                 columns="Regime", aggfunc="first")
@@ -747,13 +747,13 @@ with tab4:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 5 — Volatility Surface
+# TAB 5 - Volatility Surface
 # ═════════════════════════════════════════════════════════════════════════════
 with tab5:
     # ── Section 1: Stochastic MC Portfolio Vol Surface ───────────────────────
     st.markdown("## Stochastic Portfolio Volatility Surface")
     st.caption(
-        "Monte Carlo portfolio vol surface generated by 1,000 regime-switching paths per grid point — "
+        "Monte Carlo portfolio vol surface generated by 1,000 regime-switching paths per grid point - "
         "**not historical data**. "
         "X axis: forward horizon (months). Y axis: alpha tilt level (%). "
         "Z axis: expected annualised portfolio vol. "
@@ -890,7 +890,7 @@ with tab5:
         margin=dict(l=0, r=0, t=45, b=0),
         title=dict(
             text=(
-                f"Stochastic Portfolio Vol Surface  —  "
+                f"Stochastic Portfolio Vol Surface  -  "
                 f"MC n={n_mc_vol:,} paths  |  "
                 f"switch prob {switch_prob*100:.0f}%/mo  |  "
                 f"stress mult ×{stress_mult:.1f}"
@@ -902,12 +902,12 @@ with tab5:
 
     # ── Backtest Replay Animation ─────────────────────────────────────────────
     st.divider()
-    st.markdown("## Backtest Replay — Vol Surface Through Time")
+    st.markdown("## Backtest Replay - Vol Surface Through Time")
     st.caption(
         "Precompute all 192 monthly frames once (~25s), then play them instantly. "
         "Watch the surface spike during COVID crash (2020) and rate-hike bear (2022), "
         "then flatten during QE bull (2013–2019). Fixed colour scale so the shape "
-        "changes are visible — not the colours."
+        "changes are visible - not the colours."
     )
 
     import time as _time
@@ -962,10 +962,10 @@ with tab5:
                 "a":  a_arr, "h": h_arr, "Z": Z,
             })
             prog.progress((i + 1) / n,
-                          text=f"Frame {i+1}/{n}  —  {dt.strftime('%b %Y')}")
+                          text=f"Frame {i+1}/{n}  -  {dt.strftime('%b %Y')}")
         st.session_state["replay_frames"] = frames
         prog.empty()
-        st.success(f"Done — {n} frames precomputed. Press ▶ Play Animation.")
+        st.success(f"Done - {n} frames precomputed. Press ▶ Play Animation.")
 
     # ── Play ──────────────────────────────────────────────────────────────────
     if play_btn and "replay_frames" in st.session_state:
@@ -1023,7 +1023,7 @@ with tab5:
             )
             _time.sleep(play_speed)
 
-        status_slot.caption("▶ Replay complete — press Play to watch again.")
+        status_slot.caption("▶ Replay complete - press Play to watch again.")
 
     st.divider()
 
@@ -1161,20 +1161,20 @@ with tab5:
         fig_ts.add_hline(y=0, line_color="#CCCCCC", line_width=0.8)
         apply_layout(fig_ts, height=320,
                      xaxis_title="Date", yaxis_title="fwd_ret_1m",
-                     title=dict(text="fwd_ret_1m — Selected Percentile Bands",
+                     title=dict(text="fwd_ret_1m - Selected Percentile Bands",
                                 font=dict(size=11), x=0))
         st.plotly_chart(fig_ts, use_container_width=True)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 6 — Walk-Forward RL Backtest
+# TAB 6 - Walk-Forward RL Backtest
 # ═════════════════════════════════════════════════════════════════════════════
 with tab6:
-    st.markdown("## Walk-Forward RL Backtest — No Data Leakage")
+    st.markdown("## Walk-Forward RL Backtest - No Data Leakage")
     st.markdown(
         "The L2 SAC agent is re-trained from scratch on each fold using only "
         "past data. Factor IC weights, state normalisation, and the RL policy "
-        "are all computed on the training window only — nothing from the test "
+        "are all computed on the training window only - nothing from the test "
         "period leaks in. Results below are fully out-of-sample across 95 months."
     )
 
@@ -1298,7 +1298,7 @@ with tab6:
             barmode="group",
             bargap=0.25,
             yaxis_title="Information Ratio",
-            title=dict(text="IR by Fold — RL Agent vs Fixed Alpha",
+            title=dict(text="IR by Fold - RL Agent vs Fixed Alpha",
                        font=dict(size=12), x=0),
         )
         st.plotly_chart(fig_fold, use_container_width=True)
@@ -1321,10 +1321,10 @@ with tab6:
         )
 
         st.markdown("---")
-        st.markdown("## Algorithm Comparison — SAC vs PPO vs GRPO")
+        st.markdown("## Algorithm Comparison - SAC vs PPO vs GRPO")
         st.markdown(
             "Same 5-fold walk-forward framework comparing three RL algorithms. "
-            "All three agents use identical state features and simulation — only the "
+            "All three agents use identical state features and simulation - only the "
             "learning algorithm differs."
         )
 
@@ -1406,13 +1406,13 @@ with tab6:
             st.caption(
                 "_GRPO (Group Relative Policy Optimisation) is the same algorithm used in "
                 "DeepSeek-R1 (2025). It samples G=4 candidate alphas per market state and uses "
-                "within-group reward ranking as the advantage signal — no value function needed. "
+                "within-group reward ranking as the advantage signal - no value function needed. "
                 "KL penalty β=0.01 against a frozen reference policy prevents collapse._"
             )
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 7 — Backtest Engine
+# TAB 7 - Backtest Engine
 # ═════════════════════════════════════════════════════════════════════════════
 with tab7:
     st.markdown("## Backtest Engine")
@@ -1475,13 +1475,13 @@ with tab7:
     )
 
     # ════════════════════════════════════════════════════════════════════════
-    # MODE 1 — Normal Backtest
+    # MODE 1 - Normal Backtest
     # ════════════════════════════════════════════════════════════════════════
     if mode == "Normal Backtest":
-        st.markdown("### Normal Backtest — Single Train / Test Split")
+        st.markdown("### Normal Backtest - Single Train / Test Split")
         st.caption(
             "Models trained on 2010–2022, evaluated on Jan 2023–Nov 2025 (35 months). "
-            "Standard single-split approach — shows raw performance but does not guard "
+            "Standard single-split approach - shows raw performance but does not guard "
             "against look-ahead bias in factor weights."
         )
 
@@ -1532,7 +1532,7 @@ with tab7:
                 fig, height=340,
                 xaxis_title="Date", yaxis_title="Cumulative Active Return (%)",
                 title=dict(
-                    text=f"{model_choice} — Cumulative Active Return (Normal Backtest)",
+                    text=f"{model_choice} - Cumulative Active Return (Normal Backtest)",
                     font=dict(size=12), x=0,
                 ),
             )
@@ -1545,10 +1545,10 @@ with tab7:
             )
 
     # ════════════════════════════════════════════════════════════════════════
-    # MODE 2 — Walk-Forward
+    # MODE 2 - Walk-Forward
     # ════════════════════════════════════════════════════════════════════════
     elif mode == "Walk-Forward (No Leakage)":
-        st.markdown("### Walk-Forward Backtest — No Data Leakage")
+        st.markdown("### Walk-Forward Backtest - No Data Leakage")
         st.caption(
             "5 expanding folds (2014–2025). Factor IC weights, state normalisation, "
             "and RL policy retrained from scratch on past data only for each fold. "
@@ -1606,7 +1606,7 @@ with tab7:
                 fig2, height=340,
                 xaxis_title="Date", yaxis_title="Cumulative Active Return (%)",
                 title=dict(
-                    text="Walk-Forward Cumulative Alpha — Each colour = one fold",
+                    text="Walk-Forward Cumulative Alpha - Each colour = one fold",
                     font=dict(size=12), x=0,
                 ),
             )
@@ -1635,7 +1635,7 @@ with tab7:
                 fig3, height=300,
                 xaxis_title="Fold", yaxis_title="Information Ratio",
                 title=dict(
-                    text="IR by Fold — RL Agent vs Fixed α (green = RL wins)",
+                    text="IR by Fold - RL Agent vs Fixed α (green = RL wins)",
                     font=dict(size=12), x=0,
                 ),
             )
@@ -1651,10 +1651,10 @@ with tab7:
             st.dataframe(disp, use_container_width=True, hide_index=True)
 
     # ════════════════════════════════════════════════════════════════════════
-    # MODE 3 — Stress Test
+    # MODE 3 - Stress Test
     # ════════════════════════════════════════════════════════════════════════
     else:
-        st.markdown("### Stress Test — Synthetic Bear Market")
+        st.markdown("### Stress Test - Synthetic Bear Market")
         st.caption(
             "A diffusion model bridges real macro conditions (2008 GFC, 2020 COVID) "
             "to synthetic factor returns. Tests whether the CS-Transformer generates "
@@ -1698,8 +1698,8 @@ with tab7:
 **Key findings:**
 - IR **{sr['synthetic_bear_ir']:.3f}** in synthetic bear vs **{sr['real_riskoff_ir']:.3f}** in real risk-off periods
 - **{sr['prob_positive_pct']:.1f}%** of synthetic bear months show positive alpha
-- Ann alpha **{sr['synthetic_ann_alpha_pct']:.2f}%** — model does not rely on bull-market tailwind
-- Low bridge R² ({sr['bridge_r2']:.4f}) means results are conservative — residual noise added to prevent artificial precision
+- Ann alpha **{sr['synthetic_ann_alpha_pct']:.2f}%** - model does not rely on bull-market tailwind
+- Low bridge R² ({sr['bridge_r2']:.4f}) means results are conservative - residual noise added to prevent artificial precision
                     """
                 )
 

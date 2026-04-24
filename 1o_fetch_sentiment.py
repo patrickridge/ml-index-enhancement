@@ -1,26 +1,26 @@
 """
-1o_fetch_sentiment.py — Fetch News Sentiment Data
+1o_fetch_sentiment.py - Fetch News Sentiment Data
 ====================================================
 Fetches company news from Finnhub (free tier: 60 calls/min) and scores
 headlines using VADER sentiment analysis (open source, no API key needed).
 
 Features produced (per stock per month):
   - sentiment_mean_30d:     mean VADER compound score of headlines (30d)
-  - sentiment_std_30d:      std of sentiment scores (30d) — controversy signal
+  - sentiment_std_30d:      std of sentiment scores (30d) - controversy signal
   - sentiment_momentum_30d: change in mean sentiment vs prior 30d
   - news_volume_30d:        number of news articles (30d, log-transformed)
 
 Academic basis:
-  Tetlock (2007) — media pessimism predicts downward market pressure
-  Loughran & McDonald (2011) — finance-specific sentiment outperforms generic
-  Da, Engelberg & Gao (2015) — news sentiment predicts short-term returns
-  Hutto & Gilbert (2014) — VADER: robust social media sentiment analysis
+  Tetlock (2007) - media pessimism predicts downward market pressure
+  Loughran & McDonald (2011) - finance-specific sentiment outperforms generic
+  Da, Engelberg & Gao (2015) - news sentiment predicts short-term returns
+  Hutto & Gilbert (2014) - VADER: robust social media sentiment analysis
 
 Dependencies:
   pip install finnhub-python vaderSentiment
 
 Output:
-  data/sentiment.parquet — monthly panel of news sentiment features
+  data/sentiment.parquet - monthly panel of news sentiment features
 
 Rate limits: Finnhub free tier allows 60 calls/min.
 Run time: ~30-60 min (rate-limited to 60 req/min, ~500 tickers).
@@ -85,7 +85,7 @@ if _ticker_src:
     print(f"Loaded {len(tickers)} tickers from {_ticker_src}")
     del _df
 else:
-    print("[WARN] No panel/prices parquet found — cannot get ticker list")
+    print("[WARN] No panel/prices parquet found - cannot get ticker list")
     raise SystemExit(1)
 
 # ── Finnhub client ────────────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ def fetch_all_sentiment() -> pd.DataFrame:
     n_tickers = len(tickers)
     total_articles = 0
 
-    # Fetch recent news (last 12 months) — Finnhub free tier limitation
+    # Fetch recent news (last 12 months) - Finnhub free tier limitation
     today = pd.Timestamp.today()
     from_date = (today - pd.DateOffset(months=12)).strftime("%Y-%m-%d")
     to_date = today.strftime("%Y-%m-%d")
@@ -251,7 +251,7 @@ if __name__ == "__main__":
     features = compute_sentiment_features(scored)
 
     if features.empty:
-        print("\n[WARN] No sentiment features computed — creating empty parquet")
+        print("\n[WARN] No sentiment features computed - creating empty parquet")
         features = pd.DataFrame(columns=[
             "ticker", "date", "sentiment_mean_30d", "sentiment_std_30d",
             "sentiment_momentum_30d", "news_volume_30d",

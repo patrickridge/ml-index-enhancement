@@ -1,5 +1,5 @@
 """
-1h_feature_engineering.py — build the enriched monthly factor panel.
+1h_feature_engineering.py - build the enriched monthly factor panel.
 
 Reads daily OHLCV prices and the base monthly panel, computes the factor
 library from utils_factors.py plus the optional-source categories that need
@@ -11,10 +11,10 @@ candidates, insider, sentiment) are added in-place by later fetchers; this
 file covers Cats 1-16.
 
 Inputs:
-  data/prices.parquet            required — daily OHLC (+ optional volume)
-  data/panel_monthly.parquet     required — base monthly panel (9 momentum factors)
-  data/fundamental.parquet       optional — fundamentals (enables Cat 9)
-  yfinance                       fetched  — ^GSPC, ^VIX, ^TNX, ^IRX, DX-Y.NYB, HYG
+  data/prices.parquet            required - daily OHLC (+ optional volume)
+  data/panel_monthly.parquet     required - base monthly panel (9 momentum factors)
+  data/fundamental.parquet       optional - fundamentals (enables Cat 9)
+  yfinance                       fetched  - ^GSPC, ^VIX, ^TNX, ^IRX, DX-Y.NYB, HYG
                                             (Cats 6, 8, 10)
 
 Output:
@@ -233,7 +233,7 @@ def build_daily_features(prices: pd.DataFrame,
         prices = add_entropy_regime_signals(prices)
 
     # Carry month-end close for market cap computation (Cat 14).
-    # Named close_me — not in exclude_cols so it survives sample_at_month_end.
+    # Named close_me - not in exclude_cols so it survives sample_at_month_end.
     prices["close_me"] = prices["close"]
 
     return prices
@@ -252,7 +252,7 @@ def sample_at_month_end(daily: pd.DataFrame,
     Auto-detects feature columns: all columns except date, ticker, and
     those starting with underscore or known intermediate prefixes.
     """
-    # Exclude raw OHLC price levels — not cross-sectional signals, only spurious size bias
+    # Exclude raw OHLC price levels - not cross-sectional signals, only spurious size bias
     exclude_cols = {"date", "ticker", "open", "high", "low", "close"}
     new_feat_cols = [
         c for c in daily.columns
@@ -301,13 +301,13 @@ def add_momentum_extensions(panel: pd.DataFrame) -> pd.DataFrame:
 
 def main():
     print("=" * 65)
-    print("FEATURE ENGINEERING v3 — 100+ factors (Cats 1-13)")
+    print("FEATURE ENGINEERING v3 - 100+ factors (Cats 1-13)")
     print("=" * 65)
 
     # Load base data
     print("\nLoading data...")
     panel  = pd.read_parquet(PANEL_IN)
-    # Drop rev_1m from v1 base panel — it is -ret_1m after ranking (exact duplicate)
+    # Drop rev_1m from v1 base panel - it is -ret_1m after ranking (exact duplicate)
     panel  = panel.drop(columns=[c for c in ["rev_1m"] if c in panel.columns])
     prices = pd.read_parquet(PRICES_IN)
     panel["date"]  = pd.to_datetime(panel["date"])
@@ -350,32 +350,32 @@ def main():
 
     # Cat 9: fundamental (optional)
     if FUND_IN.exists():
-        print(f"\nFound {FUND_IN} — adding Cat 9: fundamental factors...")
+        print(f"\nFound {FUND_IN} - adding Cat 9: fundamental factors...")
         fundamental = pd.read_parquet(FUND_IN)
         fundamental["date"] = pd.to_datetime(fundamental["date"])
         panel = add_fundamental_factors(panel, fundamental)
     else:
-        print(f"\n{FUND_IN} not found — skipping Cat 9 fundamental factors.")
+        print(f"\n{FUND_IN} not found - skipping Cat 9 fundamental factors.")
 
     # Cat 19: short interest (optional)
     SI_IN = DATA_DIR / "short_interest.parquet"
     if SI_IN.exists():
-        print(f"\nFound {SI_IN} — adding Cat 19: short interest factors...")
+        print(f"\nFound {SI_IN} - adding Cat 19: short interest factors...")
         short_df = pd.read_parquet(SI_IN)
         short_df["date"] = pd.to_datetime(short_df["date"])
         panel = add_short_interest_factors(panel, short_df)
     else:
-        print(f"\n{SI_IN} not found — skipping Cat 19 short interest factors.")
+        print(f"\n{SI_IN} not found - skipping Cat 19 short interest factors.")
 
     # Cat 20: institutional ownership (optional)
     IO_IN = DATA_DIR / "institutional_ownership.parquet"
     if IO_IN.exists():
-        print(f"\nFound {IO_IN} — adding Cat 20: institutional ownership factors...")
+        print(f"\nFound {IO_IN} - adding Cat 20: institutional ownership factors...")
         inst_df = pd.read_parquet(IO_IN)
         inst_df["date"] = pd.to_datetime(inst_df["date"])
         panel = add_institutional_factors(panel, inst_df)
     else:
-        print(f"\n{IO_IN} not found — skipping Cat 20 institutional ownership factors.")
+        print(f"\n{IO_IN} not found - skipping Cat 20 institutional ownership factors.")
 
     # Helper: merge a per-ticker external dataset that uses BASE ticker format
     # (e.g. "AAPL") onto our panel which uses exchange-suffixed format (e.g. "AAPL.O").
@@ -405,31 +405,31 @@ def main():
               f"(matched {n_merged}/{ext_df['ticker'].nunique()} tickers to panel)")
         return panel
 
-    # Cat 23: news sentiment (optional — from 1o_fetch_sentiment.py)
+    # Cat 23: news sentiment (optional - from 1o_fetch_sentiment.py)
     SENT_IN = DATA_DIR / "sentiment.parquet"
     if SENT_IN.exists():
         sent_df = pd.read_parquet(SENT_IN)
         if len(sent_df) > 0:
-            print(f"\nFound {SENT_IN} — adding Cat 23: news sentiment factors...")
+            print(f"\nFound {SENT_IN} - adding Cat 23: news sentiment factors...")
             sent_cols = [c for c in sent_df.columns if c not in ("date", "ticker")]
             panel = _merge_base_ticker_data(panel, sent_df, sent_cols, "Sentiment")
         else:
-            print(f"\n{SENT_IN} exists but is empty — skipping Cat 23.")
+            print(f"\n{SENT_IN} exists but is empty - skipping Cat 23.")
     else:
-        print(f"\n{SENT_IN} not found — skipping Cat 23 sentiment factors.")
+        print(f"\n{SENT_IN} not found - skipping Cat 23 sentiment factors.")
 
-    # Cat 24: insider trading (optional — from 1n_fetch_insider_trades.py)
+    # Cat 24: insider trading (optional - from 1n_fetch_insider_trades.py)
     INS_IN = DATA_DIR / "insider_trades.parquet"
     if INS_IN.exists():
         ins_df = pd.read_parquet(INS_IN)
         if len(ins_df) > 0:
-            print(f"\nFound {INS_IN} — adding Cat 24: insider trading factors...")
+            print(f"\nFound {INS_IN} - adding Cat 24: insider trading factors...")
             ins_cols = [c for c in ins_df.columns if c not in ("date", "ticker")]
             panel = _merge_base_ticker_data(panel, ins_df, ins_cols, "Insider")
         else:
-            print(f"\n{INS_IN} exists but is empty — skipping Cat 24.")
+            print(f"\n{INS_IN} exists but is empty - skipping Cat 24.")
     else:
-        print(f"\n{INS_IN} not found — skipping Cat 24 insider trading factors.")
+        print(f"\n{INS_IN} not found - skipping Cat 24 insider trading factors.")
 
     # Cat 10: macro / regime
     print("\nFetching macro data (Cat 10)...")
@@ -442,7 +442,7 @@ def main():
         print("\nAdding Cat 13: macro interaction factors...")
         panel = add_macro_interaction_factors(panel)
     else:
-        print("  Macro data unavailable — skipping Cat 10 and Cat 13.")
+        print("  Macro data unavailable - skipping Cat 10 and Cat 13.")
 
     # Cat 21: prediction market / Fed expectations (macro-level, TS z-scored)
     PRED_IN = DATA_DIR / "prediction_markets.parquet"
@@ -465,19 +465,19 @@ def main():
         found_pred = [c for c in pred_cols if c in panel.columns]
         print(f"  Prediction market columns added: {found_pred}")
     else:
-        print(f"\n{PRED_IN} not found — skipping Cat 21 prediction market factors.")
+        print(f"\n{PRED_IN} not found - skipping Cat 21 prediction market factors.")
 
-    # Cat 14: size factor — log(market cap) = log(shares × close_me)
+    # Cat 14: size factor - log(market cap) = log(shares × close_me)
     mktcap_cache = str(DATA_DIR / "mktcap_shares.parquet")
     all_tickers  = panel["ticker"].unique().tolist()
     print("\nFetching market cap data (Cat 14: log_mktcap)...")
     shares_df = fetch_market_cap_data(all_tickers, start_str, end_str,
                                       cache_path=mktcap_cache)
     panel = add_size_factor(panel, shares_df)
-    # Drop the helper column — it is not a model feature
+    # Drop the helper column - it is not a model feature
     panel = panel.drop(columns=["close_me"], errors="ignore")
 
-    # Cat 15: Tail-ranking features — explicit top/bottom decile dummies
+    # Cat 15: Tail-ranking features - explicit top/bottom decile dummies
     # Capture non-linear tail effects on contrarian + momentum + vol factors.
     # These are already in {0,1}/{-1,0,1} space; do NOT CS-rank them again.
     print("\nAdding Cat 15: tail-ranking features...")
@@ -504,12 +504,12 @@ def main():
             if col in panel.columns:
                 TAIL_COLS.add(col)
     # Calendar dummies have zero CS variance (same for all stocks on a date)
-    # Keep as binary {0,1} — no CS-ranking or TS z-scoring
+    # Keep as binary {0,1} - no CS-ranking or TS z-scoring
     for cal_col in ["turn_of_month", "january_dummy"]:
         if cal_col in panel.columns:
             TAIL_COLS.add(cal_col)
     # Cat 17 proper time signals: binary {0,1} or signed {+1,-1} per stock
-    # These are already absolute signals — CS-ranking would destroy their meaning
+    # These are already absolute signals - CS-ranking would destroy their meaning
     for ts_col in [
         "above_ma_200", "above_ma_50", "new_52w_high", "new_52w_low",
         "tsmom_sign_12m", "tsmom_sign_6m", "vol_above_avg", "high_vol_week",
@@ -521,7 +521,7 @@ def main():
     # Identify all feature columns
     always_exclude = {"date", "ticker", "fwd_ret_1m"}
     macro_in_panel = [c for c in MACRO_COLS if c in panel.columns]
-    # Tail cols already normalised ({0,1}/{-1,0,1}) — skip CS-ranking
+    # Tail cols already normalised ({0,1}/{-1,0,1}) - skip CS-ranking
     feat_cols_cs   = [c for c in panel.columns
                       if c not in always_exclude
                       and c not in macro_in_panel

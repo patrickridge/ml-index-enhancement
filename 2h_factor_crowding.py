@@ -1,5 +1,5 @@
 """
-2h_factor_crowding.py — Crowding, within-month decay, and contrarian diagnostics.
+2h_factor_crowding.py - Crowding, within-month decay, and contrarian diagnostics.
 
 Four checks run on the enriched panel:
 
@@ -10,7 +10,7 @@ Four checks run on the enriched panel:
   3. Contrarian factors. Compares IS vs OOS for the sign-flipped group so we
      can tell genuine reversal signals from noise.
   4. Quintile direction audit. Flags factors where the Q5-Q1 spread sign
-     contradicts IC_IS — i.e. the "wrong direction" factors.
+     contradicts IC_IS - i.e. the "wrong direction" factors.
 
 Training metrics always use date ≤ TRAIN_END (config.py); OOS metrics use
 date > TRAIN_END. No mixing.
@@ -75,7 +75,7 @@ print(f"\nLoading panel → {PANEL_PATH}")
 panel = pd.read_parquet(PANEL_PATH)
 panel["date"] = pd.to_datetime(panel["date"])
 
-# Strict IS / OOS split — never mix
+# Strict IS / OOS split - never mix
 IS_END = pd.Timestamp(TRAIN_END)
 OOS_START = IS_END + pd.DateOffset(days=1)
 
@@ -87,18 +87,18 @@ print(f"  IS  : {panel_is['date'].min().date()} → {panel_is['date'].max().date
 print(f"  OOS : {panel_oos['date'].min().date()} → {panel_oos['date'].max().date()}  "
       f"({len(panel_oos):,} rows, {panel_oos['date'].nunique()} months)")
 
-# Factor list (exclude macro — macro are same for all stocks within a month, zero CS variance)
+# Factor list (exclude macro - macro are same for all stocks within a month, zero CS variance)
 all_factor_cols = [c for c in panel.columns if c not in NON_FEATURE_COLS]
 cs_factors = [c for c in all_factor_cols if c not in MACRO_COLS]
 print(f"\n  CS factors : {len(cs_factors)}")
-print(f"  Macro cols : {len(MACRO_COLS)}  (excluded from crowding — zero CS variance)")
+print(f"  Macro cols : {len(MACRO_COLS)}  (excluded from crowding - zero CS variance)")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 1 — FACTOR CROWDING (IS DATA ONLY)
+# SECTION 1 - FACTOR CROWDING (IS DATA ONLY)
 # ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "─" * 65)
-print("SECTION 1 — Factor Crowding (IS data only)")
+print("SECTION 1 - Factor Crowding (IS data only)")
 print("─" * 65)
 
 # Build monthly factor pivot: mean factor value per stock per month (IS only)
@@ -158,7 +158,7 @@ try:
         cbar_kws={"shrink": 0.6, "label": "Spearman ρ"},
     )
     ax.set_title(
-        f"Factor Correlation Matrix — IS only (≤{TRAIN_END})\n"
+        f"Factor Correlation Matrix - IS only (≤{TRAIN_END})\n"
         f"{len(cs_factors)} CS factors | Hierarchically clustered | Threshold = {CROWD_THRESHOLD}",
         fontsize=13, pad=12
     )
@@ -173,13 +173,13 @@ except Exception as e:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 2 — 7-DAY IC DECAY: IS vs OOS (computed from daily prices)
+# SECTION 2 - 7-DAY IC DECAY: IS vs OOS (computed from daily prices)
 # ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "─" * 65)
-print("SECTION 2 — 7-Day IC Decay: IS vs OOS")
+print("SECTION 2 - 7-Day IC Decay: IS vs OOS")
 print("─" * 65)
 print("  Computes IC at days 1/3/5/7/10 using daily prices for forward returns.")
-print(f"  IS  = dates ≤ {TRAIN_END}  |  OOS = dates > {TRAIN_END}  — NEVER mixed.")
+print(f"  IS  = dates ≤ {TRAIN_END}  |  OOS = dates > {TRAIN_END}  - NEVER mixed.")
 
 PRICES_PATH = Path("data/prices.parquet")
 DAY_LAGS    = [1, 3, 5, 7, 10]
@@ -203,7 +203,7 @@ else:
 print(f"  Analysing {len(top_factors_decay)} top factors by |ICIR_IS|")
 
 if not PRICES_PATH.exists():
-    print("  [WARN] data/prices.parquet not found — skipping Section 2")
+    print("  [WARN] data/prices.parquet not found - skipping Section 2")
     decay_7d_result = None
 else:
     print("  Loading daily prices...")
@@ -241,7 +241,7 @@ else:
     def compute_decay_ic(panel_sub, factors, lags):
         """
         For each factor and each lag, compute mean IC across months in panel_sub.
-        panel_sub is already restricted to IS or OOS — no mixing.
+        panel_sub is already restricted to IS or OOS - no mixing.
         Returns dict: {factor: {lag: mean_ic}}
         """
         signal_dates = sorted(panel_sub["date"].unique())
@@ -315,7 +315,7 @@ else:
     decay_7d_result.to_csv(DATA_DIR / "crowding_7day_decay_is_oos.csv")
     print(f"  Saved → data/crowding_7day_decay_is_oos.csv")
 
-    print(f"\n  7-Day IC Decay — IS vs OOS (top 25 factors by |IS IC_day0|):")
+    print(f"\n  7-Day IC Decay - IS vs OOS (top 25 factors by |IS IC_day0|):")
     disp_cols = [c for c in ["is_day0", "is_day1", "is_day3", "is_day5", "is_day7",
                               "oos_day0", "oos_day1", "oos_day3", "oos_day5", "oos_day7",
                               "oos_decay_ratio_d7", "oos_sign_flip_d7"]
@@ -367,7 +367,7 @@ else:
 
     fig.suptitle(
         f"7-Day IC Decay: IS (blue) vs OOS (red)\n"
-        f"IS ≤ {TRAIN_END}  |  OOS > {TRAIN_END}  —  STRICT SEPARATION\n"
+        f"IS ≤ {TRAIN_END}  |  OOS > {TRAIN_END}  -  STRICT SEPARATION\n"
         f"Divergence = regime shift; OOS sign-flip = do NOT use this factor as-is",
         fontsize=11, y=1.01
     )
@@ -378,16 +378,16 @@ else:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 3 — CONTRARIAN FACTOR ANALYSIS
+# SECTION 3 - CONTRARIAN FACTOR ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "─" * 65)
-print("SECTION 3 — Contrarian Factor Analysis (IS vs OOS)")
+print("SECTION 3 - Contrarian Factor Analysis (IS vs OOS)")
 print("─" * 65)
-print("  Strict split: IS ≤ TRAIN_END, OOS > TRAIN_END — NEVER mixed")
+print("  Strict split: IS ≤ TRAIN_END, OOS > TRAIN_END - NEVER mixed")
 
 oos_ic_path = DATA_DIR / "factor_oos_ic.csv"
 if not oos_ic_path.exists():
-    print("  [WARN] factor_oos_ic.csv not found — run 2a first")
+    print("  [WARN] factor_oos_ic.csv not found - run 2a first")
     sign_flip_factors = []
 else:
     oos_ic = pd.read_csv(oos_ic_path, index_col="factor")
@@ -457,7 +457,7 @@ else:
         ax.set_xticklabels(contrarian_df.index, rotation=90, fontsize=8)
         ax.set_ylabel("IC (Spearman)")
         ax.set_title(
-            f"Contrarian Factors — Sign Reversal IS→OOS\n"
+            f"Contrarian Factors - Sign Reversal IS→OOS\n"
             f"IS ≤ {TRAIN_END} (blue)  |  OOS > {TRAIN_END} (red)\n"
             f"Flipped sign = factor is a REVERSAL signal, not momentum",
             fontsize=11
@@ -470,10 +470,10 @@ else:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 4 — QUINTILE DIRECTION AUDIT
+# SECTION 4 - QUINTILE DIRECTION AUDIT
 # ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "─" * 65)
-print("SECTION 4 — Quintile Direction Audit")
+print("SECTION 4 - Quintile Direction Audit")
 print("─" * 65)
 print("  Flag factors where Q5-Q1 spread sign contradicts IC_IS sign.")
 print("  These factors likely need sign-flipping or removal.\n")
@@ -482,7 +482,7 @@ quint_path = DATA_DIR / "factor_quintile_returns.csv"
 ic_sum_path = DATA_DIR / "factor_ic_summary.csv"
 
 if not quint_path.exists() or not ic_sum_path.exists():
-    print("  [WARN] factor_quintile_returns.csv or factor_ic_summary.csv not found — run 2a first")
+    print("  [WARN] factor_quintile_returns.csv or factor_ic_summary.csv not found - run 2a first")
 else:
     quint_df = pd.read_csv(quint_path)
     ic_sum   = pd.read_csv(ic_sum_path)
@@ -555,7 +555,7 @@ else:
             ax.set_xlabel("IC_IS (Spearman)", fontsize=11)
             ax.set_ylabel("Quintile Spread Q5−Q1  (annualised %)", fontsize=11)
             ax.set_title(
-                "Quintile Direction Audit — IS Data Only\n"
+                "Quintile Direction Audit - IS Data Only\n"
                 "Points should be in Q2/Q4 (IC and spread same sign). Red X = wrong direction.",
                 fontsize=12
             )
@@ -577,11 +577,11 @@ print("\n" + "=" * 65)
 print("CROWDING & DECAY DIAGNOSTIC COMPLETE")
 print("=" * 65)
 print(f"\n  Data outputs:")
-print(f"    data/crowding_corr_matrix.csv       — {len(cs_factors)}×{len(cs_factors)} correlation matrix")
-print(f"    data/crowding_redundant_pairs.csv   — {len(redundant) if 'redundant' in dir() else '?'} pairs with |r| > {CROWD_THRESHOLD}")
-print(f"    data/crowding_7day_decay.csv        — IC day0/3/5/10 per factor")
-print(f"    data/crowding_contrarian_oos.csv    — IS vs OOS for sign-flip factors")
-print(f"    data/crowding_quintile_audit.csv    — quintile direction vs IC sign")
+print(f"    data/crowding_corr_matrix.csv       - {len(cs_factors)}×{len(cs_factors)} correlation matrix")
+print(f"    data/crowding_redundant_pairs.csv   - {len(redundant) if 'redundant' in dir() else '?'} pairs with |r| > {CROWD_THRESHOLD}")
+print(f"    data/crowding_7day_decay.csv        - IC day0/3/5/10 per factor")
+print(f"    data/crowding_contrarian_oos.csv    - IS vs OOS for sign-flip factors")
+print(f"    data/crowding_quintile_audit.csv    - quintile direction vs IC sign")
 
 if "redundant" in dir() and len(redundant) > 0:
     print(f"\n  ⚠ Factor crowding: {len(redundant)} redundant pairs (|r| > {CROWD_THRESHOLD})")

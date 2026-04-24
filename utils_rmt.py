@@ -39,7 +39,7 @@ def marchenko_pastur_upper(q: float, sigma_sq: float = 1.0) -> float:
     q : float
         Ratio N/T (variables / observations). Must be > 0.
         For q >= 1 (more variables than observations) the MP distribution
-        is degenerate — pass q < 1 for meaningful denoising.
+        is degenerate - pass q < 1 for meaningful denoising.
     sigma_sq : float
         Population variance. For a correlation matrix σ² = 1.0.
 
@@ -85,11 +85,11 @@ def rmt_denoise(
         Denoised matrix.
     info : dict
         Diagnostics:
-          lambda_plus   — MP upper bound
-          n_signal      — number of eigenvalues above λ+ (genuine signal)
-          n_noise       — number of eigenvalues below λ+ (replaced)
-          noise_mean    — value used to replace noise eigenvalues
-          signal_ratio  — fraction of total eigenvalue mass in signal components
+          lambda_plus   - MP upper bound
+          n_signal      - number of eigenvalues above λ+ (genuine signal)
+          n_noise       - number of eigenvalues below λ+ (replaced)
+          noise_mean    - value used to replace noise eigenvalues
+          signal_ratio  - fraction of total eigenvalue mass in signal components
     """
     matrix = np.array(matrix, dtype=float)
     N = matrix.shape[0]
@@ -121,7 +121,7 @@ def rmt_denoise(
     n_signal = int(signal_mask.sum())
     n_noise  = int(noise_mask.sum())
 
-    # Edge case: no noise eigenvalues — return unchanged
+    # Edge case: no noise eigenvalues - return unchanged
     if n_noise == 0:
         info = dict(lambda_plus=lambda_plus, n_signal=n_signal, n_noise=0,
                     noise_mean=float("nan"), signal_ratio=1.0)

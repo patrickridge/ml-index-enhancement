@@ -1,5 +1,5 @@
 """
-4f_agent_ensemble_backtest.py — CS-Transformer + rule-based agents ensemble
+4f_agent_ensemble_backtest.py - CS-Transformer + rule-based agents ensemble
 ============================================================================
 Compares CS-Transformer alone against two rule-based "analyst" agents, blended
 with the model via weighted z-scores. All strategies go through the same
@@ -10,10 +10,10 @@ Agents
 ------
 1. Fundamental agent (stock-level). For each stock per month, votes on four
    pillars from data/fundamental.parquet:
-     profitability — ROE, gross margin, ROA
-     growth        — revenue growth YoY, EPS growth YoY
-     health        — debt-to-equity
-     valuation     — PE ratio
+     profitability - ROE, gross margin, ROA
+     growth        - revenue growth YoY, EPS growth YoY
+     health        - debt-to-equity
+     valuation     - PE ratio
    Each pillar returns a vote in {-1, 0, +1}. The composite is summed and
    cross-sectionally z-scored within the month.
 
@@ -60,7 +60,7 @@ _spec.loader.exec_module(_ie_mod)
 build_enhanced_portfolio = _ie_mod.build_enhanced_portfolio
 ie_stats                 = _ie_mod.ie_stats
 
-ALPHA    = 0.002   # tilt size — matches the best-IR alpha for CS-T scores
+ALPHA    = 0.002   # tilt size - matches the best-IR alpha for CS-T scores
 TOP_N    = 100
 BOTTOM_N = 100
 
@@ -102,7 +102,7 @@ def load_core_data():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# AGENT 1 — Fundamental Agent (stock-level, rule-based)
+# AGENT 1 - Fundamental Agent (stock-level, rule-based)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def score_profitability(row) -> int:
@@ -219,7 +219,7 @@ def expand_fundamentals_to_monthly(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# AGENT 2 — Macro-Sector Agent
+# AGENT 2 - Macro-Sector Agent
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Sector classification (using our sectors.parquet labels)
@@ -242,7 +242,7 @@ def macro_sector_agent_score(panel: pd.DataFrame, sectors: pd.DataFrame) -> pd.D
     Rules (each returns a vote in {-1, 0, +1} for affected sectors):
       R1. VIX percentile (risk appetite)
       R2. Yield curve (10y-2y) percentile
-      R3. Yield change (21d) — rate direction
+      R3. Yield change (21d) - rate direction
       R4. Recession prob
       R5. SPX 3m momentum
     """
@@ -255,7 +255,7 @@ def macro_sector_agent_score(panel: pd.DataFrame, sectors: pd.DataFrame) -> pd.D
                 .sort_index()
                 .copy())
 
-    # Percentile ranks (using full panel history — expanding window is ok
+    # Percentile ranks (using full panel history - expanding window is ok
     # since it's macro state description, not predictive modeling)
     for c in macro_cols:
         mac[f"{c}_pct"] = _pct_rank(mac[c])
@@ -267,7 +267,7 @@ def macro_sector_agent_score(panel: pd.DataFrame, sectors: pd.DataFrame) -> pd.D
     for dt, row in mac.iterrows():
         sector_scores = {s: 0.0 for s in all_sectors}
 
-        # R1: VIX percentile — high VIX → defensives up, cyclicals down
+        # R1: VIX percentile - high VIX → defensives up, cyclicals down
         vix_p = row["vix_level_pct"]
         if vix_p > 0.75:
             for s in DEFENSIVE: sector_scores[s] = sector_scores.get(s, 0) + 1
@@ -278,7 +278,7 @@ def macro_sector_agent_score(panel: pd.DataFrame, sectors: pd.DataFrame) -> pd.D
             for s in CYCLICAL:  sector_scores[s] = sector_scores.get(s, 0) + 1
             for s in GROWTH:    sector_scores[s] = sector_scores.get(s, 0) + 1
 
-        # R2: Yield curve steepness — steep → financials up
+        # R2: Yield curve steepness - steep → financials up
         ysp_p = row["yield_spread_10y2y_pct"]
         if ysp_p > 0.75:
             for s in FINANCIAL: sector_scores[s] = sector_scores.get(s, 0) + 1
@@ -294,7 +294,7 @@ def macro_sector_agent_score(panel: pd.DataFrame, sectors: pd.DataFrame) -> pd.D
             for s in RATE_SENS: sector_scores[s] = sector_scores.get(s, 0) + 1
             for s in FINANCIAL: sector_scores[s] = sector_scores.get(s, 0) - 1
 
-        # R4: Recession prob — high → defensives up, cyclicals down
+        # R4: Recession prob - high → defensives up, cyclicals down
         rec_p = row["recession_prob_pct"]
         if rec_p > 0.75:
             for s in DEFENSIVE: sector_scores[s] = sector_scores.get(s, 0) + 1
@@ -302,7 +302,7 @@ def macro_sector_agent_score(panel: pd.DataFrame, sectors: pd.DataFrame) -> pd.D
         elif rec_p < 0.25:
             for s in CYCLICAL:  sector_scores[s] = sector_scores.get(s, 0) + 1
 
-        # R5: SPX 3m momentum — strong → growth up
+        # R5: SPX 3m momentum - strong → growth up
         mom_p = row["spx_ret_3m_pct"]
         if mom_p > 0.75:
             for s in GROWTH:    sector_scores[s] = sector_scores.get(s, 0) + 1
@@ -373,7 +373,7 @@ def build_ensemble_scores(
 
 def main():
     print("=" * 70)
-    print("AGENT ENSEMBLE BACKTEST — CS-Transformer + Fundamental Agents")
+    print("AGENT ENSEMBLE BACKTEST - CS-Transformer + Fundamental Agents")
     print("=" * 70)
 
     scores_cs, fund, sectors, weights, panel = load_core_data()
@@ -417,7 +417,7 @@ def main():
 
     # ── Print comparison table (full CS-T window) ───────────────────────
     print("\n" + "=" * 74)
-    print("RESULTS — Full CS-Transformer window (Jan 2023 → Nov 2025)")
+    print("RESULTS - Full CS-Transformer window (Jan 2023 → Nov 2025)")
     print("=" * 74)
     hdr = (f"{'Strategy':<22}{'Months':>7}{'Ann Port':>10}{'Ann α':>9}"
            f"{'TE':>7}{'IR':>7}{'Sharpe':>8}{'HitRt':>8}")
@@ -448,7 +448,7 @@ def main():
     val_start = pd.Timestamp("2023-01-01")
     val_end   = pd.Timestamp("2024-06-30") + pd.offsets.MonthEnd(0)
     print("\n" + "=" * 74)
-    print(f"RESULTS — Validation window only ({val_start.date()} → {val_end.date()})")
+    print(f"RESULTS - Validation window only ({val_start.date()} → {val_end.date()})")
     print("=" * 74)
     print(hdr)
     print("-" * len(hdr))
@@ -465,7 +465,7 @@ def main():
               f"{s['sharpe']:>8.2f}"
               f"{s['hit_rate']*100:>7.1f}%")
 
-    # ── Chart — full window ────────────────────────────────────────────
+    # ── Chart - full window ────────────────────────────────────────────
     fig, ax = plt.subplots(figsize=(11, 6))
     color_map = {
         "cs_alone":      "#1f77b4",
@@ -487,7 +487,7 @@ def main():
     bench_nav = (1 + bt_records["cs_alone"]["bench_ret"]).cumprod()
     bench_nav.plot(ax=ax, label="SPX benchmark", linewidth=2, linestyle=":",
                    color="black")
-    ax.set_title("Agent Ensemble Backtest — CS-Transformer + Fundamental + Macro-Sector\n"
+    ax.set_title("Agent Ensemble Backtest - CS-Transformer + Fundamental + Macro-Sector\n"
                  f"Jan 2023 → Nov 2025 ({len(full_idx)} months, α=0.002, top/bot 100)")
     ax.set_ylabel("Cumulative NAV (1.0 = start)")
     ax.set_xlabel("")

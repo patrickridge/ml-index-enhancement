@@ -6,10 +6,10 @@ IS vs OOS factor-decay diagnostics.
 Reads factor_ic_summary.csv, factor_oos_ic.csv, and factor_ic_decay.csv
 (outputs from 2a_factor_analysis.py) and produces:
 
-  1. IS vs OOS IC comparison table — sorted by OOS decay severity
-  2. IC decay curves plot — shows how fast IC drops at lags 1–12m
-  3. Regime-breakdown analysis — which regimes each factor works in OOS
-  4. Factor health scorecard — green/amber/red per factor
+  1. IS vs OOS IC comparison table - sorted by OOS decay severity
+  2. IC decay curves plot - shows how fast IC drops at lags 1–12m
+  3. Regime-breakdown analysis - which regimes each factor works in OOS
+  4. Factor health scorecard - green/amber/red per factor
   5. Written narrative report → reports/factor_decay_report.md
 
 Run AFTER 2a_factor_analysis.py.
@@ -128,15 +128,15 @@ def load_data():
 
     if not oos_path.exists():
         raise FileNotFoundError(
-            f"{oos_path} not found — run 2a_factor_analysis.py first.")
+            f"{oos_path} not found - run 2a_factor_analysis.py first.")
     if not ic_path.exists():
         raise FileNotFoundError(
-            f"{ic_path} not found — run 2a_factor_analysis.py first.")
+            f"{ic_path} not found - run 2a_factor_analysis.py first.")
 
     oos_df  = pd.read_csv(oos_path)
     ic_df   = pd.read_csv(ic_path)
 
-    # IC decay CSV (optional — recompute if missing)
+    # IC decay CSV (optional - recompute if missing)
     decay_path = DATA_DIR / "factor_ic_decay.csv"
     decay_df   = pd.read_csv(decay_path, index_col=0) if decay_path.exists() else None
 
@@ -144,12 +144,12 @@ def load_data():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section 1 — IS vs OOS comparison table
+# Section 1 - IS vs OOS comparison table
 # ─────────────────────────────────────────────────────────────────────────────
 
 def section_is_vs_oos(oos_df: pd.DataFrame) -> pd.DataFrame:
     print("\n" + "="*70)
-    print("SECTION 1 — IS vs OOS IC Comparison (sorted by decay severity)")
+    print("SECTION 1 - IS vs OOS IC Comparison (sorted by decay severity)")
     print("="*70)
 
     df = oos_df.copy()
@@ -183,13 +183,13 @@ def section_is_vs_oos(oos_df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section 2 — IC decay curves
+# Section 2 - IC decay curves
 # ─────────────────────────────────────────────────────────────────────────────
 
 def section_ic_decay_curves(panel: pd.DataFrame, oos_df: pd.DataFrame,
                              decay_df_precomp: pd.DataFrame = None):
     print("\n" + "="*70)
-    print("SECTION 2 — IC Decay Curves (lags 0–12 months, IS vs OOS)")
+    print("SECTION 2 - IC Decay Curves (lags 0–12 months, IS vs OOS)")
     print("="*70)
 
     # Pick top 10 factors by |OOS IC| (any direction)
@@ -204,7 +204,7 @@ def section_ic_decay_curves(panel: pd.DataFrame, oos_df: pd.DataFrame,
     LAGS = list(range(0, 13))  # 0 to 12 months
 
     fig, axes = plt.subplots(2, 5, figsize=(22, 8), sharey=False)
-    fig.suptitle("IC Decay Curves — IS (blue) vs OOS (red) | top 10 factors by |OOS IC|",
+    fig.suptitle("IC Decay Curves - IS (blue) vs OOS (red) | top 10 factors by |OOS IC|",
                  fontsize=13, fontweight="bold")
 
     for idx, fac in enumerate(top10):
@@ -241,12 +241,12 @@ def section_ic_decay_curves(panel: pd.DataFrame, oos_df: pd.DataFrame,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section 3 — Regime breakdown (OOS regimes)
+# Section 3 - Regime breakdown (OOS regimes)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def section_regime_breakdown(panel: pd.DataFrame, oos_df: pd.DataFrame) -> pd.DataFrame:
     print("\n" + "="*70)
-    print("SECTION 3 — Regime-by-Regime IC Breakdown (all periods)")
+    print("SECTION 3 - Regime-by-Regime IC Breakdown (all periods)")
     print("="*70)
 
     # Only analyse factors with non-trivial OOS IC
@@ -317,12 +317,12 @@ def section_regime_breakdown(panel: pd.DataFrame, oos_df: pd.DataFrame) -> pd.Da
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section 4 — Health scorecard bar chart
+# Section 4 - Health scorecard bar chart
 # ─────────────────────────────────────────────────────────────────────────────
 
 def section_health_scorecard(health_df: pd.DataFrame):
     print("\n" + "="*70)
-    print("SECTION 4 — Factor Health Scorecard")
+    print("SECTION 4 - Factor Health Scorecard")
     print("="*70)
 
     colour_map = {"GREEN": "#2ecc71", "AMBER": "#f39c12",
@@ -362,13 +362,13 @@ def section_health_scorecard(health_df: pd.DataFrame):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section 5 — Written Markdown report
+# Section 5 - Written Markdown report
 # ─────────────────────────────────────────────────────────────────────────────
 
 def write_markdown_report(health_df: pd.DataFrame, regime_df: pd.DataFrame,
                           n_oos_months: int):
     print("\n" + "="*70)
-    print("SECTION 5 — Writing Markdown Diagnostic Report")
+    print("SECTION 5 - Writing Markdown Diagnostic Report")
     print("="*70)
 
     green  = health_df[health_df["health"] == "GREEN"]["factor"].tolist()
@@ -401,9 +401,9 @@ def write_markdown_report(health_df: pd.DataFrame, regime_df: pd.DataFrame,
         "",
         "## 1. Executive Summary",
         "",
-        f"- **{len(green)} factors are GREEN** (OOS IC stable, decay ratio ≥ 0.7) — safe to use",
-        f"- **{len(amber)} factors are AMBER** (some decay, ratio 0.3–0.7) — use with caution",
-        f"- **{len(red)} factors are RED** (severe decay or sign flip OOS) — review or drop",
+        f"- **{len(green)} factors are GREEN** (OOS IC stable, decay ratio ≥ 0.7) - safe to use",
+        f"- **{len(amber)} factors are AMBER** (some decay, ratio 0.3–0.7) - use with caution",
+        f"- **{len(red)} factors are RED** (severe decay or sign flip OOS) - review or drop",
         f"- **{len(flipped)} factors flipped sign OOS**: `{', '.join(flipped) if flipped else 'none'}`",
         "",
         "### Top 5 Factors by |OOS IC|",
@@ -427,17 +427,17 @@ def write_markdown_report(health_df: pd.DataFrame, regime_df: pd.DataFrame,
         "3. **Crowding**: Widely-used factors (momentum, RSI) get arbitraged away.",
         "   OOS ICIR < 0.1 suggests the alpha is crowded out.",
         "4. **Market structure change**: The 2023–2024 'Magnificent 7' concentration means",
-        "   cross-sectional models face structural headwinds — 7 stocks drive 60% of SPX",
+        "   cross-sectional models face structural headwinds - 7 stocks drive 60% of SPX",
         "   returns, and no within-S&P cross-section factor captures this.",
         "",
-        "### Green factors — what's working OOS",
+        "### Green factors - what's working OOS",
         "",
         f"```\n{chr(10).join(green)}\n```",
         "",
         "These have consistent IC across both IS and OOS periods. Prioritise these in",
         "the CS-Transformer feature set.",
         "",
-        "### Red/Amber factors — what needs investigation",
+        "### Red/Amber factors - what needs investigation",
         "",
         f"```\n{chr(10).join(red + amber)}\n```",
         "",
@@ -450,14 +450,14 @@ def write_markdown_report(health_df: pd.DataFrame, regime_df: pd.DataFrame,
         "",
         "1. **Retrain CS-Transformer** with GREEN factors prioritised; use extended",
         "   training window (2010–2022) and 18-month validation (Jan 2023 – Jun 2024).",
-        "2. **Add log_mktcap** (size factor via yfinance shares × price) — directly",
+        "2. **Add log_mktcap** (size factor via yfinance shares × price) - directly",
         "   addresses the 2024 mega-cap underperformance.",
         "3. **Investigate AMBER factors by regime**: run `2f_factor_diagnostics.py`",
         "   and check if the decay is concentrated in one specific regime.",
         "4. **Apply IC-weighted combination**: in `2d_factor_weights.py`, weight factors",
         "   by OOS ICIR rather than IS ICIR to avoid overweighting decayed signals.",
         "5. **Add residual momentum**: `ret_6m - beta × spx_ret_6m` (distinct from",
-        "   `residual_ret_12m` already in the panel — add a 6m version).",
+        "   `residual_ret_12m` already in the panel - add a 6m version).",
         "",
         "---",
         "",

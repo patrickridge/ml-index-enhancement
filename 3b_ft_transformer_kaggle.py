@@ -1,5 +1,5 @@
 """
-3b_ft_transformer_kaggle.py — GPU-ready standalone version of 3a_ft_transformer.py.
+3b_ft_transformer_kaggle.py - GPU-ready standalone version of 3a_ft_transformer.py.
 
 Same logic as 3a, but inlines every hyperparameter so the file runs on Kaggle
 with no dependency on config.py. Tweak values at the top of the file before
@@ -33,7 +33,7 @@ OUT_DIR  = Path(os.environ.get("ML_OUT_DIR",  "/kaggle/working"))
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 PANEL_IN     = DATA_DIR / "panel_monthly_enriched.parquet"
-LGBM_SCORES  = DATA_DIR / "scores_lgbm.parquet"   # optional — for comparison print
+LGBM_SCORES  = DATA_DIR / "scores_lgbm.parquet"   # optional - for comparison print
 OUT_SCORES   = OUT_DIR  / "scores_transformer.parquet"
 OUT_BT_LO    = OUT_DIR  / "bt_transformer.csv"
 OUT_BT_LS    = OUT_DIR  / "bt_transformer_ls.csv"

@@ -1,5 +1,5 @@
 """
-2c_ic_decay_daily.py — Daily IC Decay (1–90 trading days)
+2c_ic_decay_daily.py - Daily IC Decay (1–90 trading days)
 ==========================================================
 Tests how long each factor's predictive signal lasts at daily resolution.
 Complements 2b_ic_decay_all.py (which uses monthly lags).
@@ -16,9 +16,9 @@ Why this matters:
   - If IC is still strong at day 60–90 → factor is a slow structural tilt
 
 Outputs:
-  data/factor_ic_decay_daily.csv         — IC at each horizon per factor
-  figures/factor_ic_decay_daily_grid.png — grid of all factors (like 2b)
-  figures/factor_ic_decay_daily_top20.png — top 20 factors by |ICIR| zoomed in
+  data/factor_ic_decay_daily.csv         - IC at each horizon per factor
+  figures/factor_ic_decay_daily_grid.png - grid of all factors (like 2b)
+  figures/factor_ic_decay_daily_top20.png - top 20 factors by |ICIR| zoomed in
 
 Run AFTER 1h_feature_engineering.py.
 """
@@ -170,7 +170,7 @@ for idx in range(n_factors, len(axes)):
     axes[idx].set_visible(False)
 
 fig.suptitle(
-    f"Daily IC Decay (1–90 trading days) — All {n_factors} Factors  |  Train: {TRAIN_START[:4]}–{TRAIN_END[:4]}\n"
+    f"Daily IC Decay (1–90 trading days) - All {n_factors} Factors  |  Train: {TRAIN_START[:4]}–{TRAIN_END[:4]}\n"
     f"Blue = positive IC, Red = contrarian  |  Grey dotted = ~1 month (day 20)",
     fontsize=10, y=1.01,
 )

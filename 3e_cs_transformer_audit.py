@@ -8,9 +8,9 @@ Requires (run first):
   3c_cs_transformer.py      → data/scores_cs_transformer.parquet
 
 Outputs:
-  figures/cs_transformer_loadings.png   — factor loading bar chart
-  data/cs_transformer_loadings.csv      — loadings table
-  figures/cs_transformer_ic_stability.png — rolling IC + regime breakdown
+  figures/cs_transformer_loadings.png   - factor loading bar chart
+  data/cs_transformer_loadings.csv      - loadings table
+  figures/cs_transformer_ic_stability.png - rolling IC + regime breakdown
 """
 
 import sys
@@ -97,7 +97,7 @@ if scores_path.suffix == ".parquet":
 else:
     scores_df = pd.read_csv(scores_path, parse_dates=["date"])
 
-# Normalise column names — we need at minimum: date, ticker, score
+# Normalise column names - we need at minimum: date, ticker, score
 scores_df.columns = [c.strip().lower() for c in scores_df.columns]
 if "score" not in scores_df.columns:
     # Fallback: first numeric column that is not a known return column
@@ -170,7 +170,7 @@ months = sorted(merged["date"].unique())
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# SECTION A — Factor Loadings (cross-sectional Spearman)
+# SECTION A - Factor Loadings (cross-sectional Spearman)
 # ════════════════════════════════════════════════════════════════════════════
 
 print("\n--- Section A: Factor Loadings ---")
@@ -229,7 +229,7 @@ ax_a.set_yticklabels(plot_df["factor"], fontsize=8)
 ax_a.axvline(0, color="black", linewidth=0.8, linestyle="--")
 ax_a.set_xlabel("Mean Cross-Sectional Spearman ρ  (±1 std)", fontsize=10)
 ax_a.set_title(
-    "CS-Transformer Signal — Factor Loadings\n(Cross-Sectional Spearman Correlation)",
+    "CS-Transformer Signal - Factor Loadings\n(Cross-Sectional Spearman Correlation)",
     fontsize=12, fontweight="bold"
 )
 pos_patch = mpatches.Patch(color="#1f77b4", alpha=0.8, label="Positive loading")
@@ -244,14 +244,14 @@ print(f"Saved: {OUT_LOADINGS_PNG}")
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# SECTION B — IC Stability Analysis
+# SECTION B - IC Stability Analysis
 # ════════════════════════════════════════════════════════════════════════════
 
 print("\n--- Section B: IC Stability ---")
 
 fwd_col = "fwd_ret_1m"
 if fwd_col not in merged.columns:
-    print("  WARNING: fwd_ret_1m not available — IC analysis skipped.")
+    print("  WARNING: fwd_ret_1m not available - IC analysis skipped.")
 else:
     # Monthly IC series
     ic_records = []
@@ -332,7 +332,7 @@ else:
     ax0.axhline(overall_ic,  color="#ff7f0e", linewidth=1.2, linestyle=":",
                 label=f"Mean IC = {overall_ic:.4f}")
     ax0.set_title(
-        f"CS-Transformer — IC Stability (ICIR = {overall_icir:.3f}, "
+        f"CS-Transformer - IC Stability (ICIR = {overall_icir:.3f}, "
         f"t = {t_stat:.2f}, n = {len(ic_series)})",
         fontsize=11, fontweight="bold"
     )

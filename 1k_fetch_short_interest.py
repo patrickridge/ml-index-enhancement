@@ -1,9 +1,9 @@
 """
-1k_fetch_short_interest.py — Fetch Short Interest Data
+1k_fetch_short_interest.py - Fetch Short Interest Data
 ========================================================
 Downloads short interest data from free sources:
 
-  1. yfinance key_stats — provides current short interest, short ratio,
+  1. yfinance key_stats - provides current short interest, short ratio,
      and short % of float for individual tickers. Only snapshot data (no history),
      so we collect current values and append over time.
 
@@ -12,12 +12,12 @@ Downloads short interest data from free sources:
 These are cross-sectional factors: different for each stock on each date.
 
 Academic basis:
-  Drechsler & Drechsler (2016) — short interest cost and equity returns
-  Asquith, Pathak & Ritter (2005) — short interest and stock returns
-  Diether, Lee & Werner (2009) — short-selling and daily returns
+  Drechsler & Drechsler (2016) - short interest cost and equity returns
+  Asquith, Pathak & Ritter (2005) - short interest and stock returns
+  Diether, Lee & Werner (2009) - short-selling and daily returns
 
 Output:
-  data/short_interest.parquet — columns: date, ticker, short_pct_float,
+  data/short_interest.parquet - columns: date, ticker, short_pct_float,
                                  short_interest_ratio, short_change_2w
 
 Run time: ~10-20 min (yfinance ticker-by-ticker).
@@ -51,7 +51,7 @@ try:
     our_tickers = panel["ticker"].unique().tolist()
     print(f"Pipeline tickers: {len(our_tickers)}")
 except FileNotFoundError:
-    print("[ERROR] panel_monthly.parquet not found — run 1h first.")
+    print("[ERROR] panel_monthly.parquet not found - run 1h first.")
     raise SystemExit(1)
 
 
@@ -157,7 +157,7 @@ current_df["date"] = pd.to_datetime(current_df["date"])
 
 # ── Append to existing file if present (build time series over time) ─────────
 if OUT_PATH.exists():
-    print(f"\n  Found existing {OUT_PATH} — appending new snapshot...")
+    print(f"\n  Found existing {OUT_PATH} - appending new snapshot...")
     existing = pd.read_parquet(OUT_PATH)
     existing["date"] = pd.to_datetime(existing["date"])
     combined = pd.concat([existing, current_df], ignore_index=True)

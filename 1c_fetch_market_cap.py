@@ -1,5 +1,5 @@
 """
-1c_fetch_market_cap.py — Fetch market-cap weights for index enhancement
+1c_fetch_market_cap.py - Fetch market-cap weights for index enhancement
 ========================================================================
 Gets current shares outstanding for every ticker via yfinance fast_info,
 then multiplies by monthly close prices to build a time-varying market-cap
@@ -14,9 +14,9 @@ Output
 ------
 data/spx_weights.parquet
     date        : month-end timestamp
-    ticker      : str  (original format, e.g. AAPL.O — matches panel/scores files)
-    mktcap      : float  — proxy market cap (current shares × close price)
-    spx_weight  : float  — fraction of total market cap that month (sums to ≈ 1)
+    ticker      : str  (original format, e.g. AAPL.O - matches panel/scores files)
+    mktcap      : float  - proxy market cap (current shares × close price)
+    spx_weight  : float  - fraction of total market cap that month (sums to ≈ 1)
 
 Runtime: ~2–4 min  (one fast_info call per ticker)
 """

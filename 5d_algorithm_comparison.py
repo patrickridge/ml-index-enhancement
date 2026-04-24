@@ -1,5 +1,5 @@
 """
-5d_algorithm_comparison.py — SAC vs PPO vs GRPO vs DAPO on the 5c walk-forward.
+5d_algorithm_comparison.py - SAC vs PPO vs GRPO vs DAPO on the 5c walk-forward.
 
 Same 5-fold expanding-window setup as 5c, run with four RL algorithms so we
 can see which one actually handles this regime (continuous-action portfolio
@@ -8,7 +8,7 @@ tilt, ~100-140 training months per fold):
   SAC   Off-policy, replay buffer, twin Q-critics, auto-tuned entropy. Our
         primary algorithm; sample-efficient enough for the small fold sizes.
   PPO   On-policy with clipped surrogate and a critic baseline. Canonical
-        deep RL, but on-policy discards past experience — with ~100 months
+        deep RL, but on-policy discards past experience - with ~100 months
         per fold it barely converges. Included as the honest baseline.
   GRPO  No critic at all. Samples G candidate alphas per state, simulates
         each, uses the group-relative reward as the advantage. From
@@ -46,7 +46,7 @@ try:
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
-    print("WARNING: PyTorch not installed — using rule-based fallback for all agents.")
+    print("WARNING: PyTorch not installed - using rule-based fallback for all agents.")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 DATA_DIR = Path("data")
@@ -94,13 +94,13 @@ PPO_K_UPDATES = 4
 GRPO_EPOCHS  = 400
 GRPO_LR      = 3e-4
 GRPO_G       = 4      # candidate alphas sampled per state
-GRPO_KL_BETA = 0.01   # KL penalty weight — keeps policy close to reference
+GRPO_KL_BETA = 0.01   # KL penalty weight - keeps policy close to reference
 
 # DAPO (ByteDance/Seed 2025)
 DAPO_EPOCHS     = 400
 DAPO_LR         = 3e-4
 DAPO_EPS_LOW    = 0.20   # clip lower bound (negative advantage)
-DAPO_EPS_HIGH   = 0.28   # clip upper bound (positive advantage) — asymmetric
+DAPO_EPS_HIGH   = 0.28   # clip upper bound (positive advantage) - asymmetric
 DAPO_G_INIT     = 2      # initial candidates to estimate reward variance
 DAPO_G_MIN      = 2      # minimum group size (easy states)
 DAPO_G_MAX      = 8      # maximum group size (hard/volatile states)
@@ -122,7 +122,7 @@ if HAS_TORCH:
 
 
 # =============================================================================
-# FACTOR COMBO SCORES — recomputed per fold from training data only
+# FACTOR COMBO SCORES - recomputed per fold from training data only
 # =============================================================================
 
 def compute_fold_weights(panel_train, factor_names, signs):
@@ -196,7 +196,7 @@ def simulate_month(scores_month, weights_month, alpha, top_n=100, bottom_n=100):
 
 
 # =============================================================================
-# EPISODE TABLE — training-period normalisation only
+# EPISODE TABLE - training-period normalisation only
 # =============================================================================
 
 def build_episodes(scores, weights, ref_alpha=0.01, norm_params=None, fit_norm=False):
@@ -282,7 +282,7 @@ if HAS_TORCH:
         def forward(self, x): return self.net(x)
 
     class GaussianActor(nn.Module):
-        """Shared actor for SAC, PPO, and GRPO — squashed Gaussian over [ALPHA_MIN, ALPHA_MAX]."""
+        """Shared actor for SAC, PPO, and GRPO - squashed Gaussian over [ALPHA_MIN, ALPHA_MAX]."""
         def __init__(self, state_dim, hidden=HIDDEN_DIM):
             super().__init__()
             self.mean_net    = MLP(state_dim, 1, hidden)
@@ -362,7 +362,7 @@ def _safe_state(row):
 
 
 # =============================================================================
-# SAC AGENT — off-policy, replay buffer, twin critics
+# SAC AGENT - off-policy, replay buffer, twin critics
 # =============================================================================
 
 class SACAgent:
@@ -451,7 +451,7 @@ class SACAgent:
 
 
 # =============================================================================
-# PPO AGENT — on-policy, clipped surrogate, critic baseline
+# PPO AGENT - on-policy, clipped surrogate, critic baseline
 # =============================================================================
 
 class PPOAgent:
@@ -535,7 +535,7 @@ class PPOAgent:
 
 
 # =============================================================================
-# GRPO AGENT — Group Relative Policy Optimisation (DeepSeek-R1 method)
+# GRPO AGENT - Group Relative Policy Optimisation (DeepSeek-R1 method)
 # =============================================================================
 
 class GRPOAgent:
@@ -546,11 +546,11 @@ class GRPOAgent:
         A_i = (r_i - mean(r_group)) / (std(r_group) + ε)
 
     Update the actor via policy gradient weighted by A_i. No critic, no
-    value function — eliminates bootstrapping error entirely.
+    value function - eliminates bootstrapping error entirely.
 
     KL penalty (DeepSeek-R1): β * KL(π_θ || π_ref) added to the loss to
     prevent the policy from collapsing. Reference policy π_ref is the
-    initial actor — frozen after initialisation.
+    initial actor - frozen after initialisation.
 
     The group-relative baseline is unbiased (it's the empirical mean of the
     group) and has lower variance than a single-sample REINFORCE baseline.
@@ -561,7 +561,7 @@ class GRPOAgent:
     def __init__(self, state_dim):
         self.actor     = GaussianActor(state_dim)
         self.actor_opt = optim.Adam(self.actor.parameters(), lr=GRPO_LR)
-        # Reference policy — frozen copy of initial actor weights
+        # Reference policy - frozen copy of initial actor weights
         # KL penalty against ref prevents policy from collapsing to degenerate solutions
         import copy
         self.ref_actor = copy.deepcopy(self.actor)
@@ -604,7 +604,7 @@ class GRPOAgent:
 
                 ep_rewards.extend(group_rewards)
 
-                # Group-relative advantage — no critic needed
+                # Group-relative advantage - no critic needed
                 r_arr = np.array(group_rewards, dtype=np.float32)
                 adv   = torch.FloatTensor(
                     (r_arr - r_arr.mean()) / (r_arr.std() + 1e-8))
@@ -806,7 +806,7 @@ COLORS = {"SAC": "#4A9EE0", "PPO": "#FF9800", "GRPO": "#66BB6A",
 def plot_comparison(all_bt, fold_summary, algo_names):
     fig, axes = plt.subplots(2, 1, figsize=(13, 10))
     fig.suptitle(
-        "RL Algorithm Comparison — Walk-Forward Out-of-Sample\n"
+        "RL Algorithm Comparison - Walk-Forward Out-of-Sample\n"
         "SAC vs PPO vs GRPO vs DAPO vs Fixed Alpha",
         fontsize=13, fontweight="bold")
 
@@ -862,12 +862,12 @@ def plot_comparison(all_bt, fold_summary, algo_names):
 
 def main():
     print("=" * 70)
-    print("5d_algorithm_comparison.py — SAC vs PPO vs GRPO vs DAPO")
+    print("5d_algorithm_comparison.py - SAC vs PPO vs GRPO vs DAPO")
     print("Walk-Forward Backtest  |  5 Expanding Folds  |  No Data Leakage")
     print("=" * 70)
 
     if not HAS_TORCH:
-        print("WARNING: PyTorch not available — rule-based fallback only.\n")
+        print("WARNING: PyTorch not available - rule-based fallback only.\n")
 
     # ── Load data ─────────────────────────────────────────────────────────────
     print("\nLoading data ...")
@@ -898,7 +898,7 @@ def main():
     # ── Fold loop ─────────────────────────────────────────────────────────────
     for fold_idx, (train_end, test_start, test_end, label) in enumerate(FOLDS):
         print(f"\n{'='*70}")
-        print(f"FOLD {fold_idx+1}/{len(FOLDS)} — Test: {label}")
+        print(f"FOLD {fold_idx+1}/{len(FOLDS)} - Test: {label}")
         print(f"  Train: {TRAIN_START_GLOBAL[:4]}–{train_end[:4]}  |  "
               f"Test: {test_start} → {test_end}")
         print("=" * 70)
@@ -1047,7 +1047,7 @@ def main():
     print("  SAC:  Off-policy replay buffer. Each of ~100 monthly obs reused")
     print("        many times. Twin critics reduce Q overestimation. Best fit")
     print("        for small-data continuous-action RL.")
-    print("  PPO:  On-policy — throws away rollout after each update. With")
+    print("  PPO:  On-policy - throws away rollout after each update. With")
     print("        only ~100 training months, barely converges. Expected to")
     print("        underperform SAC at this sample size.")
     print("  GRPO: No critic. Group-relative reward replaces value baseline.")

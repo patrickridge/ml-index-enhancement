@@ -1,27 +1,27 @@
 """
-2d_factor_weights.py — Factor Selection, Weighting & Partial Signal Flags
+2d_factor_weights.py - Factor Selection, Weighting & Partial Signal Flags
 ==========================================================================
 Combines all factor analysis outputs into a single clean table for use
 in model training and portfolio construction.
 
 Steps:
-  1. Filter — keep factors with |IC| > 0 AND regime_stable (sign consistent
+  1. Filter - keep factors with |IC| > 0 AND regime_stable (sign consistent
      across ≥ 75% of regimes). Result: ~43 / 59 factors.
 
-  2. IC decay weighting — for each surviving factor, compute a persistence
+  2. IC decay weighting - for each surviving factor, compute a persistence
      weight = mean |IC| over lags 0–12 months (area under curve for 1 year).
      Factors whose signal persists longer are weighted more heavily.
      Weights are normalised to sum to 1 across all survivors.
 
-  3. Quantile adjustment flag — factors where quintile ordering is NOT
+  3. Quantile adjustment flag - factors where quintile ordering is NOT
      monotonic (Q5 > Q4 > Q3 > Q2 > Q1 broken) get `use_partial = True`.
-     For these, only the top / bottom 100 stocks carry signal — the middle
+     For these, only the top / bottom 100 stocks carry signal - the middle
      300 should be held at benchmark weight. Monotonic factors can use the
      full continuous tilt.
 
 Outputs:
-  data/factor_selected.csv   — clean factor list, ready for model training
-  figures/factor_weights.png — bar chart of normalised decay weights
+  data/factor_selected.csv   - clean factor list, ready for model training
+  figures/factor_weights.png - bar chart of normalised decay weights
 
 Run after 2a_factor_analysis.py and 2b_ic_decay_all.py.
 """
@@ -90,11 +90,11 @@ def main():
     # ── Filter 1: |IC| > 0 (keep both directions) ────────────────────────────────
     merged["abs_ic"] = merged["ic_mean"].abs()
     f1 = merged[merged["abs_ic"] > 0].copy()
-    print(f"\nFilter 1 — |IC| > 0: {len(f1)} / {len(merged)} kept")
+    print(f"\nFilter 1 - |IC| > 0: {len(f1)} / {len(merged)} kept")
 
     # ── Filter 2: Regime stable ────────────────────────────────────────────────
     f2 = f1[f1["regime_stable"] == True].copy()
-    print(f"Filter 2 — Regime stable (≥75% sign-consistent): {len(f2)} / {len(f1)} kept")
+    print(f"Filter 2 - Regime stable (≥75% sign-consistent): {len(f2)} / {len(f1)} kept")
 
     pos = f2[f2["ic_mean"] > 0]["factor"].tolist()
     neg = f2[f2["ic_mean"] < 0]["factor"].tolist()
@@ -105,7 +105,7 @@ def main():
     quint_mono = quint_df[["factor", "monotonic"]].copy()
     f2 = f2.merge(quint_mono, on="factor", how="left")
 
-    # Factors NOT in quintile CSV weren't in top 20 tested — mark as unknown (NaN)
+    # Factors NOT in quintile CSV weren't in top 20 tested - mark as unknown (NaN)
     # use_partial = True for non-monotonic factors (only top/bottom 100 signal)
     # use_partial = False for monotonic factors (full continuous tilt applies)
     f2["use_partial"] = f2["monotonic"].apply(
@@ -124,7 +124,7 @@ def main():
 
     # ── IC decay weighting ───────────────────────────────────────────────────
     # Weight = mean |IC| over lags 0–DECAY_LAGS months (area under decay curve)
-    # This rewards factors whose signal persists longer — more reliable for
+    # This rewards factors whose signal persists longer - more reliable for
     # monthly rebalancing strategies with low turnover.
     print(f"\nComputing decay weights (mean |IC| over lags 0–{DECAY_LAGS}) …")
 
@@ -140,7 +140,7 @@ def main():
     # Factors with missing decay data (shouldn't happen but guard) → use abs IC
     missing_decay = f2["decay_weight_raw"].isna().sum()
     if missing_decay > 0:
-        print(f"  Warning: {missing_decay} factors missing decay data — using |IC| as fallback")
+        print(f"  Warning: {missing_decay} factors missing decay data - using |IC| as fallback")
         f2["decay_weight_raw"] = f2["decay_weight_raw"].fillna(f2["abs_ic"])
 
     # Normalise to sum to 1
@@ -148,7 +148,7 @@ def main():
     f2["weight"] = (f2["decay_weight_raw"] / total).round(4)
 
     print(f"  Total raw weight before normalisation: {total:.4f}")
-    print(f"  Normalised — sum: {f2['weight'].sum():.4f}")
+    print(f"  Normalised - sum: {f2['weight'].sum():.4f}")
 
     # Sort by weight descending
     f2 = f2.sort_values("weight", ascending=False).reset_index(drop=True)
@@ -204,7 +204,7 @@ def main():
     ax.set_yticklabels(f2["factor"], fontsize=8)
     ax.set_xlabel("Normalised Decay Weight  (mean |IC| lags 0–12, sum=1)")
     ax.set_title(
-        f"Factor Weights — {len(f2)} Survivors  "
+        f"Factor Weights - {len(f2)} Survivors  "
         f"(green = positive IC, red = contrarian)\n"
         f"Weight ∝ signal persistence over 12-month window"
     )

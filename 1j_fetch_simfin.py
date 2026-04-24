@@ -1,24 +1,24 @@
 """
-1j_fetch_simfin.py — Fetch Quarterly Fundamentals from Simfin (Free API)
+1j_fetch_simfin.py - Fetch Quarterly Fundamentals from Simfin (Free API)
 =========================================================================
 Downloads quarterly income, balance sheet, and cash flow data from the Simfin
 bulk data API (free tier).  Computes trailing-twelve-month (TTM) aggregates
 and standard valuation / quality ratios.
 
 Point-in-time safety:
-  Simfin provides a `publish_date` column — the date the filing became public.
+  Simfin provides a `publish_date` column - the date the filing became public.
   We use `publish_date` as the observation date, NOT period-end, to avoid
   look-ahead bias.  TTM = sum of last 4 published quarterly values.
 
 Output:
-  data/fundamental.parquet  — columns: date, ticker, pe_ratio, pb_ratio, ...
+  data/fundamental.parquet  - columns: date, ticker, pe_ratio, pb_ratio, ...
   This file is auto-detected by 1h_feature_engineering.py → Cat 9 factors.
 
 Academic basis:
-  Sloan (1996) — accruals anomaly
-  Cooper, Gulen & Schill (2008) — asset growth
-  Novy-Marx (2013) — gross profitability
-  Fama & French (2015) — profitability + investment factors
+  Sloan (1996) - accruals anomaly
+  Cooper, Gulen & Schill (2008) - asset growth
+  Novy-Marx (2013) - gross profitability
+  Fama & French (2015) - profitability + investment factors
 
 Run time: ~2-5 min (bulk download + compute).
 """
@@ -53,7 +53,7 @@ try:
     HAS_SIMFIN = True
 except ImportError:
     HAS_SIMFIN = False
-    print("  simfin not installed — will use yfinance fallback")
+    print("  simfin not installed - will use yfinance fallback")
 
 # Load our ticker list
 try:
@@ -61,7 +61,7 @@ try:
     our_tickers = panel["ticker"].unique().tolist()
     print(f"  Pipeline tickers: {len(our_tickers)}")
 except FileNotFoundError:
-    print("  [WARN] panel_monthly.parquet not found — fetching all US tickers")
+    print("  [WARN] panel_monthly.parquet not found - fetching all US tickers")
     our_tickers = None
 
 # ── Download quarterly financial statements ───────────────────────────────────
@@ -91,7 +91,7 @@ if HAS_SIMFIN and SIMFIN_API_KEY:
         print(f"  [WARN] Simfin cashflow failed: {e}")
 
 if df_income.empty and df_balance.empty:
-    print("\n  Simfin unavailable — falling back to yfinance fundamentals.")
+    print("\n  Simfin unavailable - falling back to yfinance fundamentals.")
     print("  NOTE: To use Simfin, register free at simfin.com and set SIMFIN_API_KEY.")
     USE_YFINANCE_FALLBACK = True
 
@@ -273,7 +273,7 @@ def compute_fundamentals(df_i, df_b, df_c):
 
             # Price proxy: not available from Simfin fundamentals alone
             # Use book value ratios that don't need price (ROE, ROA, margins)
-            # Price-based ratios (PE, PB, PS) need market cap — use shares × close from prices
+            # Price-based ratios (PE, PB, PS) need market cap - use shares × close from prices
 
             # ── Ratios that DON'T need price ──
             # ROE = NI_TTM / Equity
@@ -311,7 +311,7 @@ def compute_fundamentals(df_i, df_b, df_c):
             else:
                 rec["earnings_quality"] = np.nan
 
-            # ── Price-dependent ratios (set to NaN — will be computed in 1h using market prices) ──
+            # ── Price-dependent ratios (set to NaN - will be computed in 1h using market prices) ──
             # PE, PB, PS, EV/EBITDA require market cap = shares × close
             # Store per-share values so 1h can divide by price
             if shares and shares > 0:
@@ -344,7 +344,7 @@ def compute_fundamentals(df_i, df_b, df_c):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# YFINANCE FALLBACK — fetch fundamentals ticker-by-ticker
+# YFINANCE FALLBACK - fetch fundamentals ticker-by-ticker
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def fetch_fundamentals_yfinance(tickers, batch_size=20):

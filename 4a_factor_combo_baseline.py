@@ -1,5 +1,5 @@
 """
-4a_factor_combo_baseline.py — Factor-Combo IE Baseline (No ML)
+4a_factor_combo_baseline.py - Factor-Combo IE Baseline (No ML)
 ===============================================================
 Uses the optimised factor weights from 2e_ic_optimise.py to create
 stock scores directly (weighted sum of z-scored factors) and runs
@@ -71,7 +71,7 @@ def ie_stats(df: pd.DataFrame, label: str = "") -> dict:
 
 # ── Load data ──────────────────────────────────────────────────────────────────
 print("=" * 65)
-print("FACTOR-COMBO BASELINE — INDEX ENHANCEMENT")
+print("FACTOR-COMBO BASELINE - INDEX ENHANCEMENT")
 print("=" * 65)
 
 print("\nLoading factor weights …")
@@ -194,7 +194,7 @@ bt_best.to_csv(DATA_DIR / "bt_ie_factor_combo.csv", index=False)
 
 # ── Print alpha sweep ──────────────────────────────────────────────────────────
 print(f"\n{'─'*65}")
-print(f"  Factor-Combo Baseline — Alpha Sweep")
+print(f"  Factor-Combo Baseline - Alpha Sweep")
 print(f"{'─'*65}")
 print(f"  {'Alpha':>7} {'Ann α':>7} {'TE':>6} {'IR':>7} {'Hit%':>6} {'Sharpe':>7}")
 for r in results:

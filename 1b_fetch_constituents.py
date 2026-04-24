@@ -1,5 +1,5 @@
 """
-1b_fetch_constituents.py — Fix Survivorship Bias
+1b_fetch_constituents.py - Fix Survivorship Bias
 ============================================================
 Downloads the full historical S&P 500 constituent list (1996–present) from
 a free GitHub dataset, finds which tickers are missing from our prices.parquet,
@@ -7,7 +7,7 @@ and tries to fetch their price history via yfinance.
 
 This fixes survivorship bias: our current prices.parquet only contains ~504
 stocks that are CURRENTLY in the S&P 500. Companies that were removed between
-2010–2025 (acquired, bankrupt, delisted) are missing — their absence inflates
+2010–2025 (acquired, bankrupt, delisted) are missing - their absence inflates
 backtest returns by ~1–2% per year.
 
 Data source:
@@ -23,8 +23,8 @@ Steps:
   5. Merge with existing prices.parquet → save updated file
 
 Outputs:
-  data/prices.parquet          — updated with historical members
-  data/historical_tickers.csv  — full list of historical tickers + status
+  data/prices.parquet          - updated with historical members
+  data/historical_tickers.csv  - full list of historical tickers + status
 
 Runtime: ~20–40 min depending on number of missing tickers
 """
@@ -173,7 +173,7 @@ def main():
         print("  Download successful.")
     except Exception as e:
         print(f"  ERROR downloading constituent list: {e}")
-        print("  Cannot continue — check internet connection.")
+        print("  Cannot continue - check internet connection.")
         return
 
     # Parse CSV: date | tickers (comma-separated in quotes)
@@ -210,7 +210,7 @@ def main():
     print(f"  Missing (need to fetch):   {len(missing)}")
 
     if not missing:
-        print("\nNo missing tickers — prices.parquet already has full history.")
+        print("\nNo missing tickers - prices.parquet already has full history.")
         return
 
     # ── Fetch missing tickers via yfinance ───────────────────────────────────
@@ -262,7 +262,7 @@ def main():
     print(f"\nSaved ticker log → {TICKER_LOG}")
 
     if not new_frames:
-        print("\nNo new price data fetched — prices.parquet unchanged.")
+        print("\nNo new price data fetched - prices.parquet unchanged.")
         return
 
     # ── Merge with existing prices ────────────────────────────────────────────
@@ -270,7 +270,7 @@ def main():
     new_combined = pd.concat(new_frames, ignore_index=True)
 
     # Standardise columns to match existing prices.parquet
-    # Existing prices.parquet may have exchange suffixes — new ones won't
+    # Existing prices.parquet may have exchange suffixes - new ones won't
     # We keep new tickers as plain (no suffix) since exchange is unknown
     col_order = [c for c in ["date", "ticker", "open", "high", "low", "close", "volume"]
                  if c in new_combined.columns or c in prices_existing.columns]

@@ -1,15 +1,15 @@
 # Deep-Learning Index Enhancement on the S&P 500
 
-## Background — what index enhancement is
+## Background - what index enhancement is
 
 Most active equity managers don't beat the S&P 500 after fees. Index
 enhancement takes a different route: hold all ~500 constituents and tilt the
 weights by a small amount based on a predictive model. The portfolio still
-behaves mostly like the index — tracking error typically 2–4% annualised —
+behaves mostly like the index - tracking error typically 2–4% annualised -
 but earns a small, steady layer of alpha on top.
 
 It's a real product category at large quant shops. AQR, Robeco, BlackRock's
-systematic-active desk, Acadian, and the enhanced-index books inside most
+systematic-active desk, Acadian and the enhanced-index books inside most
 multi-strat hedge funds all run some version. The headline metric is the
 **information ratio** (IR = annualised alpha ÷ tracking error). IR > 0.5 is
 considered institutional-grade; > 1.0 is top-quartile.
@@ -17,7 +17,7 @@ considered institutional-grade; > 1.0 is top-quartile.
 This repo is a working implementation of that strategy on the S&P 500. Test
 window (2023–2025, 35 months): **IR 1.87** at 2.22% tracking error, ~67% hit
 rate. Written as a working record of what was built and what the numbers
-actually show — not a marketing page.
+actually show - not a marketing page.
 
 ## How the strategy works
 
@@ -37,7 +37,7 @@ actually show — not a marketing page.
 ## Why deep learning
 
 Tree ensembles like LightGBM look at each stock in isolation. Ranking 500
-stocks against each other is inherently relational — a volatility reading of
+stocks against each other is inherently relational - a volatility reading of
 30% means one thing when most of the universe is at 15% and something else
 when most are at 45%, and the signal strength at the *tails* of the
 cross-section matters more than absolute levels. A Cross-Sectional
@@ -49,7 +49,7 @@ conditioning so the model knows what regime it's scoring in.
 
 Training is two-stage. First a standard masked-MSE pre-train so the model
 learns cross-sectional rank structure. Then a portfolio-level RL fine-tune
-(GRPO or DAPO) that optimises portfolio return directly — bridging the gap
+(GRPO or DAPO) that optimises portfolio return directly - bridging the gap
 between "predicting labels" and "actually making money", since those two
 objectives are not the same.
 
@@ -62,7 +62,7 @@ tracking error without alpha) and under-reacts in others (in a dispersed
 month with a clear top/bottom split, a timid tilt wastes signal). A learned
 policy adapts tilt size to what the market is actually doing.
 
-Validation is a 5-fold expanding-window walk-forward from 2014 to 2025 — no
+Validation is a 5-fold expanding-window walk-forward from 2014 to 2025 - no
 shared training data between folds, factor weights refitted from scratch
 each fold, agent retrained fresh. On 95 OOS months the SAC overlay delivers
 **IR 0.88 vs 0.28** for the fixed-α baseline, with max active drawdown
@@ -79,9 +79,9 @@ on sample efficiency given the ~100-month fold sizes.
 3. **Factor diagnostics** (`2*` scripts): IC, IC decay, quintile returns, crowding/correlation,
    IS-only screening of new candidates via Lasso / RF / LightGBM and BHY.
 4. **Models** (`3*` scripts):
-   - `3a_ft_transformer.py` — FT-Transformer (independent per-stock ranker)
-   - `3c_cs_transformer.py` / `3d_cs_transformer_kaggle.py` — Cross-Sectional Transformer with
-     Macro FiLM conditioning, optional correlation attention bias, and a GRPO/DAPO RL fine-tune
+   - `3a_ft_transformer.py` - FT-Transformer (independent per-stock ranker)
+   - `3c_cs_transformer.py` / `3d_cs_transformer_kaggle.py` - Cross-Sectional Transformer with
+     Macro FiLM conditioning, optional correlation attention bias and a GRPO/DAPO RL fine-tune
      on portfolio return.
 5. **Portfolio construction** (`4*` scripts): tilt ±α around SPX cap weights based on scores,
    sweep α to maximise information ratio within a 2–4 % tracking-error budget.
@@ -116,7 +116,7 @@ on sample efficiency given the ~100-month fold sizes.
 │       └── regime_entropy.py       vol-regime entropy detector
 │
 ├── Notes/                          development log, strategy notes
-└── data/                           (gitignored — regenerated from the scripts)
+└── data/                           (gitignored - regenerated from the scripts)
 ```
 
 ## How to reproduce the results
@@ -159,13 +159,13 @@ python 1h_feature_engineering.py
 ### 3. Train and backtest
 
 ```bash
-# Diagnostics (optional — not required for the final model)
+# Diagnostics (optional - not required for the final model)
 python 2a_factor_analysis.py
 python 2f_factor_diagnostics.py
 
 # Models
 python 3a_ft_transformer.py             # local CPU, ~10-15 min
-# CS-Transformer runs on Kaggle — see below
+# CS-Transformer runs on Kaggle - see below
 
 # Backtests
 python 4b_index_enhancement.py          # IE tilt, α-sweep per model
@@ -189,9 +189,9 @@ Expected GPU time: ~60–90 min including the GRPO/DAPO RL fine-tune.
 
 The main model. Two-stage attention:
 
-- **Stage 1 — per-stock feature attention.** Each stock's feature vector is tokenised and passed
+- **Stage 1 - per-stock feature attention.** Each stock's feature vector is tokenised and passed
   through a transformer. A learned `[CLS]` token summarises the stock.
-- **Stage 2 — cross-stock attention.** All stocks for a month are treated as one sequence so each
+- **Stage 2 - cross-stock attention.** All stocks for a month are treated as one sequence so each
   stock's representation is informed by its peers.
 
 Two additions on top of the base model:
@@ -202,11 +202,11 @@ Two additions on top of the base model:
   training. This gives the model an explicit handle on "factor X matters more in regime Y".
 - **Factor correlation bias (optional).** An F×F Spearman correlation of the features is computed
   on the training set and fed as additive attention bias in Stage 1, with a small per-head scalar
-  weight learned. Disabled by default — enable after FiLM has been validated.
+  weight learned. Disabled by default - enable after FiLM has been validated.
 
 Training is two-stage: a standard masked-MSE pre-train with L1/L2 feature-tokenizer penalties,
 followed by a portfolio-level RL fine-tune using GRPO (PPO-style clipping + KL penalty vs a frozen
-reference), DAPO (asymmetric clipping, dynamic group size, no KL), or a regime-aware hybrid.
+reference), DAPO (asymmetric clipping, dynamic group size, no KL) or a regime-aware hybrid.
 Method is selectable in `config.py: RL_FINETUNE_PARAMS["method"]`.
 
 ## Factor categories (24 total, ~270 features)
@@ -240,7 +240,7 @@ Method is selectable in `config.py: RL_FINETUNE_PARAMS["method"]`.
 
 **Selection rules.**
 Correlation pruning happens *after* training, not before.
-OOS IC is a diagnostic only — never a selection criterion (avoids lookahead).
+OOS IC is a diagnostic only - never a selection criterion (avoids lookahead).
 Prediction-market factors are used as *timing* signals at the portfolio level, not as cross-sectional
 stock signals.
 
@@ -251,9 +251,9 @@ stock signals.
 | Model | Ann. alpha | Tracking error | IR | Hit rate |
 |---|---|---|---|---|
 | CS-Transformer | 4.16 % | 2.22 % | **1.87** | ~67 % |
-| FT-Transformer | ~0.9 % | ~2.6 % | 0.44 | — |
-| LightGBM | ~0.5 % | ~2.0 % | 0.38 | — |
-| Linear factor combo baseline | — | — | −0.05 | — |
+| FT-Transformer | ~0.9 % | ~2.6 % | 0.44 | - |
+| LightGBM | ~0.5 % | ~2.0 % | 0.38 | - |
+| Linear factor combo baseline | - | - | −0.05 | - |
 
 For context: IR > 0.5 is institutional-grade, > 1.0 is top-quartile.
 
@@ -315,7 +315,7 @@ The data files are regenerated by the pipeline (gitignored):
 | `RETRAIN_EVERY` | 12 | months between retrains |
 | `TRANSFORMER_CS_PARAMS["use_macro_film"]` | True | Macro FiLM on Stage 1 tokens |
 | `TRANSFORMER_CS_PARAMS["use_corr_bias"]` | False | correlation attention bias |
-| `RL_FINETUNE_PARAMS["method"]` | `"grpo"` | `grpo`, `dapo`, or `hybrid` |
+| `RL_FINETUNE_PARAMS["method"]` | `"grpo"` | `grpo`, `dapo` or `hybrid` |
 
 ## Status / open work
 

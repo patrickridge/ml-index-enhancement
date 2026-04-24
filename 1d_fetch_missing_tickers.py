@@ -1,5 +1,5 @@
 """
-1d_fetch_missing_tickers.py — Recover Price Data for Failed Historical Tickers
+1d_fetch_missing_tickers.py - Recover Price Data for Failed Historical Tickers
 ===============================================================================
 Script 1b_fetch_constituents.py fetched ~440 historical S&P 500
 members but ~252 tickers failed, typically due to a yfinance timezone bug
@@ -7,21 +7,21 @@ members but ~252 tickers failed, typically due to a yfinance timezone bug
 
 This script attempts two recovery methods for each failed ticker:
 
-  Method 1 — yfinance Ticker.history()
+  Method 1 - yfinance Ticker.history()
     Uses yf.Ticker(ticker).history() instead of yf.download(). This avoids
     the YFTzMissingError that affects yf.download() for some older tickers.
 
-  Method 2 — Stooq via pandas_datareader
+  Method 2 - Stooq via pandas_datareader
     Stooq is a free data source with good historical coverage of delisted US
     equities. No API key required. US tickers use format "{ticker}.us".
 
 Inputs:
-  data/historical_tickers.csv  — ticker log from 1d; rows with status='failed'
-  data/prices.parquet          — existing price database
+  data/historical_tickers.csv  - ticker log from 1d; rows with status='failed'
+  data/prices.parquet          - existing price database
 
 Outputs:
-  data/prices.parquet          — updated with any newly recovered tickers
-  data/historical_tickers.csv  — statuses updated ('failed' → 'ok' or 'missing')
+  data/prices.parquet          - updated with any newly recovered tickers
+  data/historical_tickers.csv  - statuses updated ('failed' → 'ok' or 'missing')
 
 Runtime: ~15–30 min depending on number of tickers recovered.
 """
@@ -50,7 +50,7 @@ try:
     HAS_PDR = True
 except ImportError:
     HAS_PDR = False
-    print("WARNING: pandas_datareader not installed — Method 2 (Stooq) unavailable.")
+    print("WARNING: pandas_datareader not installed - Method 2 (Stooq) unavailable.")
     print("         Install with: pip install pandas-datareader")
 
 # ── Paths ───────────────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ def normalise_ohlcv(df: pd.DataFrame, ticker: str) -> pd.DataFrame | None:
 
 def fetch_yf_history(ticker: str) -> pd.DataFrame | None:
     """
-    Try yf.Ticker(ticker).history() — avoids the YFTzMissingError that
+    Try yf.Ticker(ticker).history() - avoids the YFTzMissingError that
     affects yf.download() for some older / delisted tickers.
     """
     yf_tk = to_yf_ticker(ticker)
@@ -182,7 +182,7 @@ def fetch_stooq(ticker: str) -> pd.DataFrame | None:
         if raw is None or raw.empty:
             return None
 
-        # Stooq returns data newest-first — sort ascending
+        # Stooq returns data newest-first - sort ascending
         raw = raw.sort_index()
 
         return normalise_ohlcv(raw, ticker)
@@ -216,7 +216,7 @@ def main():
     print(f"  Stooq fallback:    {'enabled' if HAS_PDR else 'DISABLED (install pandas-datareader)'}")
 
     if n_total == 0:
-        print("\nNo failed tickers to retry — nothing to do.")
+        print("\nNo failed tickers to retry - nothing to do.")
         return
 
     # ── Load existing prices ─────────────────────────────────────────────────
@@ -312,7 +312,7 @@ def main():
 
     # ── Merge recovered data with existing prices ────────────────────────────
     if not new_frames:
-        print("\nNo new data recovered — prices.parquet unchanged.")
+        print("\nNo new data recovered - prices.parquet unchanged.")
         print(f"\nDone in {(_time.time() - _t0) / 60:.1f} min")
         return
 
