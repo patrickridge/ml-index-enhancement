@@ -1,6 +1,5 @@
 """
 1c_fetch_market_cap.py - Fetch market-cap weights for index enhancement
-========================================================================
 Gets current shares outstanding for every ticker via yfinance fast_info,
 then multiplies by monthly close prices to build a time-varying market-cap
 matrix. Saves monthly SPX-constituent weights to data/spx_weights.parquet.
@@ -32,15 +31,13 @@ import pandas as pd
 import yfinance as yf
 from pathlib import Path
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR    = Path("data")
 PRICES_IN   = DATA_DIR / "prices.parquet"
 OUT_WEIGHTS = DATA_DIR / "spx_weights.parquet"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def clean_ticker(tk: str) -> str:
     """
@@ -115,12 +112,10 @@ def build_monthly_close(prices: pd.DataFrame) -> pd.DataFrame:
     return monthly
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    # ── Load prices ─────────────────────────────────────────────────────────────
+    # Load prices
     print("Loading prices.parquet …")
     prices  = pd.read_parquet(PRICES_IN)
     tickers = sorted(prices["ticker"].unique())
@@ -129,7 +124,7 @@ def main():
     monthly_close = build_monthly_close(prices)
     print(f"  Monthly close: {monthly_close.shape[0]} months × {monthly_close.shape[1]} tickers")
 
-    # ── Fetch current shares outstanding ─────────────────────────────────────────
+    # Fetch current shares outstanding
     print(f"\nFetching current shares outstanding for {len(tickers)} tickers …")
     print("(~2–4 min)\n")
 
@@ -155,7 +150,7 @@ def main():
         print("  Check internet connection and yfinance version.")
         return
 
-    # ── Build market cap matrix ──────────────────────────────────────────────────
+    # Build market cap matrix
     # Market cap = current_shares × historical monthly price
     # Weights are relative so using current (constant) shares is a good approximation.
     print("\nBuilding market cap matrix …")
@@ -170,7 +165,7 @@ def main():
     # Broadcast: each column × its constant shares count
     mktcap_wide = close_m.multiply(shares_s, axis="columns")
 
-    # ── Convert to long format ───────────────────────────────────────────────────
+    # Convert to long format
     mktcap_long = (
         mktcap_wide
         .stack()
@@ -180,11 +175,11 @@ def main():
     mktcap_long = mktcap_long.dropna(subset=["mktcap"])
     mktcap_long = mktcap_long[mktcap_long["mktcap"] > 0]
 
-    # ── Compute SPX weights (cap-weighted fraction per month) ────────────────────
+    # Compute SPX weights (cap-weighted fraction per month)
     total_cap = mktcap_long.groupby("date")["mktcap"].transform("sum")
     mktcap_long["spx_weight"] = mktcap_long["mktcap"] / total_cap
 
-    # ── Winsorise: cap any single stock at 8% and renormalise ────────────────────
+    # Winsorise: cap any single stock at 8% and renormalise
     # Prevents any outlier (wrong shares data) from dominating the benchmark.
     # Real S&P 500 largest holdings are ~6–7% (AAPL, NVDA, MSFT).
     CAP = 0.08
@@ -192,7 +187,7 @@ def main():
     total_w = mktcap_long.groupby("date")["spx_weight"].transform("sum")
     mktcap_long["spx_weight"] = mktcap_long["spx_weight"] / total_w
 
-    # ── Coverage diagnostics ─────────────────────────────────────────────────────
+    # Coverage diagnostics
     print("\nCoverage check:")
     n_per_month = mktcap_long.groupby("date")["ticker"].count()
     print(f"  Tickers covered (shares fetched) : {len(shares_map)}")
@@ -207,7 +202,7 @@ def main():
     for _, row in top10.iterrows():
         print(f"  {row['ticker']:<10}  {row['spx_weight']*100:.2f}%")
 
-    # ── Save ─────────────────────────────────────────────────────────────────────
+    # Save
     mktcap_long[["date", "ticker", "mktcap", "spx_weight"]].to_parquet(
         OUT_WEIGHTS, index=False
     )

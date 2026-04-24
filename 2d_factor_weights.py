@@ -1,6 +1,5 @@
 """
 2d_factor_weights.py - Factor Selection, Weighting & Partial Signal Flags
-==========================================================================
 Combines all factor analysis outputs into a single clean table for use
 in model training and portfolio construction.
 
@@ -40,7 +39,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR = Path("data")
 FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -62,7 +61,7 @@ def main():
     print("FACTOR SELECTION, WEIGHTING & PARTIAL FLAGS")
     print("=" * 65)
 
-    # ── Load inputs ──────────────────────────────────────────────────────────────
+    # Load inputs
     ic_df      = pd.read_csv(IC_SUMMARY_IN)        # factor, ic_mean, icir, t_stat, …
     regime_df  = pd.read_csv(REGIME_IN)            # factor, regime_stable, majority_sign, …
     quint_df   = pd.read_csv(QUINTILE_IN)          # factor, monotonic, Q1..Q5, …
@@ -78,7 +77,7 @@ def main():
     print(f"  Quintile returns:  {len(quint_df)} factors")
     print(f"  IC decay (all):    {len(decay_df)} factors × {len(decay_df.columns)} lags")
 
-    # ── Merge ───────────────────────────────────────────────────────────────────
+    # Merge
     merged = ic_df[["factor", "ic_mean", "ic_std", "icir", "t_stat"]].copy()
     merged = merged.merge(
         regime_df[["factor", "regime_stable", "majority_sign",
@@ -87,12 +86,12 @@ def main():
         on="factor", how="left"
     )
 
-    # ── Filter 1: |IC| > 0 (keep both directions) ────────────────────────────────
+    # Filter 1: |IC| > 0 (keep both directions)
     merged["abs_ic"] = merged["ic_mean"].abs()
     f1 = merged[merged["abs_ic"] > 0].copy()
     print(f"\nFilter 1 - |IC| > 0: {len(f1)} / {len(merged)} kept")
 
-    # ── Filter 2: Regime stable ────────────────────────────────────────────────
+    # Filter 2: Regime stable
     f2 = f1[f1["regime_stable"] == True].copy()
     print(f"Filter 2 - Regime stable (≥75% sign-consistent): {len(f2)} / {len(f1)} kept")
 
@@ -101,7 +100,7 @@ def main():
     print(f"  Positive IC ({len(pos)}): {pos}")
     print(f"  Contrarian  ({len(neg)}): {neg}")
 
-    # ── Add monotonicity flag from quintile test ──────────────────────────────
+    # Add monotonicity flag from quintile test
     quint_mono = quint_df[["factor", "monotonic"]].copy()
     f2 = f2.merge(quint_mono, on="factor", how="left")
 
@@ -122,7 +121,7 @@ def main():
     if n_partial > 0:
         print(f"  Partial factors: {f2[f2['use_partial']]['factor'].tolist()}")
 
-    # ── IC decay weighting ───────────────────────────────────────────────────
+    # IC decay weighting
     # Weight = mean |IC| over lags 0–DECAY_LAGS months (area under decay curve)
     # This rewards factors whose signal persists longer - more reliable for
     # monthly rebalancing strategies with low turnover.
@@ -164,7 +163,7 @@ def main():
         print(f"  {row['factor']:<26} {row['ic_mean']:>+7.4f}  {row['icir']:>6.3f}  "
               f"{mono_str:>4}  {partial_str:>8}  {row['weight']:>6.4f}")
 
-    # ── Save ────────────────────────────────────────────────────────────────────
+    # Save
     out_cols = [
         "factor", "ic_mean", "ic_std", "icir", "t_stat",
         "majority_sign", "regime_stable", "regimes_positive",
@@ -175,7 +174,7 @@ def main():
     f2[out_cols].to_csv(OUT_CSV, index=False)
     print(f"\nSaved → {OUT_CSV}  ({len(f2)} factors)")
 
-    # ── Summary ─────────────────────────────────────────────────────────────────
+    # Summary
     print(f"\n{'='*65}")
     print("FACTOR SELECTION COMPLETE")
     print(f"{'='*65}")
@@ -188,7 +187,7 @@ def main():
     print(f"\nHighest-weight factor: {f2.iloc[0]['factor']}  (weight={f2.iloc[0]['weight']:.4f})")
     print(f"Lowest-weight factor:  {f2.iloc[-1]['factor']}  (weight={f2.iloc[-1]['weight']:.4f})")
 
-    # ── Plot ────────────────────────────────────────────────────────────────────
+    # Plot
     fig, ax = plt.subplots(figsize=(12, max(6, len(f2) * 0.35)))
 
     colors = []

@@ -1,6 +1,5 @@
 """
 1k_fetch_short_interest.py - Fetch Short Interest Data
-========================================================
 Downloads short interest data from free sources:
 
   1. yfinance key_stats - provides current short interest, short ratio,
@@ -62,9 +61,7 @@ def strip_exchange_suffix(ticker: str) -> str:
     return ticker
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # FETCH SHORT INTEREST FROM YFINANCE
-# ═══════════════════════════════════════════════════════════════════════════════
 # yfinance provides short interest data through Ticker.info dict:
 #   - shortPercentOfFloat:  short interest as % of float
 #   - sharesShortPriorMonth: short interest from prior month
@@ -144,9 +141,7 @@ for i, tk in enumerate(our_tickers):
 print(f"\n  Completed: {n - failed}/{n} tickers ({failed} failed)")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # BUILD RESULT
-# ═══════════════════════════════════════════════════════════════════════════════
 
 if not records:
     print("\n[ERROR] No short interest data fetched.")
@@ -155,7 +150,7 @@ if not records:
 current_df = pd.DataFrame(records)
 current_df["date"] = pd.to_datetime(current_df["date"])
 
-# ── Append to existing file if present (build time series over time) ─────────
+# Append to existing file if present (build time series over time)
 if OUT_PATH.exists():
     print(f"\n  Found existing {OUT_PATH} - appending new snapshot...")
     existing = pd.read_parquet(OUT_PATH)
@@ -184,7 +179,7 @@ result = result[keep_cols + extra_cols]
 # Drop rows where ALL factor columns are NaN
 result = result.dropna(subset=[c for c in OUTPUT_COLS if c in result.columns], how="all")
 
-# ── Save ──────────────────────────────────────────────────────────────────────
+# Save
 result.to_parquet(OUT_PATH, index=False)
 print(f"\nSaved → {OUT_PATH}")
 print(f"  Shape: {result.shape}")

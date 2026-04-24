@@ -1,6 +1,5 @@
 """
 1g_rebuild_panel.py - Rebuild panel_monthly.parquet from prices.parquet
-=============================================================================
 The original panel_monthly.parquet was built from data.xlsx (Wind platform
 export), which has been deleted. This script recreates it directly from
 prices.parquet, now containing 692 tickers including historical S&P 500
@@ -36,7 +35,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pathlib import Path
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR  = Path("data")
 PRICES_IN = DATA_DIR / "prices.parquet"
 PANEL_OUT = DATA_DIR / "panel_monthly.parquet"
@@ -49,7 +48,7 @@ def main():
     print("REBUILD BASE PANEL FROM PRICES")
     print("=" * 65)
 
-    # ── Load prices ──────────────────────────────────────────────────────────
+    # Load prices
     print(f"\nLoading {PRICES_IN} …")
     prices = pq.read_table(PRICES_IN).to_pandas()
     prices["date"] = pd.to_datetime(prices["date"])
@@ -60,11 +59,11 @@ def main():
     print(f"  {len(tickers)} tickers | "
           f"{prices['date'].min().date()} → {prices['date'].max().date()}")
 
-    # ── Daily returns ────────────────────────────────────────────────────────
+    # Daily returns
     print("\nComputing daily returns …")
     prices["ret_d"] = prices.groupby("ticker")["close"].pct_change()
 
-    # ── Rolling volatility ───────────────────────────────────────────────────
+    # Rolling volatility
     print("Computing rolling volatility (20d / 60d / 252d) …")
     for w, col in [(20, "vol_20d"), (60, "vol_60d"), (252, "vol_252d")]:
         prices[col] = (
@@ -72,13 +71,13 @@ def main():
             .transform(lambda x, w=w: x.rolling(w, min_periods=max(5, w // 4)).std() * np.sqrt(252))
         )
 
-    # ── HL range ─────────────────────────────────────────────────────────────
+    # HL range
     if "high" in prices.columns and "low" in prices.columns:
         prices["hl_range_d"] = (prices["high"] - prices["low"]) / prices["close"].replace(0, np.nan)
     else:
         prices["hl_range_d"] = np.nan
 
-    # ── Sample at month-end ──────────────────────────────────────────────────
+    # Sample at month-end
     print("Sampling at month-end dates …")
     prices["ym"] = prices["date"].dt.to_period("M")
     month_ends = (
@@ -103,7 +102,7 @@ def main():
                  "vol_20d", "vol_60d", "vol_252d", "hl_range"]].copy()
     snap = snap.sort_values(["ticker", "date"]).reset_index(drop=True)
 
-    # ── Monthly returns ──────────────────────────────────────────────────────
+    # Monthly returns
     print("Computing monthly returns …")
     snap["ret_1m"]  = snap.groupby("ticker")["close"].pct_change(1)
     snap["ret_3m"]  = snap.groupby("ticker")["close"].pct_change(3)
@@ -111,12 +110,12 @@ def main():
     snap["ret_12m"] = snap.groupby("ticker")["close"].pct_change(12)
     snap["rev_1m"]  = -snap["ret_1m"]
 
-    # ── Forward return (target) ──────────────────────────────────────────────
+    # Forward return (target)
     print("Computing forward 1-month return …")
     snap["fwd_ret_1m"] = snap.groupby("ticker")["ret_1m"].shift(-1)
     snap = snap.dropna(subset=["fwd_ret_1m"]).reset_index(drop=True)
 
-    # ── Output ───────────────────────────────────────────────────────────────
+    # Output
     out_cols = ["date", "ticker", "ret_1m", "ret_3m", "ret_6m", "ret_12m",
                 "rev_1m", "vol_20d", "vol_60d", "vol_252d", "hl_range", "fwd_ret_1m"]
     panel = snap[out_cols].copy()

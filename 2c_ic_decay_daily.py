@@ -1,6 +1,5 @@
 """
 2c_ic_decay_daily.py - Daily IC Decay (1–90 trading days)
-==========================================================
 Tests how long each factor's predictive signal lasts at daily resolution.
 Complements 2b_ic_decay_all.py (which uses monthly lags).
 
@@ -40,7 +39,7 @@ from pathlib import Path
 from scipy.stats import spearmanr
 import math
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# Config
 DATA_DIR = Path("data")
 FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -59,7 +58,7 @@ MACRO_COLS = [
     "spx_ret_1m", "spx_ret_3m", "spx_ret_6m", "spx_ret_12m", "spx_vol_63d",
 ]
 
-# ── Load data ──────────────────────────────────────────────────────────────────
+# Load data
 print("Loading monthly panel …")
 panel = pq.read_table(DATA_DIR / "panel_monthly_enriched.parquet").to_pandas()
 panel["date"] = pd.to_datetime(panel["date"])
@@ -78,7 +77,7 @@ prices = prices.sort_values(["ticker", "date"]).reset_index(drop=True)
 close_pivot = prices.pivot(index="date", columns="ticker", values="close")
 all_trading_days = close_pivot.index.sort_values()
 
-# ── Forward return at N trading days ──────────────────────────────────────────
+# Forward return at N trading days
 def fwd_return_n_days(ref_date: pd.Timestamp, n: int) -> pd.Series:
     """
     Return (close_{ref_date + n trading days} / close_{ref_date}) - 1
@@ -103,7 +102,7 @@ def fwd_return_n_days(ref_date: pd.Timestamp, n: int) -> pd.Series:
     return (c1[common] / c0[common] - 1).rename(f"fwd_{n}d")
 
 
-# ── IC at each horizon for one factor ─────────────────────────────────────────
+# IC at each horizon for one factor
 def daily_ic_decay(factor: str) -> list:
     """
     Returns list of mean IC values, one per horizon in HORIZONS.
@@ -129,7 +128,7 @@ def daily_ic_decay(factor: str) -> list:
     return [float(np.mean(horizon_ics[h])) if horizon_ics[h] else np.nan for h in HORIZONS]
 
 
-# ── Compute for all factors ────────────────────────────────────────────────────
+# Compute for all factors
 print(f"\nComputing daily IC decay ({HORIZONS}) for {len(feat_cols)} factors …")
 all_decay = {}
 for i, fac in enumerate(feat_cols, 1):
@@ -143,7 +142,7 @@ decay_df.to_csv(DATA_DIR / "factor_ic_decay_daily.csv")
 print("Saved → factor_ic_decay_daily.csv")
 
 
-# ── Grid plot (all factors) ────────────────────────────────────────────────────
+# Grid plot (all factors)
 n_factors = len(feat_cols)
 n_cols    = 8
 n_rows    = math.ceil(n_factors / n_cols)
@@ -181,7 +180,7 @@ plt.close(fig)
 print(f"Saved → {out}")
 
 
-# ── Top 20 factors zoomed plot ─────────────────────────────────────────────────
+# Top 20 factors zoomed plot
 # Rank by |IC| at day 20 (closest to our monthly rebalance horizon)
 ic_at_20 = decay_df["day_20"].abs().sort_values(ascending=False)
 top20     = ic_at_20.head(20).index.tolist()

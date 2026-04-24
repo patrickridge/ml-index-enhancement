@@ -1,6 +1,5 @@
 """
 5e_dapo_agent.py - Hybrid GRPO/DAPO with Multi-Feature Regime Detection
-=======================================================================
 Rebuilds the DAPO portfolio tilt agent with two key improvements over the
 prior version:
 
@@ -57,7 +56,7 @@ except ImportError:
     HAS_TORCH = False
     print("WARNING: PyTorch not installed - rule-based fallback only.")
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR = Path("data")
 FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(exist_ok=True)
@@ -66,7 +65,7 @@ PANEL_FILE   = DATA_DIR / "panel_monthly_enriched.parquet"
 FACTORS_FILE = DATA_DIR / "factor_selected.csv"
 WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
 
-# ── Walk-forward folds ─────────────────────────────────────────────────────────
+# Walk-forward folds
 FOLDS = [
     ("2013-12-31", "2014-01-01", "2015-12-31", "2014–2015"),
     ("2015-12-31", "2016-01-01", "2017-12-31", "2016–2017"),
@@ -76,7 +75,7 @@ FOLDS = [
 ]
 TRAIN_START_GLOBAL = "2010-01-01"
 
-# ── Hyperparameters ────────────────────────────────────────────────────────────
+# Hyperparameters
 ALPHA_MIN   = 0.002
 ALPHA_MAX   = 0.050
 FIXED_ALPHA = 0.010
@@ -120,9 +119,7 @@ if HAS_TORCH:
     torch.manual_seed(SEED)
 
 
-# =============================================================================
 # FACTOR COMBO SCORES
-# =============================================================================
 
 def compute_fold_weights(panel_train, factor_names, signs):
     """IC-weighted factor combination. Weights fitted on training data only."""
@@ -180,9 +177,7 @@ def build_scores(panel_slice, factor_names, signed_w):
     })
 
 
-# =============================================================================
 # PORTFOLIO SIMULATION
-# =============================================================================
 
 def _prep_month(scores_month, weights_month, top_n=100, bottom_n=100):
     """
@@ -232,9 +227,7 @@ def simulate_month(scores_month, weights_month, alpha, top_n=100, bottom_n=100):
     return simulate_month_fast(prep, alpha)
 
 
-# =============================================================================
 # MARKET REGIME DETECTION
-# =============================================================================
 
 class MarketRegimeDetector:
     """
@@ -354,9 +347,7 @@ def _attach_regime(df, detector):
     df["regime_conf"]    = np.clip(confs,      0.0, 1.0)
 
 
-# =============================================================================
 # EPISODE TABLE
-# =============================================================================
 
 def build_episodes(scores_df, weights_df, scores_panel, ref_alpha=0.01,
                    norm_params=None, fit_norm=False, regime_detector=None):
@@ -434,7 +425,7 @@ def build_episodes(scores_df, weights_df, scores_panel, ref_alpha=0.01,
                             .fillna(0.0)) * np.sqrt(12)
     df["recent_active_ret"] = df["active_ret_ref"].rolling(3, min_periods=1).mean().fillna(0.0)
 
-    # ── Regime detection ──────────────────────────────────────────────────────
+    # Regime detection
     if regime_detector is not None:
         regime_ids, regime_confs = regime_detector.predict(df)
     else:
@@ -446,7 +437,7 @@ def build_episodes(scores_df, weights_df, scores_panel, ref_alpha=0.01,
     df["regime_id_norm"] = regime_ids / 2.0          # 0.0 / 0.5 / 1.0
     df["regime_conf"]    = regime_confs
 
-    # ── Normalise BASE_STATE_COLS ──────────────────────────────────────────────
+    # Normalise BASE_STATE_COLS
     if fit_norm:
         norm_params = {}
         for col in BASE_STATE_COLS:
@@ -466,9 +457,7 @@ def build_episodes(scores_df, weights_df, scores_panel, ref_alpha=0.01,
     return df, norm_params
 
 
-# =============================================================================
 # NEURAL NETWORK COMPONENTS  (only defined when PyTorch is available)
-# =============================================================================
 
 LOG_STD_MIN = -10
 LOG_STD_MAX =   2
@@ -531,9 +520,7 @@ def compute_reward(active_ret):
     return float(active_ret) * 12.0
 
 
-# =============================================================================
 # KL divergence helper (Gaussian)
-# =============================================================================
 
 def _gaussian_kl(actor, ref_actor, s):
     """KL( current_policy || ref_policy ) for a Gaussian actor."""
@@ -546,9 +533,7 @@ def _gaussian_kl(actor, ref_actor, s):
     return kl.mean()
 
 
-# =============================================================================
 # SHARED SAMPLING UTILITY
-# =============================================================================
 
 def _sample_group(actor, s, row, n_samples):
     """
@@ -574,9 +559,7 @@ def _group_advantage(rewards):
     return torch.FloatTensor((r_arr - r_arr.mean()) / (r_arr.std() + 1e-8))
 
 
-# =============================================================================
 # DAPO OBJECTIVE (clip-higher, no KL)
-# =============================================================================
 
 def _dapo_loss(actor, s, alphas, log_probs_old_list, rewards):
     """
@@ -607,9 +590,7 @@ def _dapo_loss(actor, s, alphas, log_probs_old_list, rewards):
     return -torch.min(ratio * adv, ratio_clp * adv).mean()
 
 
-# =============================================================================
 # GRPO OBJECTIVE (REINFORCE + KL)
-# =============================================================================
 
 def _grpo_loss(actor, ref_actor, s, log_probs_list, rewards, kl_beta):
     """REINFORCE + KL penalty (conservative update rule)."""
@@ -620,9 +601,7 @@ def _grpo_loss(actor, ref_actor, s, log_probs_list, rewards, kl_beta):
     return pg + kl_beta * kl
 
 
-# =============================================================================
 # HYBRID DAPO AGENT (main contribution)
-# =============================================================================
 
 class HybridDAPOAgent:
     """
@@ -664,7 +643,7 @@ class HybridDAPOAgent:
                 regime  = int(round(float(row.get("regime_id", 0))))
 
                 if regime == REGIME_RISK_ON:
-                    # ── DAPO: clip-higher, dynamic G ─────────────────────────
+                    # DAPO: clip-higher, dynamic G
                     alphas, lps, rewards = _sample_group(self.actor, s, row, DAPO_G_INIT)
                     if len(rewards) >= 2 and len(rewards) < DAPO_G_MAX:
                         if float(np.var(rewards)) > DAPO_VAR_THRESH:
@@ -676,7 +655,7 @@ class HybridDAPOAgent:
                     loss = _dapo_loss(self.actor, s, alphas, lps, rewards)
 
                 else:
-                    # ── GRPO: KL-anchored (tighter β for transition) ──────────
+                    # GRPO: KL-anchored (tighter β for transition)
                     kl_beta = (GRPO_KL_BETA_TRANSITION if regime == REGIME_TRANSITION
                                else GRPO_KL_BETA_STABLE)
                     _, lps, rewards = _sample_group(self.actor, s, row, GRPO_G)
@@ -697,9 +676,7 @@ class HybridDAPOAgent:
         return avg_r
 
 
-# =============================================================================
 # PURE GRPO AGENT  (baseline - always KL-anchored)
-# =============================================================================
 
 class PureGRPOAgent:
     name = "PureGRPO"
@@ -743,9 +720,7 @@ class PureGRPOAgent:
         return avg_r
 
 
-# =============================================================================
 # PURE DAPO AGENT  (baseline - always clip-higher, no KL)
-# =============================================================================
 
 class PureDAPOAgent:
     name = "PureDAPO"
@@ -790,9 +765,7 @@ class PureDAPOAgent:
         return avg_r
 
 
-# =============================================================================
 # RULE-BASED FALLBACK (when PyTorch is unavailable)
-# =============================================================================
 
 class RuleBasedAgent:
     """Regime-adjusted fixed alpha: lower tilt in risk-off, higher in risk-on."""
@@ -810,9 +783,7 @@ class RuleBasedAgent:
         return 0.0
 
 
-# =============================================================================
 # EVALUATION
-# =============================================================================
 
 def evaluate(agent, ep_test):
     """Run agent deterministically on test episodes. Returns (rl_bt, fixed_bt)."""
@@ -858,9 +829,7 @@ def ie_stats(bt):
     )
 
 
-# =============================================================================
 # PLOTTING
-# =============================================================================
 
 COLORS = {
     "HybridDAPO": "#FF6B9D",
@@ -878,7 +847,7 @@ def plot_comparison(all_bt, fold_df, algo_names):
         fontsize=12, fontweight="bold",
     )
 
-    # ── Panel 1: cumulative active return ─────────────────────────────────────
+    # Panel 1: cumulative active return
     ax = axes[0]
     for name, bt in all_bt.items():
         if bt.empty:
@@ -894,7 +863,7 @@ def plot_comparison(all_bt, fold_df, algo_names):
     ax.grid(True, alpha=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
 
-    # ── Panel 2: per-fold IR bars ──────────────────────────────────────────────
+    # Panel 2: per-fold IR bars
     ax   = axes[1]
     lbls = fold_df["label"].tolist()
     x    = np.arange(len(lbls))
@@ -924,9 +893,7 @@ def plot_comparison(all_bt, fold_df, algo_names):
     print(f"Saved -> {out}")
 
 
-# =============================================================================
 # MAIN
-# =============================================================================
 
 def main():
     print("=" * 72)
@@ -938,7 +905,7 @@ def main():
     if not HAS_TORCH:
         print("WARNING: PyTorch not available - using rule-based fallback agents.\n")
 
-    # ── Load data ─────────────────────────────────────────────────────────────
+    # Load data
     print("\nLoading data ...")
     for p in [PANEL_FILE, FACTORS_FILE, WEIGHTS_FILE]:
         if not p.exists():
@@ -977,11 +944,11 @@ def main():
             print("  Skipping - insufficient data.")
             continue
 
-        # ── Factor weights (train only) ───────────────────────────────────────
+        # Factor weights (train only)
         print("  Computing factor weights ...")
         signed_w = compute_fold_weights(panel_train, factor_names, signs)
 
-        # ── Build composite scores ────────────────────────────────────────────
+        # Build composite scores
         print("  Building scores ...")
         sc_train = build_scores(panel_train, factor_names, signed_w)
         sc_test  = build_scores(panel_test,  factor_names, signed_w)
@@ -990,20 +957,20 @@ def main():
         panel_train_cs = panel_train[["date", "fwd_ret_1m"]].copy()
         panel_test_cs  = panel_test[["date", "fwd_ret_1m"]].copy()
 
-        # ── Build episode table for training (regime added in-place after) ───
+        # Build episode table for training (regime added in-place after)
         print("  Building training episodes ...")
         ep_train, norm_p = build_episodes(
             sc_train, weights, panel_train_cs,
             fit_norm=True, regime_detector=None)
 
-        # ── Fit regime detector on training episodes, then attach ─────────────
+        # Fit regime detector on training episodes, then attach
         print("  Fitting regime detector ...")
         regime_det = MarketRegimeDetector()
         if not ep_train.empty:
             regime_det.fit(ep_train)
         _attach_regime(ep_train, regime_det)
 
-        # ── Build test episodes (regime detector applied during build) ────────
+        # Build test episodes (regime detector applied during build)
         print("  Building test episodes ...")
         ep_test, _ = build_episodes(
             sc_test, weights, panel_test_cs,
@@ -1023,7 +990,7 @@ def main():
             dist_str = "  ".join(f"{names_map.get(r, r)}={c}" for r, c in rc.items())
             print(f"  Test regime distribution: {dist_str}")
 
-        # ── Train agents ──────────────────────────────────────────────────────
+        # Train agents
         if HAS_TORCH:
             AgentClasses = [HybridDAPOAgent, PureGRPOAgent, PureDAPOAgent]
         else:
@@ -1066,7 +1033,7 @@ def main():
             if name in fold_bt and not fold_bt[name].empty:
                 all_bt[name].append(fold_bt[name])
 
-    # ── Concatenate folds ─────────────────────────────────────────────────────
+    # Concatenate folds
     all_bt_cat = {}
     for name in algo_names + ["Fixed"]:
         parts = all_bt[name]
@@ -1075,7 +1042,7 @@ def main():
 
     fold_df = pd.DataFrame(fold_rows)
 
-    # ── Summary table ─────────────────────────────────────────────────────────
+    # Summary table
     print("\n" + "=" * 72)
     print("WALK-FORWARD RESULTS SUMMARY")
     print("=" * 72)
@@ -1093,7 +1060,7 @@ def main():
                 beat = f"  beats Fixed: {wins}/5"
             print(f"  {name:<12} avg IR: {avg:+.3f}  [{vals}]{beat}")
 
-    # ── Save outputs ──────────────────────────────────────────────────────────
+    # Save outputs
     if not fold_df.empty:
         out_csv = DATA_DIR / "dapo_comparison.csv"
         fold_df.to_csv(out_csv, index=False)

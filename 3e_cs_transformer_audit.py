@@ -1,6 +1,5 @@
 """
 3e_cs_transformer_audit.py
-===========================
 Audit what the CS-Transformer signal is actually ranking.
 
 Requires (run first):
@@ -23,7 +22,7 @@ import matplotlib.patches as mpatches
 from pathlib import Path
 from scipy import stats
 
-# ── Paths ────────────────────────────────────────────────────────────────────
+# Paths
 ROOT       = Path(__file__).parent
 DATA_DIR   = ROOT / "data"
 FIG_DIR    = ROOT / "figures"
@@ -44,7 +43,7 @@ OUT_LOADINGS_CSV = DATA_DIR / "cs_transformer_loadings.csv"
 OUT_IC_PNG       = FIG_DIR / "cs_transformer_ic_stability.png"
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# Helpers
 
 def spearman_corr(a: np.ndarray, b: np.ndarray) -> float:
     """Cross-sectional Spearman rank correlation; returns NaN on degenerate input."""
@@ -70,7 +69,7 @@ def zscore_cs(s: pd.Series) -> pd.Series:
     return (s - mu) / sd
 
 
-# ── 1. Load score file ───────────────────────────────────────────────────────
+# 1. Load score file
 
 scores_path = None
 for candidate in SCORE_CANDIDATES:
@@ -115,7 +114,7 @@ print(f"  Rows: {len(scores_df):,} | "
       f"Tickers: {scores_df['ticker'].nunique()}")
 
 
-# ── 2. Load panel and factor list ────────────────────────────────────────────
+# 2. Load panel and factor list
 
 print(f"\nLoading panel: {PANEL_FILE.name}")
 panel = pd.read_parquet(PANEL_FILE)
@@ -138,7 +137,7 @@ else:
 print(f"  Regime proxy column: {regime_col or 'None (regime split skipped)'}")
 
 
-# ── 3. Merge scores with panel ───────────────────────────────────────────────
+# 3. Merge scores with panel
 
 print("\nMerging scores with panel…")
 panel_sub = panel[["date", "ticker"] + factors + (["fwd_ret_1m"] if "fwd_ret_1m" in panel.columns else [])
@@ -169,9 +168,7 @@ print(f"  Merged rows: {len(merged):,} | Months: {merged['date'].nunique()}")
 months = sorted(merged["date"].unique())
 
 
-# ════════════════════════════════════════════════════════════════════════════
 # SECTION A - Factor Loadings (cross-sectional Spearman)
-# ════════════════════════════════════════════════════════════════════════════
 
 print("\n--- Section A: Factor Loadings ---")
 
@@ -211,7 +208,7 @@ loading_agg.to_csv(OUT_LOADINGS_CSV, index=False)
 print(f"\nSaved: {OUT_LOADINGS_CSV}")
 
 
-# ── Plot A: Horizontal bar chart ─────────────────────────────────────────────
+# Plot A: Horizontal bar chart
 
 fig_a, ax_a = plt.subplots(figsize=(10, max(6, len(factors) * 0.38)))
 
@@ -243,9 +240,7 @@ plt.close(fig_a)
 print(f"Saved: {OUT_LOADINGS_PNG}")
 
 
-# ════════════════════════════════════════════════════════════════════════════
 # SECTION B - IC Stability Analysis
-# ════════════════════════════════════════════════════════════════════════════
 
 print("\n--- Section B: IC Stability ---")
 
@@ -307,7 +302,7 @@ else:
         for v in regime_results.values():
             print(f"  {v['regime']:<25} {v['n']:>5} {v['ic']:>8.4f} {v['icir']:>8.3f}")
 
-    # ── Plot B ────────────────────────────────────────────────────────────────
+    # Plot B
 
     n_rows = 2 if regime_results else 1
     fig_b, axes = plt.subplots(n_rows, 1,
@@ -373,7 +368,7 @@ else:
     print(f"\nSaved: {OUT_IC_PNG}")
 
 
-# ── Summary ──────────────────────────────────────────────────────────────────
+# Summary
 
 print("\n" + "=" * 65)
 print("CS-TRANSFORMER AUDIT COMPLETE")

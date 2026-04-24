@@ -1,6 +1,5 @@
 """
 3c_cs_transformer.py
-=====================
 Cross-Sectional Transformer for S&P 500 stock ranking.
 
 Architecture (two-stage):
@@ -61,9 +60,7 @@ OUT_BT_LS   = DATA_DIR / "bt_cs_transformer_ls.csv"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # PERFORMANCE HELPERS  (identical to 3a_ft_transformer.py)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def perf_stats(r: pd.Series) -> dict:
     r = r.dropna()
@@ -101,9 +98,7 @@ def long_short_ret(df_month: pd.DataFrame, frac: float) -> float:
     return sub_s.head(k)["fwd_ret_1m"].mean() - sub_s.tail(k)["fwd_ret_1m"].mean()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MODEL
-# ═══════════════════════════════════════════════════════════════════════════════
 
 class FeatureTokenizer(nn.Module):
     """
@@ -287,12 +282,12 @@ class CrossSectionalTransformer(nn.Module):
         self.use_macro_film = use_macro_film and n_macro > 0
         self.use_corr_bias  = use_corr_bias
 
-        # ── Macro FiLM conditioning (modulates feature tokens by macro state) ─
+        # Macro FiLM conditioning (modulates feature tokens by macro state)
         if self.use_macro_film:
             self.macro_encoder = MacroEncoder(n_macro, d_macro, dropout)
             self.macro_film    = MacroFiLMLayer(n_features, d_model, d_macro)
 
-        # ── Stage 1: per-stock feature attention ─────────────────────────────
+        # Stage 1: per-stock feature attention
         self.tokenizer    = FeatureTokenizer(n_features, d_model)
         self.cls_token_s1 = nn.Parameter(torch.zeros(1, 1, d_model))
 
@@ -313,7 +308,7 @@ class CrossSectionalTransformer(nn.Module):
                 s1_layer, num_layers=n_layers_s1, enable_nested_tensor=False
             )
 
-        # ── Stage 2: cross-stock attention ───────────────────────────────────
+        # Stage 2: cross-stock attention
         self.market_cls = nn.Parameter(torch.zeros(1, 1, d_model))
 
         s2_layer = nn.TransformerEncoderLayer(
@@ -325,7 +320,7 @@ class CrossSectionalTransformer(nn.Module):
             s2_layer, num_layers=n_layers_s2, enable_nested_tensor=False
         )
 
-        # ── Score head ────────────────────────────────────────────────────────
+        # Score head
         self.score_head = nn.Sequential(
             nn.LayerNorm(d_model),
             nn.Linear(d_model, 1),
@@ -347,7 +342,7 @@ class CrossSectionalTransformer(nn.Module):
         """
         MAX_N = x.shape[0]
 
-        # ── Stage 1: embed each stock's features independently ────────────────
+        # Stage 1: embed each stock's features independently
         tokens = self.tokenizer(x)                           # (MAX_N, F, d)
 
         # Macro FiLM: modulate feature tokens by macro state
@@ -369,7 +364,7 @@ class CrossSectionalTransformer(nn.Module):
 
         stock_emb = out_s1[:, 0, :]                          # (MAX_N, d) - CLS output
 
-        # ── Stage 2: cross-stock attention ────────────────────────────────────
+        # Stage 2: cross-stock attention
         stock_seq = stock_emb.unsqueeze(0)                   # (1, MAX_N, d)
         mkt_cls   = self.market_cls.expand(1, -1, -1)        # (1, 1, d)
         stock_seq = torch.cat([mkt_cls, stock_seq], dim=1)   # (1, MAX_N+1, d)
@@ -458,9 +453,7 @@ class ScoreNoiseHead(nn.Module):
         return log_std.clamp(self.LOG_STD_MIN, self.LOG_STD_MAX)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # DATA PREPARATION
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def build_monthly_cross_sections(
     panel: pd.DataFrame,
@@ -582,9 +575,7 @@ def masked_loss(
     return masked_mse_loss(pred, target, mask)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TRAINING
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def train_cs_model(
     train_cs:   list,
@@ -627,7 +618,7 @@ def train_cs_model(
     loss_type = p.get("loss_type", "mse")  # "mse" or "ic"
 
     for epoch in range(p["epochs"]):
-        # ── Train ──
+        # Train
         model.train()
         epoch_loss    = 0.0
         epoch_penalty = 0.0
@@ -656,7 +647,7 @@ def train_cs_model(
 
         scheduler.step()
 
-        # ── Validate (always MSE - comparable across configs) ──
+        # Validate (always MSE - comparable across configs)
         model.eval()
         val_losses = []
         with torch.no_grad():
@@ -700,9 +691,7 @@ def train_cs_model(
     return model
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # RL FINE-TUNING (Stage 2: portfolio-level reward)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def portfolio_reward(
     scores: torch.Tensor,   # (n_valid,)
@@ -891,10 +880,10 @@ def grpo_finetune_cs_model(
     print(f"\n  RL Fine-Tuning ({method.upper()}): {rp['epochs']} epochs, "
           f"lr={rp['lr']}, top_k={rp['top_k']}")
 
-    # ── Create noise head ─────────────────────────────────────────────────
+    # Create noise head
     noise_head = ScoreNoiseHead(model.d_model).to(DEVICE)
 
-    # ── Optimizer: optionally freeze backbone ─────────────────────────────
+    # Optimizer: optionally freeze backbone
     if rp.get("freeze_backbone", False):
         for p in model.parameters():
             p.requires_grad_(False)
@@ -912,7 +901,7 @@ def grpo_finetune_cs_model(
 
     optimizer = torch.optim.Adam(opt_params, lr=rp["lr"], weight_decay=1e-5)
 
-    # ── Reference model for GRPO KL penalty ───────────────────────────────
+    # Reference model for GRPO KL penalty
     ref_model = None
     ref_noise_head = None
     if method in ("grpo", "hybrid"):
@@ -923,7 +912,7 @@ def grpo_finetune_cs_model(
         for p in ref_noise_head.parameters():
             p.requires_grad_(False)
 
-    # ── Training loop ─────────────────────────────────────────────────────
+    # Training loop
     best_val_ic    = -float("inf")
     patience_count = 0
     best_state     = None
@@ -952,7 +941,7 @@ def grpo_finetune_cs_model(
             n_valid = cs["n_valid"]
             returns = y[:n_valid]
 
-            # ── Determine G and method for this month ─────────────────────
+            # Determine G and method for this month
             use_method = method
             G = G_init
 
@@ -978,10 +967,10 @@ def grpo_finetune_cs_model(
 
             epoch_rewards.extend(rewards)
 
-            # ── Group-relative advantage ──────────────────────────────────
+            # Group-relative advantage
             adv = _group_advantage(rewards).to(DEVICE)
 
-            # ── Re-derive log-probs under current policy (for ratio) ──────
+            # Re-derive log-probs under current policy (for ratio)
             scores_now, enriched_now = model.forward_enriched(
                 X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
             mu_now    = scores_now[:n_valid]
@@ -1003,7 +992,7 @@ def grpo_finetune_cs_model(
             lp_old_t = torch.stack(log_probs_old).to(DEVICE)  # (G,)
             ratio = (lp_new_t - lp_old_t).exp()
 
-            # ── Clipped policy gradient ───────────────────────────────────
+            # Clipped policy gradient
             if use_method == "dapo":
                 # Asymmetric clipping (5e_dapo_agent.py pattern)
                 pos_mask  = adv > 0
@@ -1018,7 +1007,7 @@ def grpo_finetune_cs_model(
                 ratio_clp = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps)
                 pg_loss = -torch.min(ratio * adv, ratio_clp * adv).mean()
 
-            # ── KL penalty (GRPO only) ────────────────────────────────────
+            # KL penalty (GRPO only)
             kl_loss = torch.tensor(0.0, device=DEVICE)
             if use_method in ("grpo", "hybrid") and ref_model is not None:
                 kl_loss = kl_beta * _gaussian_kl(
@@ -1026,7 +1015,7 @@ def grpo_finetune_cs_model(
                     x_macro=x_macro, corr_matrix=corr_matrix,
                 )
 
-            # ── Feature penalty (keep sparsity pressure during RL) ────────
+            # Feature penalty (keep sparsity pressure during RL)
             feat_penalty = model.tokenizer.feature_penalty(
                 l1_lambda=TRANSFORMER_CS_PARAMS.get("l1_lambda", 1e-4),
                 l2_lambda=TRANSFORMER_CS_PARAMS.get("l2_lambda", 1e-4),
@@ -1039,7 +1028,7 @@ def grpo_finetune_cs_model(
             nn.utils.clip_grad_norm_(opt_params, 0.5)
             optimizer.step()
 
-        # ── Validate: Rank IC on validation months (no return leakage) ────
+        # Validate: Rank IC on validation months (no return leakage)
         val_ic = _compute_val_rank_ic(model, valid_cs, n_macro=n_macro,
                                        corr_matrix=corr_matrix)
 
@@ -1098,9 +1087,7 @@ def predict_cs(
     return scores[:cs["n_valid"]]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # SEED ENSEMBLE
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def train_ensemble(
     train_cs: list,
@@ -1160,9 +1147,7 @@ def predict_cs_ensemble(
     return np.mean(np.stack(scored), axis=0)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     print(f"Device: {DEVICE}")
@@ -1172,7 +1157,7 @@ def main():
     panel["date"] = pd.to_datetime(panel["date"])
     panel = panel[panel["date"] >= START_DATE].reset_index(drop=True)
 
-    # ── Zombie-ticker filter: keep only point-in-time S&P 500 constituents ───
+    # Zombie-ticker filter: keep only point-in-time S&P 500 constituents
     spx_weights_path = DATA_DIR / "spx_weights.parquet"
     if spx_weights_path.exists():
         spx_w = pd.read_parquet(spx_weights_path)
@@ -1187,7 +1172,7 @@ def main():
     else:
         print(f"[WARN] {spx_weights_path} not found - skipping zombie filter")
 
-    # ── Separate stock vs macro features ─────────────────────────────────────
+    # Separate stock vs macro features
     exclude   = {"date", "ticker", "fwd_ret_1m"}
     all_feat_cols = [c for c in panel.columns if c not in exclude]
     macro_cols = [c for c in MACRO_COLS if c in panel.columns]
@@ -1200,7 +1185,7 @@ def main():
 
     p = TRANSFORMER_CS_PARAMS
 
-    # ── Time splits ───────────────────────────────────────────────────────────
+    # Time splits
     months       = sorted(panel["date"].unique())
     train_end    = pd.Timestamp(TRAIN_END)
     valid_end    = pd.Timestamp(VALID_END)
@@ -1212,7 +1197,7 @@ def main():
     print(f"Valid: {valid_months[0].date()} → {valid_months[-1].date()} ({len(valid_months)} months)")
     print(f"Test:  {test_months[0].date()} → {test_months[-1].date()} ({len(test_months)} months)")
 
-    # ── Build all monthly cross-sections once ─────────────────────────────────
+    # Build all monthly cross-sections once
     print("\nBuilding monthly cross-sections...")
     all_cs = build_monthly_cross_sections(
         panel, stock_feat_cols, max_stocks=p["max_stocks"], macro_cols=macro_cols,
@@ -1227,7 +1212,7 @@ def main():
     if n_macro > 0:
         print(f"  Macro FiLM: {n_macro} macro features → per-feature modulation")
 
-    # ── Correlation matrix (computed from IS training data only) ──────────────
+    # Correlation matrix (computed from IS training data only)
     corr_matrix = None
     if p.get("use_corr_bias", False):
         train_panel = panel[panel["date"] <= train_end]
@@ -1235,7 +1220,7 @@ def main():
         corr_matrix = torch.FloatTensor(corr_np).to(DEVICE)
         print(f"  Correlation bias: {corr_matrix.shape[0]}x{corr_matrix.shape[1]} Spearman matrix")
 
-    # ── Stages 1 + 2: train (optionally as a seed ensemble) ─────────────────
+    # Stages 1 + 2: train (optionally as a seed ensemble)
     n_seeds = p.get("ensemble_seeds", 1)
     rl_method = RL_FINETUNE_PARAMS["method"]
     loss_type = p.get("loss_type", "mse")
@@ -1252,7 +1237,7 @@ def main():
     )
     model = models[0] if len(models) == 1 else None  # kept for RL retrain compat below
 
-    # ── Walk-forward prediction ───────────────────────────────────────────────
+    # Walk-forward prediction
     all_scores = []
 
     for i, m in enumerate(test_months):
@@ -1300,7 +1285,7 @@ def main():
     scores_df.to_parquet(OUT_SCORES, index=False)
     print(f"\nSaved scores: {OUT_SCORES} | rows={len(scores_df):,}")
 
-    # ── Backtests ─────────────────────────────────────────────────────────────
+    # Backtests
     lo_rets = scores_df.groupby("date").apply(long_only_ret, top_n=TOP_N).rename("port_ret")
     lo_rets = lo_rets.dropna().reset_index()
     lo_rets.to_csv(OUT_BT_LO, index=False)
@@ -1309,14 +1294,14 @@ def main():
     ls_rets = ls_rets.dropna().reset_index()
     ls_rets.to_csv(OUT_BT_LS, index=False)
 
-    # ── Print results ─────────────────────────────────────────────────────────
+    # Print results
     print("\n" + "=" * 65)
     print("CROSS-SECTIONAL TRANSFORMER - TEST PERIOD RESULTS")
     print("=" * 65)
     print_stats(f"Long-Only Top{TOP_N} (equal weight)", lo_rets["port_ret"])
     print_stats(f"Long-Short top/bot {int(LONG_FRAC*100)}%",  ls_rets["ls_ret"])
 
-    # ── Compare to FT-Transformer if available ────────────────────────────────
+    # Compare to FT-Transformer if available
     ft_path = DATA_DIR / "scores_transformer.parquet"
     if ft_path.exists():
         ft_sc = pd.read_parquet(ft_path)

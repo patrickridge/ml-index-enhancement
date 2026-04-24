@@ -1,6 +1,5 @@
 """
 4e_stock_pitch_backtest.py - InvestSoc Fundamental Stock Pitch Backtest
-=========================================================================
 Backtest of the 6 fundamental analyst picks:
   Mercado Libre (MELI), CME Group (CME), Salesforce (CRM),
   Delta Airlines (DAL), Maersk (AMKBY), Edwards Lifesciences (EW)
@@ -30,7 +29,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-# ── Paths / config ───────────────────────────────────────────────────────────
+# Paths / config
 DATA_DIR  = Path("data")
 FIG_DIR   = Path("figures"); FIG_DIR.mkdir(exist_ok=True)
 
@@ -60,9 +59,7 @@ print(f"Window: {START.date()} → {END.date()} (validation period)")
 print(f"Picks: {list(PICKS_IN_PANEL) + list(YFINANCE_PICKS)}")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # PERFORMANCE STATS (mirrors 4d_benchmark_spx.py & 4b_index_enhancement.py)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def perf_stats(r: pd.Series) -> dict:
     r = r.dropna()
@@ -95,9 +92,7 @@ def ie_stats(port: pd.Series, bench: pd.Series) -> dict:
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # STEP 1 - Monthly returns for the 6 picks
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def month_end_returns_from_prices(prices: pd.DataFrame, ticker: str) -> pd.Series:
     """Daily close → month-end close → monthly return."""
@@ -183,9 +178,7 @@ def build_monthly_returns() -> pd.DataFrame:
     return rets
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # STEP 2 - Build the 1%-tilt over SPX portfolio
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def build_tilt_returns(picks_rets: pd.DataFrame) -> pd.DataFrame:
     """
@@ -230,7 +223,7 @@ def build_tilt_returns(picks_rets: pd.DataFrame) -> pd.DataFrame:
         # Benchmark = pure SPX cap-weighted return
         bench_ret = float((wr["w"] * wr["fwd_ret_1m"]).sum())
 
-        # ── Build tilted portfolio ─────────────────────────────────────────
+        # Build tilted portfolio
         wr_tilt = wr.copy()
 
         # Apply +1pp tilt to in-SPX picks
@@ -312,9 +305,7 @@ def build_tilt_returns(picks_rets: pd.DataFrame) -> pd.DataFrame:
     return bt[["port_ret", "bench_ret", "active_ret"]]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # STEP 3 - ML opinion on these 6 stocks
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def ml_rank_percentile() -> float:
     """Average cross-sectional rank percentile of the 4 in-panel picks."""
@@ -332,9 +323,7 @@ def ml_rank_percentile() -> float:
     return float(picks_ranks["rank_pct"].mean())
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     # Step 1: monthly returns for the 6 picks
@@ -371,7 +360,7 @@ def main():
 
     avg_ml_rank = ml_rank_percentile()
 
-    # ── Print results ─────────────────────────────────────────────────────
+    # Print results
     print("\n" + "=" * 70)
     print("RESULTS - Validation Window 2023-01 → 2024-06")
     print("=" * 70)
@@ -404,7 +393,7 @@ def main():
           f"(CME/CRM/DAL/EW): {avg_ml_rank*100:.1f}%")
     print(f"  (>50% = model liked them, <50% = model was bearish)")
 
-    # ── Chart ─────────────────────────────────────────────────────────────
+    # Chart
     fig, ax = plt.subplots(figsize=(10, 6))
     nav_pitch = (1 + port_pitch).cumprod()
     nav_spx   = (1 + bench_spx).cumprod()

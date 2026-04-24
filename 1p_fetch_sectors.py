@@ -1,6 +1,5 @@
 """
 1p_fetch_sectors.py - Fetch GICS sector mapping for all tickers
-==================================================================
 One-off script to build a ticker → GICS sector mapping by calling
 yfinance `.info` for each ticker. Caches to data/sectors.parquet.
 
@@ -37,7 +36,7 @@ ticker_map = {t: t.split(".")[0] for t in raw_tickers}
 unique_bases = sorted(set(ticker_map.values()))
 print(f"Loaded {len(raw_tickers)} panel tickers ({len(unique_bases)} unique bases)")
 
-# ── Resume from existing cache if present ────────────────────────────────────
+# Resume from existing cache if present
 if OUT_PATH.exists():
     existing = pd.read_parquet(OUT_PATH)
     done_bases = set(existing["base_ticker"].unique())

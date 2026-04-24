@@ -85,9 +85,7 @@ OUT_PATH  = DATA_DIR / "panel_monthly_enriched.parquet"
 _SKIP_PREFIXES = ("_", "ret_d", "spx_ret", "ret_neg", "ret_pos")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def rank_norm(s: pd.Series) -> pd.Series:
     """Cross-sectional rank normalised to [-0.5, 0.5]. NaN stays NaN."""
@@ -113,9 +111,7 @@ def ts_zscore(series: pd.Series, window: int = 36) -> pd.Series:
     return (series - mu) / (sig + 1e-9)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # SPX DATA FETCH
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def fetch_spx_daily(start_date: str, end_date: str) -> pd.DataFrame:
     """Fetch SPX daily close and returns via yfinance."""
@@ -168,9 +164,7 @@ def compute_spx_monthly_stats(spx_daily: pd.DataFrame,
     return pd.DataFrame(rows).set_index("date")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # DAILY FEATURE PIPELINE  (Cats 1-7)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def build_daily_features(prices: pd.DataFrame,
                           spx_daily: pd.DataFrame) -> pd.DataFrame:
@@ -239,9 +233,7 @@ def build_daily_features(prices: pd.DataFrame,
     return prices
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # SAMPLE DAILY FEATURES AT MONTH-END
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def sample_at_month_end(daily: pd.DataFrame,
                          panel_dates: pd.DataFrame) -> pd.DataFrame:
@@ -276,9 +268,7 @@ def sample_at_month_end(daily: pd.DataFrame,
     return result
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MOMENTUM EXTENSIONS FROM MONTHLY PANEL (carried over from v1)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_momentum_extensions(panel: pd.DataFrame) -> pd.DataFrame:
     """Build mom_2_12, mom_accel, ir_12m, ir_3m, rev_signal from monthly ret_Xm."""
@@ -295,9 +285,7 @@ def add_momentum_extensions(panel: pd.DataFrame) -> pd.DataFrame:
     return panel
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     print("=" * 65)

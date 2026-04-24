@@ -1,6 +1,5 @@
 """
 5a_rl_factor_agent.py - Layer 1 SAC: Adaptive Factor Weighting
-===============================================================
 Replaces fixed IC-optimised factor weights with a dynamic RL policy that
 adapts which factors to trust each month based on recent IC history and
 market regime.
@@ -36,7 +35,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from scipy.stats import pearsonr
 
-# ── PyTorch ────────────────────────────────────────────────────────────────────
+# PyTorch
 try:
     import torch
     import torch.nn as nn
@@ -48,12 +47,12 @@ except ImportError:
     HAS_TORCH = False
     print("Warning: PyTorch not found - will use numpy fallback.")
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR    = Path("data")
 FIGURES_DIR = Path("figures")
 FIGURES_DIR.mkdir(exist_ok=True)
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# Config
 TRAIN_START  = "2010-01-01"
 TRAIN_END    = "2020-12-31"
 VAL_END      = "2022-12-31"
@@ -85,9 +84,7 @@ if HAS_TORCH:
     torch.manual_seed(SEED)
 np.random.seed(SEED)
 
-# =============================================================================
 # DATA LOADING
-# =============================================================================
 
 def load_data():
     panel   = pd.read_parquet(DATA_DIR / "panel_monthly_enriched.parquet")
@@ -151,9 +148,7 @@ def compute_combined_ic(panel, weights_vec, factor_names, signs, months):
     return result
 
 
-# =============================================================================
 # EPISODE / STATE BUILDER
-# =============================================================================
 
 def build_state_matrix(ic_df, macro_df, short=IC_LOOKBACK_SHORT, long=IC_LOOKBACK_LONG):
     """
@@ -187,9 +182,7 @@ def build_state_matrix(ic_df, macro_df, short=IC_LOOKBACK_SHORT, long=IC_LOOKBAC
     return records
 
 
-# =============================================================================
 # PYTORCH SAC COMPONENTS
-# =============================================================================
 
 if HAS_TORCH:
     def mlp(in_dim, out_dim, hidden):
@@ -314,7 +307,7 @@ if HAS_TORCH:
             NS = torch.FloatTensor(NS)
             D  = torch.FloatTensor(D)
 
-            # ── Critic update ──────────────────────────────────────────────
+            # Critic update
             with torch.no_grad():
                 na, lp, _ = self.actor.sample(NS)
                 q1_t, q2_t = self.critic_target(NS, na)
@@ -329,7 +322,7 @@ if HAS_TORCH:
             critic_loss.backward()
             self.critic_opt.step()
 
-            # ── Actor update ───────────────────────────────────────────────
+            # Actor update
             wa, lpa, _ = self.actor.sample(S)
             q1_a, q2_a = self.critic(S, wa)
             actor_loss  = (self.alpha * lpa - torch.min(q1_a, q2_a)).mean()
@@ -338,20 +331,18 @@ if HAS_TORCH:
             actor_loss.backward()
             self.actor_opt.step()
 
-            # ── Temperature update ─────────────────────────────────────────
+            # Temperature update
             alpha_loss = -(self.log_alpha * (lpa + self.target_ent).detach()).mean()
             self.alpha_opt.zero_grad()
             alpha_loss.backward()
             self.alpha_opt.step()
 
-            # ── Soft target update ─────────────────────────────────────────
+            # Soft target update
             for p, pt in zip(self.critic.parameters(), self.critic_target.parameters()):
                 pt.data.copy_(TAU * p.data + (1 - TAU) * pt.data)
 
 
-# =============================================================================
 # TRAINING
-# =============================================================================
 
 def precompute_month_data(panel, factor_names, signs_vec, months):
     """
@@ -439,9 +430,7 @@ def train_agent(agent, state_records, panel, factor_names, signs_vec, train_mont
     return reward_hist
 
 
-# =============================================================================
 # EVALUATION
-# =============================================================================
 
 def evaluate(agent, state_records, panel, factor_names, signs_vec,
              static_weights_dict, eval_months):
@@ -482,9 +471,7 @@ def print_results(ic_df, label):
         print(f"  {col:<25}  {mean:>8.4f}  {icir:>7.3f}  {hit:>5.1f}%{flag}")
 
 
-# =============================================================================
 # FIGURES
-# =============================================================================
 
 def plot_results(ic_train, ic_val, ic_test, reward_hist, rl_weights_over_time, factor_names):
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -550,9 +537,7 @@ def plot_results(ic_train, ic_val, ic_test, reward_hist, rl_weights_over_time, f
     print(f"\nSaved → {out}")
 
 
-# =============================================================================
 # NUMPY FALLBACK
-# =============================================================================
 
 def numpy_baseline(state_records, panel, factor_names, signs_vec,
                    static_weights_dict, ic_df, train_months, eval_months):
@@ -574,16 +559,14 @@ def numpy_baseline(state_records, panel, factor_names, signs_vec,
     return FakeAgent(rl_w), []
 
 
-# =============================================================================
 # MAIN
-# =============================================================================
 
 def main():
     print("=" * 65)
     print("5a_rl_factor_agent.py - Layer 1 SAC: Adaptive Factor Weighting")
     print("=" * 65)
 
-    # ── Load data ─────────────────────────────────────────────────────────────
+    # Load data
     print("\nLoading data ...")
     panel, factors_df = load_data()
     factor_names = factors_df["factor"].tolist()
@@ -605,18 +588,18 @@ def main():
     print(f"  Panel:   {panel['date'].min().date()} → {panel['date'].max().date()}")
     print(f"  Factors: {N_FACTORS}")
 
-    # ── IC matrix ─────────────────────────────────────────────────────────────
+    # IC matrix
     panel_scoped = panel[panel["date"] >= TRAIN_START].copy()
     ic_df        = compute_ic_matrix(panel_scoped, factor_names, signs)
 
-    # ── Macro state ───────────────────────────────────────────────────────────
+    # Macro state
     macro_df = panel.groupby("date")[MACRO_COLS].first().sort_index()
     # Normalise macro (rolling z-score)
     macro_df = macro_df.apply(lambda s: (s - s.rolling(36, min_periods=6).mean()) /
                                          (s.rolling(36, min_periods=6).std() + 1e-8))
     macro_df = macro_df.fillna(0.0)
 
-    # ── State vectors ─────────────────────────────────────────────────────────
+    # State vectors
     print("  Building state vectors ...")
     state_records = build_state_matrix(ic_df, macro_df)
 
@@ -628,7 +611,7 @@ def main():
     print(f"  Train: {len(train_months)} months  |  Val: {len(val_months)} months  |  Test: {len(test_months)} months")
     print(f"  State dim: {STATE_DIM}  (43×IC_short + 43×IC_long + 43×IC_mom + {len(MACRO_COLS)}×macro)")
 
-    # ── Train agent ───────────────────────────────────────────────────────────
+    # Train agent
     print(f"\n{'-'*65}")
     print("Training SAC agent ...")
 
@@ -643,7 +626,7 @@ def main():
             static_weights, ic_df, train_months, test_months
         )
 
-    # ── Evaluate ──────────────────────────────────────────────────────────────
+    # Evaluate
     print(f"\n{'-'*65}")
     print("Evaluating ...")
 
@@ -658,7 +641,7 @@ def main():
     print_results(ic_val,   "VALIDATION PERIOD (2021–2022)")
     print_results(ic_test,  "TEST PERIOD (2023+)")
 
-    # ── RL weight dynamics ────────────────────────────────────────────────────
+    # RL weight dynamics
     state_map = {r["date"]: r["state"] for r in state_records}
     rl_weights_over_time = []
     for dt in test_months:
@@ -680,7 +663,7 @@ def main():
         for idx in bot_idx:
             print(f"    {factor_names[idx]:<30}  {rl_w_mean[idx]:.4f} ± {rl_w_std[idx]:.4f}")
 
-    # ── Compare val IC improvement ─────────────────────────────────────────────
+    # Compare val IC improvement
     print(f"\n{'='*65}")
     print("SUMMARY - Mean IC by period")
     print(f"{'='*65}")
@@ -694,7 +677,7 @@ def main():
         print(f"  {col:<25}  {tr:>8.4f}  {va:>8.4f}  {te:>8.4f}{flag}")
     print(f"{'='*65}")
 
-    # ── Save outputs ──────────────────────────────────────────────────────────
+    # Save outputs
     ic_test.to_csv(DATA_DIR / "rl_factor_ic_test.csv")
     print(f"\nSaved → data/rl_factor_ic_test.csv")
 
@@ -707,7 +690,7 @@ def main():
     ic_full.to_csv(DATA_DIR / "l1_rl_ic_full.csv")
     print(f"Saved → data/l1_rl_ic_full.csv  ({len(ic_full)} months, train+val+test combined)")
 
-    # ── Plot ──────────────────────────────────────────────────────────────────
+    # Plot
     plot_results(ic_train, ic_val, ic_test, reward_hist,
                  rl_weights_over_time, factor_names)
 

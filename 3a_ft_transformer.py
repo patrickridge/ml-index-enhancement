@@ -1,6 +1,5 @@
 """
 3a_ft_transformer.py
-=================
 Feature Tokenizer + Transformer (FT-Transformer) stock-ranking model.
 
 Architecture:
@@ -52,7 +51,7 @@ OUT_BT_LS     = DATA_DIR / "bt_transformer_ls.csv"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-# ── Performance helpers ────────────────────────────────────────────────────────
+# Performance helpers
 def perf_stats(r: pd.Series) -> dict:
     r = r.dropna()
     if len(r) < 6:
@@ -89,7 +88,7 @@ def long_short_ret(df_month: pd.DataFrame, frac: float) -> float:
     return sub_s.head(k)["fwd_ret_1m"].mean() - sub_s.tail(k)["fwd_ret_1m"].mean()
 
 
-# ── FT-Transformer model ───────────────────────────────────────────────────────
+# FT-Transformer model
 class FeatureTokenizer(nn.Module):
     """
     Each scalar feature → d_model-dim embedding.
@@ -152,7 +151,7 @@ class FTTransformer(nn.Module):
         return self.head(cls_out).squeeze(-1)              # (batch,)
 
 
-# ── Training ───────────────────────────────────────────────────────────────────
+# Training
 def make_tensors(df: pd.DataFrame, feat_cols: list):
     X = torch.tensor(df[feat_cols].fillna(0).values, dtype=torch.float32)
     y = torch.tensor(df["fwd_ret_1m"].values, dtype=torch.float32)
@@ -189,7 +188,7 @@ def train_model(
     best_state = None
 
     for epoch in range(p["epochs"]):
-        # ── train ──
+        # train
         model.train()
         for xb, yb in loader:
             xb, yb = xb.to(DEVICE), yb.to(DEVICE)
@@ -200,7 +199,7 @@ def train_model(
             optimiser.step()
         scheduler.step()
 
-        # ── validate ──
+        # validate
         model.eval()
         with torch.no_grad():
             val_pred = model(X_va.to(DEVICE))
@@ -234,7 +233,7 @@ def predict(model: FTTransformer, X: torch.Tensor, batch_size: int = 2048) -> np
     return np.concatenate(preds)
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# Main
 def main():
     print(f"Device: {DEVICE}")
     print("Loading enriched panel...")
@@ -249,7 +248,7 @@ def main():
 
     print(f"Features: {n_features} | Rows: {len(panel):,} | Tickers: {panel['ticker'].nunique()}")
 
-    # ── Time splits ───────────────────────────────────────────────────────────
+    # Time splits
     months = sorted(panel["date"].unique())
     train_end  = pd.Timestamp(TRAIN_END)
     valid_end  = pd.Timestamp(VALID_END)
@@ -268,11 +267,11 @@ def main():
     X_tr, y_tr = make_tensors(tr, feat_cols)
     X_va, y_va = make_tensors(va, feat_cols)
 
-    # ── Initial fit ───────────────────────────────────────────────────────────
+    # Initial fit
     print("\nFitting initial FT-Transformer...")
     model = train_model(X_tr, y_tr, X_va, y_va, n_features)
 
-    # ── Walk-forward prediction ───────────────────────────────────────────────
+    # Walk-forward prediction
     all_scores = []
 
     for i, m in enumerate(test_months):
@@ -302,7 +301,7 @@ def main():
     scores.to_parquet(OUT_SCORES, index=False)
     print(f"\nSaved scores: {OUT_SCORES} | rows={len(scores):,}")
 
-    # ── Backtests ─────────────────────────────────────────────────────────────
+    # Backtests
     lo_rets = scores.groupby("date").apply(long_only_ret, top_n=TOP_N).rename("port_ret")
     lo_rets = lo_rets.dropna().reset_index()
     lo_rets.to_csv(OUT_BT_LO, index=False)
@@ -311,14 +310,14 @@ def main():
     ls_rets = ls_rets.dropna().reset_index()
     ls_rets.to_csv(OUT_BT_LS, index=False)
 
-    # ── Results ───────────────────────────────────────────────────────────────
+    # Results
     print("\n" + "=" * 65)
     print("FT-TRANSFORMER  (test period results)")
     print("=" * 65)
     print_stats(f"Long-Only Top{TOP_N} (equal weight)", lo_rets["port_ret"])
     print_stats(f"Long-Short top/bot {int(LONG_FRAC*100)}%", ls_rets["ls_ret"])
 
-    # ── Side-by-side vs LightGBM ──────────────────────────────────────────────
+    # Side-by-side vs LightGBM
     try:
         lgbm_scores = pd.read_parquet(LGBM_SCORES)
         lgbm_lo = lgbm_scores.groupby("date").apply(long_only_ret, top_n=TOP_N).dropna()

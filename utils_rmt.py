@@ -1,6 +1,5 @@
 """
 utils_rmt.py
-============
 Random Matrix Theory (RMT) covariance / correlation matrix denoising.
 
 Core function: rmt_denoise(matrix, q, return_as_corr)
@@ -97,24 +96,24 @@ def rmt_denoise(
     # Symmetrize for numerical stability
     matrix = 0.5 * (matrix + matrix.T)
 
-    # ── Step 1: extract std devs and convert to correlation ───────────────────
+    # Step 1: extract std devs and convert to correlation
     diag_var = np.diag(matrix)
     std_devs = np.sqrt(np.maximum(diag_var, 1e-14))
     D_inv = np.diag(1.0 / std_devs)
     corr = D_inv @ matrix @ D_inv
     np.fill_diagonal(corr, 1.0)   # enforce exact diagonal
 
-    # ── Step 2: eigendecompose ────────────────────────────────────────────────
+    # Step 2: eigendecompose
     # np.linalg.eigh returns eigenvalues in ascending order; flip to descending
     eigenvalues_asc, eigenvectors_asc = np.linalg.eigh(corr)
     idx = np.argsort(eigenvalues_asc)[::-1]
     eigenvalues  = eigenvalues_asc[idx]
     eigenvectors = eigenvectors_asc[:, idx]
 
-    # ── Step 3: MP upper bound (σ²=1 for correlation matrix) ─────────────────
+    # Step 3: MP upper bound (σ²=1 for correlation matrix)
     lambda_plus = marchenko_pastur_upper(q, sigma_sq=1.0)
 
-    # ── Step 4: identify noise vs signal ──────────────────────────────────────
+    # Step 4: identify noise vs signal
     noise_mask  = eigenvalues < lambda_plus
     signal_mask = ~noise_mask
 
@@ -127,15 +126,15 @@ def rmt_denoise(
                     noise_mean=float("nan"), signal_ratio=1.0)
         return (corr.copy() if return_as_corr else matrix.copy()), info
 
-    # ── Step 5: replace noise eigenvalues with their mean ────────────────────
+    # Step 5: replace noise eigenvalues with their mean
     noise_mean = float(eigenvalues[noise_mask].mean())
     eigenvalues_clean = eigenvalues.copy()
     eigenvalues_clean[noise_mask] = noise_mean
 
-    # ── Step 6: reconstruct cleaned correlation matrix ────────────────────────
+    # Step 6: reconstruct cleaned correlation matrix
     corr_clean = eigenvectors @ np.diag(eigenvalues_clean) @ eigenvectors.T
 
-    # ── Step 7: re-normalise diagonal to 1.0 ─────────────────────────────────
+    # Step 7: re-normalise diagonal to 1.0
     d = np.sqrt(np.maximum(np.diag(corr_clean), 1e-14))
     D_renorm = np.diag(1.0 / d)
     corr_clean = D_renorm @ corr_clean @ D_renorm
@@ -156,7 +155,7 @@ def rmt_denoise(
     if return_as_corr:
         return corr_clean, info
 
-    # ── Step 8: convert back to covariance ────────────────────────────────────
+    # Step 8: convert back to covariance
     D_std = np.diag(std_devs)
     cov_clean = D_std @ corr_clean @ D_std
     return cov_clean, info

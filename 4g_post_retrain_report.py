@@ -1,6 +1,5 @@
 """
 4g_post_retrain_report.py - Post-retrain one-shot report
-==========================================================
 Run this after dropping fresh Kaggle scores into data/scores_cs_transformer.parquet.
 
 What it does:
@@ -31,7 +30,7 @@ STRATEGIES = [
     "cs_plus_fund", "cs_plus_macro", "cs_plus_both",
 ]
 
-# ── Archive the previous ensemble backtest files before overwriting ──────────
+# Archive the previous ensemble backtest files before overwriting
 print("=" * 70)
 print("POST-RETRAIN REPORT - CS-Transformer Ensemble")
 print("=" * 70)
@@ -52,7 +51,7 @@ else:
     print("  No previous backtests found - report will show 'after' only.\n")
 
 
-# ── Re-run 4f with the new scores ────────────────────────────────────────────
+# Re-run 4f with the new scores
 print("Running 4f_agent_ensemble_backtest.py ...\n")
 result = subprocess.run(
     ["python", "4f_agent_ensemble_backtest.py"],
@@ -70,7 +69,7 @@ for line in result.stdout.splitlines():
         print(line)
 
 
-# ── Load new backtest results ────────────────────────────────────────────────
+# Load new backtest results
 after = {}
 for s in STRATEGIES:
     new = DATA_DIR / f"bt_ie_ensemble_{s}.csv"
@@ -92,7 +91,7 @@ def stats(bt, months=None):
     return {"months": n, "alpha": ann_alpha, "ir": ir, "hit": hit}
 
 
-# ── Side-by-side diff ────────────────────────────────────────────────────────
+# Side-by-side diff
 if before:
     print("\n" + "=" * 78)
     print("BEFORE vs AFTER - retrain impact per strategy")
@@ -127,7 +126,7 @@ else:
     print("\n(No 'before' data - skipped diff.)")
 
 
-# ── Quick sanity: does the chart file exist? ─────────────────────────────────
+# Quick sanity: does the chart file exist?
 chart = Path("figures/agent_ensemble.png")
 if chart.exists():
     print(f"\n  Chart refreshed: {chart}")

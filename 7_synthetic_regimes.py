@@ -33,7 +33,7 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-# ── Paths ───────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR    = Path("data")
 FIGURES_DIR = Path("figures")
 FIGURES_DIR.mkdir(exist_ok=True)
@@ -55,9 +55,7 @@ if TORCH_AVAILABLE:
     torch.manual_seed(RANDOM_SEED)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # 1.  Load macro features
-# ══════════════════════════════════════════════════════════════════════════════
 
 def load_macro_features() -> pd.DataFrame:
     """Extract one macro row per month from the enriched panel."""
@@ -83,9 +81,7 @@ def load_macro_features() -> pd.DataFrame:
     return macro
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # 2.  DDPM components
-# ══════════════════════════════════════════════════════════════════════════════
 
 def linear_schedule(T: int, beta_start: float = 1e-4, beta_end: float = 0.02):
     betas     = torch.linspace(beta_start, beta_end, T)
@@ -129,9 +125,7 @@ class Denoiser(nn.Module):
         return self.net(torch.cat([x_t, t_emb, r_emb], dim=1))
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # 3.  Training
-# ══════════════════════════════════════════════════════════════════════════════
 
 def train_ddpm(X_norm: np.ndarray, regimes: np.ndarray,
                T: int = T_STEPS, n_epochs: int = N_EPOCHS,
@@ -170,9 +164,7 @@ def train_ddpm(X_norm: np.ndarray, regimes: np.ndarray,
     return model, betas, alphas, alpha_bar
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # 4.  Sampling
-# ══════════════════════════════════════════════════════════════════════════════
 
 @torch.no_grad()
 def sample_regime(model: nn.Module, betas: torch.Tensor, alphas: torch.Tensor,
@@ -209,9 +201,7 @@ def sample_regime(model: nn.Module, betas: torch.Tensor, alphas: torch.Tensor,
     return x.numpy()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # 5.  Linear bridge: synthetic features → active returns
-# ══════════════════════════════════════════════════════════════════════════════
 
 def fit_linear_bridge(macro: pd.DataFrame) -> tuple:
     """
@@ -261,9 +251,7 @@ def synthetic_to_active_returns(X_synth_norm: np.ndarray, X_mean: np.ndarray,
     return y_hat + noise
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # 6.  Stress test statistics
-# ══════════════════════════════════════════════════════════════════════════════
 
 def stress_ir(active_returns: np.ndarray, n_boot: int = 5000) -> dict:
     """Compute IR statistics from a vector of monthly active returns."""
@@ -292,9 +280,7 @@ def stress_ir(active_returns: np.ndarray, n_boot: int = 5000) -> dict:
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # 7.  Plotting
-# ══════════════════════════════════════════════════════════════════════════════
 
 ACADEMIC_STYLE = {
     "axes.spines.top":    False,
@@ -322,7 +308,7 @@ def make_figure(macro: pd.DataFrame, X_norm: np.ndarray,
         bear_mask = macro["regime"] == 1
         bull_mask = macro["regime"] == 0
 
-        # ── Row 1: Feature distributions (real bear vs bull vs synthetic bear)
+        # Row 1: Feature distributions (real bear vs bull vs synthetic bear)
         for col_idx, (feat_norm, feat_label) in enumerate(
                 zip(MACRO_COLS, feature_labels)):
             ax = fig.add_subplot(gs[0, col_idx])
@@ -346,7 +332,7 @@ def make_figure(macro: pd.DataFrame, X_norm: np.ndarray,
         fig.text(0.02, 0.94, "A.  Feature Distributions: Real vs Synthetic",
                  fontsize=10, fontweight="bold", va="top")
 
-        # ── Row 2: Synthetic active return distribution
+        # Row 2: Synthetic active return distribution
         ax2 = fig.add_subplot(gs[1, :2])
         cst  = pd.read_csv(CST_PATH, parse_dates=["date"])
         real_bear_months = macro[bear_mask]["date"]
@@ -367,7 +353,7 @@ def make_figure(macro: pd.DataFrame, X_norm: np.ndarray,
                       fontsize=10, fontweight="semibold")
         ax2.legend(fontsize=8, framealpha=0.7)
 
-        # ── Row 2: Stress-tested IR bootstrap
+        # Row 2: Stress-tested IR bootstrap
         ax3 = fig.add_subplot(gs[1, 2])
         n_boot_plot = 3000
         boot_irs = []
@@ -387,7 +373,7 @@ def make_figure(macro: pd.DataFrame, X_norm: np.ndarray,
                       fontsize=9, fontweight="semibold")
         ax3.legend(fontsize=8)
 
-        # ── Row 3: Comparison bar chart
+        # Row 3: Comparison bar chart
         ax4 = fig.add_subplot(gs[2, :])
         labels  = ["CS-T\nFull Period\n(real)", "CS-T\nRisk-Off\n(real)",
                    "Synthetic\nBear (mean)", "Synthetic\nBear (p5)",
@@ -422,9 +408,7 @@ def make_figure(macro: pd.DataFrame, X_norm: np.ndarray,
         plt.close()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # 8.  Main
-# ══════════════════════════════════════════════════════════════════════════════
 
 def main():
     print("=" * 65)
@@ -435,24 +419,24 @@ def main():
         print("\nERROR: PyTorch not available. Install with: pip install torch")
         return
 
-    # ── Load data
+    # Load data
     macro = load_macro_features()
     X_raw = macro[MACRO_COLS].values.astype(np.float64)
 
-    # ── Normalise
+    # Normalise
     X_mean = X_raw.mean(axis=0)
     X_std  = X_raw.std(axis=0) + 1e-8
     X_norm = (X_raw - X_mean) / X_std
 
     regimes = macro["regime"].values
 
-    # ── Train DDPM
+    # Train DDPM
     model, betas, alphas, alpha_bar = train_ddpm(
         X_norm.astype(np.float32), regimes,
         T=T_STEPS, n_epochs=N_EPOCHS,
     )
 
-    # ── Generate synthetic bear months
+    # Generate synthetic bear months
     print(f"\nGenerating {N_SAMPLES:,} synthetic bear market months ...")
     X_synth_bear = sample_regime(
         model, betas, alphas, alpha_bar,
@@ -460,7 +444,7 @@ def main():
     )
     print(f"  Synthetic bear features - mean: {X_synth_bear.mean(axis=0).round(3)}")
 
-    # ── Linear bridge: features → active returns
+    # Linear bridge: features → active returns
     print("\nFitting linear bridge (active_ret ~ macro features) ...")
     coefs, intercept, r2, residual_std = fit_linear_bridge(macro)
 
@@ -468,7 +452,7 @@ def main():
         X_synth_bear, X_mean, X_std, coefs, intercept, residual_std
     )
 
-    # ── Statistics
+    # Statistics
     synth_stats = stress_ir(synth_active)
 
     cst     = pd.read_csv(CST_PATH, parse_dates=["date"])
@@ -488,7 +472,7 @@ def main():
         "riskoff_ir": quick_ir(s_bear),
     }
 
-    # ── Print results
+    # Print results
     print("\n" + "=" * 65)
     print(" STRESS TEST RESULTS")
     print("=" * 65)
@@ -508,7 +492,7 @@ def main():
           f"({pct_above_half*100:.1f}%)")
     print("=" * 65)
 
-    # ── Save CSV
+    # Save CSV
     results_df = pd.DataFrame({
         "metric":    ["full_period_ir", "real_riskoff_ir", "synthetic_bear_ir",
                       "synthetic_ir_p5", "synthetic_ir_p95", "synthetic_ann_alpha_pct",
@@ -521,7 +505,7 @@ def main():
     results_df.to_csv(OUT_CSV, index=False)
     print(f"Results saved: {OUT_CSV}")
 
-    # ── Plot
+    # Plot
     make_figure(macro, X_norm, X_synth_bear, synth_active,
                 real_stats, synth_stats, X_mean, X_std)
 

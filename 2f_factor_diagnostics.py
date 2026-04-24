@@ -1,6 +1,5 @@
 """
 2f_factor_diagnostics.py
-========================
 READ-ONLY diagnostic script - does NOT modify any model inputs or pipeline data.
 
 Computes three complementary redundancy diagnostics on the enriched factor panel:
@@ -60,9 +59,7 @@ VIF_FLAG          = 10.0    # flag features with VIF above this
 VIF_SAMPLE_ROWS   = 20_000  # sample size for VIF computation (speed)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def plot_corr_heatmap(
     corr_df:   pd.DataFrame,
@@ -126,9 +123,7 @@ def compute_vif(X: np.ndarray, feature_names: list) -> pd.DataFrame:
             .reset_index(drop=True))
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     print("=" * 65)
@@ -154,9 +149,7 @@ def main():
     if macro_in_panel:
         print(f"Macro cols excluded from correlation diagnostics: {macro_in_panel}")
 
-    # ─────────────────────────────────────────────────────────────────────────
     # PART A - IC CORRELATION MATRIX (SPEARMAN)
-    # ─────────────────────────────────────────────────────────────────────────
     print(f"\n{'─'*50}")
     print("PART A: Spearman IC Correlation Matrix")
     print(f"{'─'*50}")
@@ -201,9 +194,7 @@ def main():
         flag_val=IC_CORR_FLAG,
     )
 
-    # ─────────────────────────────────────────────────────────────────────────
     # PART B - RMT EIGENVALUE ANALYSIS
-    # ─────────────────────────────────────────────────────────────────────────
     print(f"\n{'─'*50}")
     print("PART B: RMT Eigenvalue Analysis")
     print(f"{'─'*50}")
@@ -245,9 +236,7 @@ def main():
         flag_val=IC_CORR_FLAG,
     )
 
-    # ─────────────────────────────────────────────────────────────────────────
     # PART C - VARIANCE INFLATION FACTOR
-    # ─────────────────────────────────────────────────────────────────────────
     print(f"\n{'─'*50}")
     print("PART C: Variance Inflation Factor (VIF)")
     print(f"{'─'*50}")
@@ -272,9 +261,7 @@ def main():
     else:
         print(f"\n  All features have VIF <= {VIF_FLAG}  (acceptable)")
 
-    # ─────────────────────────────────────────────────────────────────────────
     # PART D - PRE/POST ORTHOGONALIZATION COMPARISON (optional)
-    # ─────────────────────────────────────────────────────────────────────────
     if ORTH_IN.exists():
         print(f"\n{'─'*50}")
         print("PART D: Pre/Post-Orthogonalization Comparison")
@@ -305,9 +292,7 @@ def main():
         print(f"\nPart D skipped - {ORTH_IN.name} not found.")
         print("  Run 1i_orthogonalize.py first to enable comparison.")
 
-    # ─────────────────────────────────────────────────────────────────────────
     # SUMMARY
-    # ─────────────────────────────────────────────────────────────────────────
     print(f"\n{'=' * 65}")
     print("DIAGNOSTIC SUMMARY")
     print("=" * 65)
@@ -320,15 +305,11 @@ def main():
     print(f"\n  Output files saved to: {DATA_DIR}/")
     print("=" * 65)
 
-    # ─────────────────────────────────────────────────────────────────────────
     # PART E - FACTOR IC CORRELATION ANALYSIS (selected factors only)
-    # ─────────────────────────────────────────────────────────────────────────
     factor_correlation_analysis()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # PART E - FACTOR IC CORRELATION ANALYSIS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def factor_correlation_analysis():
     """
@@ -349,7 +330,7 @@ def factor_correlation_analysis():
     print("PART E: Factor IC Correlation Analysis")
     print(f"{'─'*50}")
 
-    # ── 1. Load inputs ────────────────────────────────────────────────────────
+    # 1. Load inputs
     selected_path = DATA_DIR / "factor_selected.csv"
     if not selected_path.exists():
         print(f"  Skipped - {selected_path} not found.")
@@ -381,7 +362,7 @@ def factor_correlation_analysis():
 
     print(f"  Factors to analyse: {len(factors)}")
 
-    # ── 2. Compute monthly IC (Pearson) for each factor ───────────────────────
+    # 2. Compute monthly IC (Pearson) for each factor
     dates = sorted(panel["date"].unique())
     n_factors = len(factors)
     n_months  = len(dates)
@@ -405,7 +386,7 @@ def factor_correlation_analysis():
     ic_matrix = ic_matrix[:, valid_months]
     print(f"  IC matrix shape: {ic_matrix.shape}  (factors × valid months)")
 
-    # ── 3. Spearman correlation between IC time-series ────────────────────────
+    # 3. Spearman correlation between IC time-series
     # Replace NaN with 0 for correlation (neutral IC assumption for missing months)
     ic_filled = np.where(np.isnan(ic_matrix), 0.0, ic_matrix)
 
@@ -425,7 +406,7 @@ def factor_correlation_analysis():
     spearman_corr = np.clip(spearman_corr, -1.0, 1.0)
     np.fill_diagonal(spearman_corr, 1.0)
 
-    # ── 4. Hierarchical clustering (Ward, distance = 1 - |corr|) ─────────────
+    # 4. Hierarchical clustering (Ward, distance = 1 - |corr|)
     dist_matrix = 1.0 - np.abs(spearman_corr)
     np.fill_diagonal(dist_matrix, 0.0)
     # squareform expects a condensed distance vector
@@ -445,7 +426,7 @@ def factor_correlation_analysis():
     # Dendrogram leaf order for reordering the heatmap
     leaf_order = leaves_list(Z)
 
-    # ── 5. Save cluster CSV ───────────────────────────────────────────────────
+    # 5. Save cluster CSV
     cluster_df = pd.DataFrame({
         "factor":     [factors[i] for i in range(n_factors)],
         "cluster_id": cluster_ids,
@@ -456,13 +437,13 @@ def factor_correlation_analysis():
     cluster_df.to_csv(DATA_DIR / "factor_clusters.csv", index=False)
     print(f"  Saved: factor_clusters.csv")
 
-    # ── 6. Print cluster summary ──────────────────────────────────────────────
+    # 6. Print cluster summary
     print(f"\n  Cluster summary  (threshold={CLUSTER_DIST_THRESHOLD}, {n_clusters} clusters):")
     for cid in range(n_clusters):
         members = cluster_df[cluster_df["cluster_id"] == cid]["factor"].tolist()
         print(f"    Cluster {cid}  ({len(members)} factors): {', '.join(members)}")
 
-    # ── 7. Clustered heatmap (matplotlib only) ────────────────────────────────
+    # 7. Clustered heatmap (matplotlib only)
     reordered_corr   = spearman_corr[np.ix_(leaf_order, leaf_order)]
     reordered_labels = [factors[i] for i in leaf_order]
 

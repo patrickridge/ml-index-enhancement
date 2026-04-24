@@ -1,6 +1,5 @@
 """
 1e_parse_wind_prices.py - Parse Wind Missing Data & Merge into prices.parquet
-==============================================================================
 Parses the Missing data.xlsx file (historical S&P 500 constituents with
 OHLCV data from Wind) and merges valid tickers into data/prices.parquet.
 
@@ -42,7 +41,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR   = Path("data")
 XLSX_PATH  = Path(os.environ.get(
     "DATA_XLSX",
@@ -50,10 +49,10 @@ XLSX_PATH  = Path(os.environ.get(
 ))
 PRICES_OUT = DATA_DIR / "prices.parquet"
 
-# ── Tickers to exclude regardless of data presence ────────────────────────────
+# Tickers to exclude regardless of data presence
 EXCLUDE_TICKERS = {"AW", "ABC"}
 
-# ── Non-ticker sheets to skip ─────────────────────────────────────────────────
+# Non-ticker sheets to skip
 META_SHEETS = {"工作表1", "tickers_missing", "ticker still missing"}
 
 MIN_VALID_ROWS = 10   # require at least 10 non-NaN close prices to include
@@ -118,7 +117,7 @@ def main():
         print("Set DATA_XLSX env var or place file at that path.")
         return
 
-    # ── Load existing prices ──────────────────────────────────────────────────
+    # Load existing prices
     print(f"\nLoading existing prices.parquet ...")
     if PRICES_OUT.exists():
         prices_existing = pd.read_parquet(PRICES_OUT)
@@ -131,7 +130,7 @@ def main():
         existing_tickers = set()
         print("  prices.parquet not found - will create fresh.")
 
-    # ── Open Excel ────────────────────────────────────────────────────────────
+    # Open Excel
     print(f"\nOpening {XLSX_PATH.name} ...")
     xl = pd.ExcelFile(XLSX_PATH)
     all_sheets    = xl.sheet_names
@@ -140,7 +139,7 @@ def main():
     print(f"  Total sheets: {len(all_sheets)}  |  "
           f"Ticker sheets to process: {len(ticker_sheets)}")
 
-    # ── Parse each ticker sheet ───────────────────────────────────────────────
+    # Parse each ticker sheet
     print("\nParsing ticker sheets ...")
     new_frames = []
     log_rows   = []
@@ -167,7 +166,7 @@ def main():
 
     xl.close()
 
-    # ── Merge and save ────────────────────────────────────────────────────────
+    # Merge and save
     added_tickers   = [r["ticker"] for r in log_rows if r["status"] == "added"]
     skipped_blank   = [r["ticker"] for r in log_rows if r["status"] == "blank_or_invalid"]
     already_present = [r["ticker"] for r in log_rows if r["status"] == "already_in_prices"]
@@ -205,13 +204,13 @@ def main():
     print(f"  Date range:    {combined['date'].min().date()} -> "
           f"{combined['date'].max().date()}")
 
-    # ── Save log ──────────────────────────────────────────────────────────────
+    # Save log
     log_df = pd.DataFrame(log_rows)
     log_path = DATA_DIR / "wind_parse_log.csv"
     log_df.to_csv(log_path, index=False)
     print(f"Saved -> {log_path}")
 
-    # ── Print sample of added tickers ─────────────────────────────────────────
+    # Print sample of added tickers
     if added_tickers:
         sample = added_tickers[:20]
         print(f"\nSample of added tickers: {sample}"

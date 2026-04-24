@@ -1,6 +1,5 @@
 """
 2a_factor_analysis.py - Per-Factor IC Analysis and Quantile Backtests
-=====================================================================
 Evaluates how predictive each feature in the enriched panel is vs next-month
 returns (typically ~270 columns after 1h_feature_engineering.py). This is
 about predictive power per factor, not redundancy between factors - see
@@ -58,7 +57,7 @@ except ImportError:
     _CFG_TRAIN_END   = None
     _CFG_TRAIN_START = None
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR = Path("data")
 FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -68,7 +67,7 @@ MAX_IC_DECAY_LAGS = 60    # compute IC at lags 0–60 months ahead (~5 years)
 N_QUINTILES       = 5     # quintile backtest buckets
 MIN_STOCKS        = 20    # skip month if fewer stocks
 
-# ── Train / test split ─────────────────────────────────────────────────────────
+# Train / test split
 # Factor analysis (IC, ICIR, quintile, RAS) uses TRAINING data only to avoid
 # lookahead bias. Regime stability uses full panel to cover all 4 regimes.
 # Reads from config.py (TRAIN_END / START_DATE) so date splits stay in sync.
@@ -76,9 +75,7 @@ TRAIN_START = _CFG_TRAIN_START if _CFG_TRAIN_START else "2010-01-01"
 TRAIN_END   = _CFG_TRAIN_END   if _CFG_TRAIN_END   else "2022-12-31"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # IC HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def monthly_ic(panel: pd.DataFrame, factor: str, target: str = "fwd_ret_1m") -> pd.Series:
     """
@@ -117,9 +114,7 @@ def ic_summary(ic_series: pd.Series) -> dict:
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # QUINTILE BACKTEST
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def quintile_backtest(panel: pd.DataFrame, factor: str) -> pd.DataFrame:
     """
@@ -161,9 +156,7 @@ def quintile_backtest(panel: pd.DataFrame, factor: str) -> pd.DataFrame:
     return pd.DataFrame(records).set_index("date")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # IC DECAY
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def ic_decay_series(panel: pd.DataFrame, factor: str) -> dict:
     """
@@ -199,9 +192,7 @@ def ic_decay_series(panel: pd.DataFrame, factor: str) -> dict:
     return decay
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # PLOTS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def plot_ic_summary(summary_df: pd.DataFrame, out_dir: Path, top_n: int = 10):
     """
@@ -394,16 +385,14 @@ def plot_quintile_bars(quint_df: pd.DataFrame, out_path: Path):
     print(f"  Saved: {out_path.name}")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     print("=" * 65)
     print("FACTOR ANALYSIS - Predictive IC and Quantile Backtests")
     print("=" * 65)
 
-    # ── Load panel ───────────────────────────────────────────────────────────────
+    # Load panel
     print(f"\nLoading {PANEL_IN} …")
     panel = pq.read_table(PANEL_IN).to_pandas()
     panel["date"] = pd.to_datetime(panel["date"])
@@ -427,7 +416,7 @@ def main():
     if macro_in_panel:
         print(f"  Macro features skipped (not cross-sectional): {macro_in_panel}")
 
-    # ── Per-factor IC (training data only) ───────────────────────────────────────
+    # Per-factor IC (training data only)
     print(f"\nComputing monthly IC for {len(feat_cols)} features (train: {TRAIN_START[:4]}–{TRAIN_END[:4]}) …")
     ic_records = []
     ic_series_all = {}
@@ -450,7 +439,7 @@ def main():
     summary_df.to_csv(DATA_DIR / "factor_ic_summary.csv", index=False)
     print(f"\nSaved → factor_ic_summary.csv")
 
-    # ── Print top/bottom factors ──────────────────────────────────────────────────
+    # Print top/bottom factors
     print(f"\n{'─'*65}")
     print("TOP 15 FACTORS by |ICIR|")
     print(f"{'─'*65}")
@@ -474,13 +463,13 @@ def main():
     print(f"  Positive IC: {sig_positive}")
     print(f"  Negative IC (contrarian): {sig_negative}")
 
-    # ── Filter 1: |IC| > 0 - keep any directional signal (positive or negative) ──
+    # Filter 1: |IC| > 0 - keep any directional signal (positive or negative)
     nonzero_ic = summary_df[summary_df["ic_mean"].abs() > 0].copy()
     print(f"\nFilter 1 - |IC| > 0 (both directions kept): {len(nonzero_ic)} / {len(summary_df)} kept")
     print(f"  Positive IC: {nonzero_ic[nonzero_ic['ic_mean'] > 0]['factor'].tolist()}")
     print(f"  Negative IC (contrarian): {nonzero_ic[nonzero_ic['ic_mean'] < 0]['factor'].tolist()}")
 
-    # ── Filter 2: Regime stability ────────────────────────────────────────────────
+    # Filter 2: Regime stability
     # COVID crash (Mar–May 2020) excluded as black swan; stress test handles tail events.
     # Regimes: QE bull (2010–2019), COVID recovery (Jun 2020–2021),
     #          rate hike bear (2022), AI bull (2023–present)
@@ -518,7 +507,7 @@ def main():
               f"{row.get('ic_ai_bull', np.nan):>+9.4f} "
               f"{str(row['regimes_positive']):>6}  {stable_str}")
 
-    # ── Combined filter: |IC| > 0 AND sign consistent across regimes ────────────
+    # Combined filter: |IC| > 0 AND sign consistent across regimes
     stable_factors = set(regime_df[regime_df["regime_stable"]]["factor"].tolist())
     both_filters = nonzero_ic[nonzero_ic["factor"].isin(stable_factors)].copy()
     # Sort by |ICIR| descending
@@ -533,7 +522,7 @@ def main():
     dropped_regime = nonzero_ic[~nonzero_ic["factor"].isin(stable_factors)]["factor"].tolist()
     print(f"  Dropped (sign unstable across regimes): {dropped_regime}")
 
-    # ── IC Decay ────────────────────────────────────────────────────────────────
+    # IC Decay
     # Run decay on top 10 positive IC + top 10 negative IC (by |ICIR|)
     top10_pos = both_filters[both_filters["ic_mean"] > 0].head(10)["factor"].tolist()
     top10_neg = both_filters[both_filters["ic_mean"] < 0].head(10)["factor"].tolist()
@@ -550,7 +539,7 @@ def main():
     decay_df.to_csv(DATA_DIR / "factor_ic_decay.csv")
     print(f"Saved → factor_ic_decay.csv")
 
-    # ── Quintile Backtest + Turnover + RAS ───────────────────────────────────────
+    # Quintile Backtest + Turnover + RAS
     print(f"\nRunning quintile backtests, turnover & RAS tests (train: {TRAIN_START[:4]}–{TRAIN_END[:4]}) …")
     print(f"  (RAS uses 100 random permutations per factor - takes ~2 min)")
     quintile_records = []
@@ -596,16 +585,16 @@ def main():
     quint_df.to_csv(DATA_DIR / "factor_quintile_returns.csv", index=False)
     print(f"Saved → factor_quintile_returns.csv")
 
-    # ── Quintile bar chart (top 10 by |spread|) ──────────────────────────────────
+    # Quintile bar chart (top 10 by |spread|)
     plot_quintile_bars(quint_df.head(10), FIG_DIR / "factor_quintile_plot.png")
 
-    # ── Plots ────────────────────────────────────────────────────────────────────
+    # Plots
     print("\nGenerating plots …")
     plot_ic_summary(summary_df, FIG_DIR, top_n=10)   # saves _positive.png + _negative.png
     plot_ic_decay(decay_df, top10_pos, FIG_DIR / "factor_ic_decay_positive.png")
     plot_ic_decay(decay_df, top10_neg, FIG_DIR / "factor_ic_decay_negative.png")
 
-    # ── OOS IC Diagnostic ────────────────────────────────────────────────────────
+    # OOS IC Diagnostic
     print(f"\n{'='*65}")
     print(f"OOS IC DIAGNOSTIC  (test period: {TRAIN_END[:7]} → present)")
     print(f"{'='*65}")
@@ -680,7 +669,7 @@ def main():
             print(f"  Flipped factors: {flipped}")
         print(f"  Saved → data/factor_oos_ic.csv")
 
-    # ── Final summary table ───────────────────────────────────────────────────────
+    # Final summary table
     print(f"\n{'='*65}")
     print("FACTOR ANALYSIS COMPLETE")
     print(f"{'='*65}")

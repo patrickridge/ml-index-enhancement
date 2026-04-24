@@ -1,6 +1,5 @@
 """
 1b_fetch_constituents.py - Fix Survivorship Bias
-============================================================
 Downloads the full historical S&P 500 constituent list (1996–present) from
 a free GitHub dataset, finds which tickers are missing from our prices.parquet,
 and tries to fetch their price history via yfinance.
@@ -50,13 +49,13 @@ try:
 except ImportError:
     HAS_REQUESTS = False
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR   = Path("data")
 PRICES_IN  = DATA_DIR / "prices.parquet"
 PRICES_OUT = DATA_DIR / "prices.parquet"   # overwrite with expanded version
 TICKER_LOG = DATA_DIR / "historical_tickers.csv"
 
-# ── Scope ──────────────────────────────────────────────────────────────────────
+# Scope
 # Only fetch data for tickers that were S&P 500 members during our backtest window
 BACKTEST_START = "2005-01-01"   # a few years before 2010 for warmup features
 BACKTEST_END   = "2025-12-31"
@@ -70,9 +69,7 @@ GITHUB_URL = (
 MIN_MONTHS = 6   # skip tickers with fewer than this many months of data
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def strip_date_suffix(tk: str) -> str:
     """
@@ -138,9 +135,7 @@ def fetch_prices_yf(ticker: str, start: str, end: str) -> pd.DataFrame | None:
         return None
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     print("=" * 65)
@@ -148,7 +143,7 @@ def main():
     print("(Survivorship Bias Fix)")
     print("=" * 65)
 
-    # ── Load existing prices ─────────────────────────────────────────────────
+    # Load existing prices
     print(f"\nLoading existing prices.parquet …")
     prices_existing = pq.read_table(PRICES_IN).to_pandas()
     prices_existing["date"] = pd.to_datetime(prices_existing["date"])
@@ -159,7 +154,7 @@ def main():
     print(f"  Existing: {len(existing_raw)} tickers | "
           f"{prices_existing['date'].min().date()} → {prices_existing['date'].max().date()}")
 
-    # ── Download historical constituent list ─────────────────────────────────
+    # Download historical constituent list
     print(f"\nDownloading historical S&P 500 constituent list from GitHub …")
     try:
         if HAS_REQUESTS:
@@ -197,7 +192,7 @@ def main():
 
     print(f"  Unique historical tickers in scope: {len(all_hist_tickers)}")
 
-    # ── Find missing tickers ─────────────────────────────────────────────────
+    # Find missing tickers
     missing = []
     already_have = []
     for tk in sorted(all_hist_tickers):
@@ -213,7 +208,7 @@ def main():
         print("\nNo missing tickers - prices.parquet already has full history.")
         return
 
-    # ── Fetch missing tickers via yfinance ───────────────────────────────────
+    # Fetch missing tickers via yfinance
     print(f"\nFetching {len(missing)} missing tickers via yfinance …")
     print(f"(This may take 20–40 min)\n")
 
@@ -236,7 +231,7 @@ def main():
             print(f"  {i}/{len(missing)}  |  ok={n_ok}  failed={n_fail}  "
                   f"| {elapsed:.1f} min elapsed")
 
-    # ── Summary of fetch results ─────────────────────────────────────────────
+    # Summary of fetch results
     ok_list   = [r["ticker"] for r in results if r["status"] == "ok"]
     fail_list = [r["ticker"] for r in results if r["status"] == "failed"]
 
@@ -250,7 +245,7 @@ def main():
         if len(fail_list) > 30:
             print(f"    ... and {len(fail_list) - 30} more")
 
-    # ── Save ticker log ──────────────────────────────────────────────────────
+    # Save ticker log
     log_df = pd.DataFrame(results)
     log_df["in_existing"] = False
     existing_log = pd.DataFrame(
@@ -265,7 +260,7 @@ def main():
         print("\nNo new price data fetched - prices.parquet unchanged.")
         return
 
-    # ── Merge with existing prices ────────────────────────────────────────────
+    # Merge with existing prices
     print(f"\nMerging {len(new_frames)} new ticker DataFrames with existing prices …")
     new_combined = pd.concat(new_frames, ignore_index=True)
 
@@ -291,13 +286,13 @@ def main():
     print(f"  Total:    {len(merged):,}")
     print(f"  Tickers:  {merged['ticker'].nunique()}")
 
-    # ── Save updated prices.parquet ──────────────────────────────────────────
+    # Save updated prices.parquet
     table = pa.Table.from_pandas(merged)
     pq.write_table(table, PRICES_OUT, compression="snappy")
     print(f"\nSaved → {PRICES_OUT}  ({len(merged):,} rows | "
           f"{merged['ticker'].nunique()} tickers)")
 
-    # ── Final summary ────────────────────────────────────────────────────────
+    # Final summary
     print(f"\n{'='*65}")
     print("SURVIVORSHIP BIAS FIX COMPLETE")
     print(f"{'='*65}")

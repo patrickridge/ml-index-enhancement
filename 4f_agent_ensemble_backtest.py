@@ -1,6 +1,5 @@
 """
 4f_agent_ensemble_backtest.py - CS-Transformer + rule-based agents ensemble
-============================================================================
 Compares CS-Transformer alone against two rule-based "analyst" agents, blended
 with the model via weighted z-scores. All strategies go through the same
 index-enhancement portfolio construction (see 4b_index_enhancement.py) so
@@ -25,7 +24,6 @@ Agents
    sector's score for that month.
 
 Ensembles tested
-----------------
   cs_alone          100 / 0  / 0
   fund_alone          0 / 100 / 0
   macro_alone         0 / 0  / 100
@@ -52,7 +50,7 @@ from pathlib import Path
 DATA_DIR = Path("data")
 FIG_DIR  = Path("figures"); FIG_DIR.mkdir(exist_ok=True)
 
-# ── Reuse build_enhanced_portfolio + ie_stats from 4b_index_enhancement.py ──
+# Reuse build_enhanced_portfolio + ie_stats from 4b_index_enhancement.py
 # Load via importlib since filename starts with a digit.
 _spec = importlib.util.spec_from_file_location("ie_mod", "4b_index_enhancement.py")
 _ie_mod = importlib.util.module_from_spec(_spec)
@@ -65,9 +63,7 @@ TOP_N    = 100
 BOTTOM_N = 100
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # DATA LOADING
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def load_core_data():
     """Load all data files needed by the agents + backtest."""
@@ -101,9 +97,7 @@ def load_core_data():
     return scores, fund, sectors, weights, panel
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # AGENT 1 - Fundamental Agent (stock-level, rule-based)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def score_profitability(row) -> int:
     """ROE, gross margin, ROA → bullish if strong."""
@@ -218,9 +212,7 @@ def expand_fundamentals_to_monthly(
     return out
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # AGENT 2 - Macro-Sector Agent
-# ═══════════════════════════════════════════════════════════════════════════════
 
 # Sector classification (using our sectors.parquet labels)
 DEFENSIVE = {"Consumer Defensive", "Healthcare", "Utilities"}
@@ -328,9 +320,7 @@ def macro_sector_agent_score(panel: pd.DataFrame, sectors: pd.DataFrame) -> pd.D
     return ts[["date", "ticker", "macro_sector_score"]]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # ENSEMBLE SCORE BUILDERS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def zscore_monthly(df: pd.DataFrame, col: str) -> pd.Series:
     """Cross-sectional z-score per month."""
@@ -367,9 +357,7 @@ def build_ensemble_scores(
     return m[["date", "ticker", "score", "fwd_ret_1m"]]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     print("=" * 70)
@@ -386,7 +374,7 @@ def main():
     # Agent 2: Macro-Sector
     macro_sector = macro_sector_agent_score(panel, sectors)
 
-    # ── Ensemble configurations ──────────────────────────────────────────
+    # Ensemble configurations
     configs = [
         # (label, cs_w, fund_w, macro_w)
         ("cs_alone",       1.00, 0.00, 0.00),
@@ -415,7 +403,7 @@ def main():
         bt_records[label] = bt
         results[label] = ie_stats(bt)
 
-    # ── Print comparison table (full CS-T window) ───────────────────────
+    # Print comparison table (full CS-T window)
     print("\n" + "=" * 74)
     print("RESULTS - Full CS-Transformer window (Jan 2023 → Nov 2025)")
     print("=" * 74)
@@ -444,7 +432,7 @@ def main():
               f"{s['sharpe']:>8.2f}"
               f"{s['hit_rate']*100:>7.1f}%")
 
-    # ── Validation-window subset (for apples-to-apples with stock pitch) ─
+    # Validation-window subset (for apples-to-apples with stock pitch)
     val_start = pd.Timestamp("2023-01-01")
     val_end   = pd.Timestamp("2024-06-30") + pd.offsets.MonthEnd(0)
     print("\n" + "=" * 74)
@@ -465,7 +453,7 @@ def main():
               f"{s['sharpe']:>8.2f}"
               f"{s['hit_rate']*100:>7.1f}%")
 
-    # ── Chart - full window ────────────────────────────────────────────
+    # Chart - full window
     fig, ax = plt.subplots(figsize=(11, 6))
     color_map = {
         "cs_alone":      "#1f77b4",

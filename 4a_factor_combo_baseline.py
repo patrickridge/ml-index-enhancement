@@ -1,6 +1,5 @@
 """
 4a_factor_combo_baseline.py - Factor-Combo IE Baseline (No ML)
-===============================================================
 Uses the optimised factor weights from 2e_ic_optimise.py to create
 stock scores directly (weighted sum of z-scored factors) and runs
 them through the same index enhancement pipeline as 4b_index_enhancement.py.
@@ -32,7 +31,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pathlib import Path
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# Config
 DATA_DIR = Path("data")
 
 # Use optimised weights if available, else fall back to IC-decay weights
@@ -50,7 +49,7 @@ TEST_END   = "2025-12-31"
 ALPHA_VALUES = [0.002, 0.005, 0.01, 0.02, 0.03, 0.05]
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# Helpers
 def ie_stats(df: pd.DataFrame, label: str = "") -> dict:
     ar = df["active_ret"].values
     if len(ar) < 3:
@@ -69,7 +68,7 @@ def ie_stats(df: pd.DataFrame, label: str = "") -> dict:
                 n_months=len(ar))
 
 
-# ── Load data ──────────────────────────────────────────────────────────────────
+# Load data
 print("=" * 65)
 print("FACTOR-COMBO BASELINE - INDEX ENHANCEMENT")
 print("=" * 65)
@@ -95,7 +94,7 @@ print("\nLoading SPX weights …")
 spx = pq.read_table(DATA_DIR / "spx_weights.parquet").to_pandas()
 spx["date"] = pd.to_datetime(spx["date"])
 
-# ── Compute factor-combo scores ───────────────────────────────────────────────
+# Compute factor-combo scores
 print("\nComputing factor-combo scores …")
 
 # Check which factors are in the panel
@@ -140,7 +139,7 @@ pq.write_table(
 )
 print(f"  Saved → data/scores_factor_combo.parquet")
 
-# ── Run IE portfolio construction ─────────────────────────────────────────────
+# Run IE portfolio construction
 print("\nRunning IE portfolio construction …")
 merged = scores.merge(spx[["date", "ticker", "spx_weight"]], on=["date", "ticker"], how="inner")
 merged = merged.dropna(subset=["spx_weight", "score", "fwd_ret_1m"])
@@ -192,7 +191,7 @@ best_alpha = best["alpha"]
 bt_best = bt_records[best_alpha]
 bt_best.to_csv(DATA_DIR / "bt_ie_factor_combo.csv", index=False)
 
-# ── Print alpha sweep ──────────────────────────────────────────────────────────
+# Print alpha sweep
 print(f"\n{'─'*65}")
 print(f"  Factor-Combo Baseline - Alpha Sweep")
 print(f"{'─'*65}")
@@ -203,7 +202,7 @@ for r in results:
           f"{r['track_err']*100:>5.1f}% {r['info_ratio']:>7.3f} "
           f"{r['hit_rate']*100:>5.1f}% {r['sharpe']:>7.3f}{marker}")
 
-# ── Comparison vs ML models ────────────────────────────────────────────────────
+# Comparison vs ML models
 print(f"\n{'─'*65}")
 print(f"  Comparison: Factor-Combo vs ML Models (best alpha each)")
 print(f"{'─'*65}")

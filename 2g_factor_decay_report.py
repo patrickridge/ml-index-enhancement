@@ -1,6 +1,5 @@
 """
 2g_factor_decay_report.py
-==========================
 IS vs OOS factor-decay diagnostics.
 
 Reads factor_ic_summary.csv, factor_oos_ic.csv, and factor_ic_decay.csv
@@ -58,9 +57,7 @@ REGIMES = {
 }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Helpers
-# ─────────────────────────────────────────────────────────────────────────────
 
 def monthly_ic(panel: pd.DataFrame, factor: str,
                target: str = "fwd_ret_1m") -> pd.Series:
@@ -106,9 +103,7 @@ def health_label(row: pd.Series) -> str:
     return "RED"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Load data
-# ─────────────────────────────────────────────────────────────────────────────
 
 def load_data():
     print("Loading data...")
@@ -143,9 +138,7 @@ def load_data():
     return panel, feat_cols, oos_df, ic_df, decay_df
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Section 1 - IS vs OOS comparison table
-# ─────────────────────────────────────────────────────────────────────────────
 
 def section_is_vs_oos(oos_df: pd.DataFrame) -> pd.DataFrame:
     print("\n" + "="*70)
@@ -182,9 +175,7 @@ def section_is_vs_oos(oos_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Section 2 - IC decay curves
-# ─────────────────────────────────────────────────────────────────────────────
 
 def section_ic_decay_curves(panel: pd.DataFrame, oos_df: pd.DataFrame,
                              decay_df_precomp: pd.DataFrame = None):
@@ -240,9 +231,7 @@ def section_ic_decay_curves(panel: pd.DataFrame, oos_df: pd.DataFrame,
     print(f"  Saved → {out}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Section 3 - Regime breakdown (OOS regimes)
-# ─────────────────────────────────────────────────────────────────────────────
 
 def section_regime_breakdown(panel: pd.DataFrame, oos_df: pd.DataFrame) -> pd.DataFrame:
     print("\n" + "="*70)
@@ -316,9 +305,7 @@ def section_regime_breakdown(panel: pd.DataFrame, oos_df: pd.DataFrame) -> pd.Da
     return rdf
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Section 4 - Health scorecard bar chart
-# ─────────────────────────────────────────────────────────────────────────────
 
 def section_health_scorecard(health_df: pd.DataFrame):
     print("\n" + "="*70)
@@ -361,9 +348,7 @@ def section_health_scorecard(health_df: pd.DataFrame):
     print(f"  Saved → {out}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Section 5 - Written Markdown report
-# ─────────────────────────────────────────────────────────────────────────────
 
 def write_markdown_report(health_df: pd.DataFrame, regime_df: pd.DataFrame,
                           n_oos_months: int):
@@ -479,9 +464,7 @@ def write_markdown_report(health_df: pd.DataFrame, regime_df: pd.DataFrame,
     print(f"  Saved → {out}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # MAIN
-# ─────────────────────────────────────────────────────────────────────────────
 
 def main():
     print("=" * 70)

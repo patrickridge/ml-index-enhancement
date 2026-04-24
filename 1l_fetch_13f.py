@@ -1,6 +1,5 @@
 """
 1l_fetch_13f.py - Fetch Institutional Ownership from SEC EDGAR 13F Filings
-============================================================================
 Downloads quarterly 13F filings from SEC EDGAR (completely free, no API key)
 to compute institutional ownership factors.
 
@@ -57,9 +56,7 @@ def strip_exchange_suffix(ticker: str) -> str:
     return ticker
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # APPROACH: YFINANCE FALLBACK (simpler, snapshot-only)
-# ═══════════════════════════════════════════════════════════════════════════════
 # Full EDGAR 13F parsing is complex (CUSIP mapping, XML parsing, rate limits).
 # Start with yfinance snapshot for current institutional ownership,
 # then build time series by running periodically.
@@ -97,12 +94,12 @@ for i, tk in enumerate(our_tickers):
             "ticker": tk,
         }
 
-        # ── Institutional ownership percentage ──
+        # Institutional ownership percentage
         # yfinance provides heldPercentInstitutions
         inst_pct = info.get("heldPercentInstitutions")
         rec["inst_own_pct"] = inst_pct if inst_pct is not None else np.nan
 
-        # ── Number of institutional holders ──
+        # Number of institutional holders
         # From institutional_holders table
         try:
             inst_holders = obj.institutional_holders
@@ -146,9 +143,7 @@ for i, tk in enumerate(our_tickers):
 print(f"\n  Completed: {n - failed}/{n} tickers ({failed} failed)")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # BUILD RESULT
-# ═══════════════════════════════════════════════════════════════════════════════
 
 if not records:
     print("\n[ERROR] No institutional ownership data fetched.")
@@ -157,7 +152,7 @@ if not records:
 current_df = pd.DataFrame(records)
 current_df["date"] = pd.to_datetime(current_df["date"])
 
-# ── Append to existing file if present ───────────────────────────────────────
+# Append to existing file if present
 if OUT_PATH.exists():
     print(f"\n  Found existing {OUT_PATH} - appending new snapshot...")
     existing = pd.read_parquet(OUT_PATH)
@@ -195,7 +190,7 @@ result = result[keep_cols]
 # Drop rows where ALL factor columns are NaN
 result = result.dropna(subset=[c for c in OUTPUT_COLS if c in result.columns], how="all")
 
-# ── Save ──────────────────────────────────────────────────────────────────────
+# Save
 result.to_parquet(OUT_PATH, index=False)
 print(f"\nSaved → {OUT_PATH}")
 print(f"  Shape: {result.shape}")

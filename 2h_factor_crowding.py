@@ -43,7 +43,7 @@ from scipy.stats import spearmanr
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
 from scipy.spatial.distance import squareform
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# Config
 try:
     from config import DATA_DIR as _cfg_dir, TRAIN_END, VALID_END, MACRO_COLS
     DATA_DIR = Path(_cfg_dir)
@@ -64,9 +64,7 @@ NON_FEATURE_COLS = {
     "date", "ticker", "fwd_ret_1m", "fwd_ret_3m", "fwd_ret_6m", "fwd_ret_12m",
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # LOAD DATA
-# ═══════════════════════════════════════════════════════════════════════════════
 print("=" * 65)
 print("FACTOR CROWDING & DECAY DIAGNOSTIC")
 print("=" * 65)
@@ -94,9 +92,7 @@ print(f"\n  CS factors : {len(cs_factors)}")
 print(f"  Macro cols : {len(MACRO_COLS)}  (excluded from crowding - zero CS variance)")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 - FACTOR CROWDING (IS DATA ONLY)
-# ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "─" * 65)
 print("SECTION 1 - Factor Crowding (IS data only)")
 print("─" * 65)
@@ -172,9 +168,7 @@ except Exception as e:
     print(f"  [WARN] heatmap failed: {e}")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 2 - 7-DAY IC DECAY: IS vs OOS (computed from daily prices)
-# ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "─" * 65)
 print("SECTION 2 - 7-Day IC Decay: IS vs OOS")
 print("─" * 65)
@@ -328,7 +322,7 @@ else:
     if flipped:
         print("  ", flipped)
 
-    # ── PLOT: IS vs OOS decay curves for top 16 factors ──────────────────────
+    # PLOT: IS vs OOS decay curves for top 16 factors
     plot_factors = decay_7d_result.head(16).index.tolist()
     n_plot = len(plot_factors)
     ncols = 4
@@ -377,9 +371,7 @@ else:
     print("  Saved → figures/crowding_7day_decay_is_oos.png")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 3 - CONTRARIAN FACTOR ANALYSIS
-# ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "─" * 65)
 print("SECTION 3 - Contrarian Factor Analysis (IS vs OOS)")
 print("─" * 65)
@@ -469,9 +461,7 @@ else:
         print("  Saved → figures/crowding_contrarian_oos.png")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 4 - QUINTILE DIRECTION AUDIT
-# ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "─" * 65)
 print("SECTION 4 - Quintile Direction Audit")
 print("─" * 65)
@@ -570,9 +560,7 @@ else:
         print("  [WARN] Unexpected column structure in quintile / IC summary files")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # SUMMARY
-# ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 65)
 print("CROWDING & DECAY DIAGNOSTIC COMPLETE")
 print("=" * 65)

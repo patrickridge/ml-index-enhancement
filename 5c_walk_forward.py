@@ -43,7 +43,7 @@ from collections import deque
 import random
 from scipy.stats import pearsonr
 
-# ── PyTorch ────────────────────────────────────────────────────────────────────
+# PyTorch
 try:
     import torch
     import torch.nn as nn
@@ -54,7 +54,7 @@ except ImportError:
     HAS_TORCH = False
     print("WARNING: PyTorch not installed. Using rule-based fallback.")
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR = Path("data")
 FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(exist_ok=True)
@@ -63,7 +63,7 @@ PANEL_FILE   = DATA_DIR / "panel_monthly_enriched.parquet"
 FACTORS_FILE = DATA_DIR / "factor_selected.csv"     # base factor list (no optimised weights)
 WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
 
-# ── Walk-forward fold definitions ──────────────────────────────────────────────
+# Walk-forward fold definitions
 # (train_end, test_start, test_end, label)
 FOLDS = [
     ("2013-12-31", "2014-01-01", "2015-12-31", "2014–2015"),
@@ -74,7 +74,7 @@ FOLDS = [
 ]
 TRAIN_START_GLOBAL = "2010-01-01"
 
-# ── SAC / simulation hyperparameters ──────────────────────────────────────────
+# SAC / simulation hyperparameters
 ALPHA_MIN  = 0.002
 ALPHA_MAX  = 0.050
 FIXED_ALPHA = 0.010       # baseline to beat
@@ -103,9 +103,7 @@ if HAS_TORCH:
     torch.manual_seed(SEED)
 
 
-# =============================================================================
 # FACTOR COMBO SCORES - recomputed per fold from training data only
-# =============================================================================
 
 def compute_fold_weights(panel_train, factor_names, signs):
     """
@@ -169,9 +167,7 @@ def build_scores(panel_slice, factor_names, signed_w):
     return pd.DataFrame(rows)
 
 
-# =============================================================================
 # PORTFOLIO SIMULATION
-# =============================================================================
 
 def simulate_month(scores_month, weights_month, alpha):
     """Apply alpha tilt for one month. Returns dict or None."""
@@ -205,9 +201,7 @@ def simulate_month(scores_month, weights_month, alpha):
     }
 
 
-# =============================================================================
 # BUILD EPISODE TABLE - with training-period normalisation
-# =============================================================================
 
 def build_episodes(scores, weights, ref_alpha=0.01,
                    norm_params=None, fit_norm=False):
@@ -287,9 +281,7 @@ def build_episodes(scores, weights, ref_alpha=0.01,
     return df, norm_params
 
 
-# =============================================================================
 # SAC COMPONENTS
-# =============================================================================
 
 if HAS_TORCH:
     LOG_STD_MIN, LOG_STD_MAX = -10, 2
@@ -425,9 +417,7 @@ class SACAgent:
         return {}
 
 
-# =============================================================================
 # TRAINING + EVALUATION
-# =============================================================================
 
 def train_fold(agent, ep_train):
     """Train SAC on one fold's training episodes."""
@@ -505,9 +495,7 @@ def evaluate_fold(agent, ep_test):
     return rl_bt, fixed_bt
 
 
-# =============================================================================
 # STATS
-# =============================================================================
 
 def ie_stats(bt):
     if bt.empty or "active_ret" not in bt.columns:
@@ -527,9 +515,7 @@ def ie_stats(bt):
                 max_active_dd=max_dd, n_months=n)
 
 
-# =============================================================================
 # PLOTTING
-# =============================================================================
 
 def plot_results(all_rl, all_fixed, fold_summaries):
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -624,9 +610,7 @@ def plot_results(all_rl, all_fixed, fold_summaries):
     print(f"Saved -> {out}")
 
 
-# =============================================================================
 # MAIN
-# =============================================================================
 
 def main():
     print("=" * 70)
@@ -636,7 +620,7 @@ def main():
     for te, ts, tend, lbl in FOLDS:
         print(f"  Train {TRAIN_START_GLOBAL[:4]}–{te[:4]} → Test {lbl}")
 
-    # ── Load data ──────────────────────────────────────────────────────────────
+    # Load data
     print("\nLoading data ...")
     panel   = pd.read_parquet(PANEL_FILE)
     panel["date"] = pd.to_datetime(panel["date"])
@@ -658,7 +642,7 @@ def main():
     all_fixed_dfs = []
     fold_summaries = []
 
-    # ── Walk-forward loop ──────────────────────────────────────────────────────
+    # Walk-forward loop
     for fold_idx, (train_end, test_start, test_end, fold_label) in enumerate(FOLDS):
         print(f"\n{'='*70}")
         print(f"FOLD {fold_idx+1}/5 - Test: {fold_label}")
@@ -680,21 +664,21 @@ def main():
         n_test_months  = panel_test["date"].nunique()
         print(f"  Panel: {n_train_months} train months, {n_test_months} test months")
 
-        # ── Step 1: Compute factor weights from training data only ─────────────
+        # Step 1: Compute factor weights from training data only
         print(f"  Computing factor IC weights from training data ...")
         signed_w = compute_fold_weights(panel_train, factor_names, signs)
         top5 = np.argsort(np.abs(signed_w))[::-1][:5]
         print(f"  Top 5 factors (by weight): "
               + ", ".join(f"{factor_names[i]}={signed_w[i]:.4f}" for i in top5))
 
-        # ── Step 2: Build scores for train + test ─────────────────────────────
+        # Step 2: Build scores for train + test
         print(f"  Building factor-combo scores ...")
         scores_train = build_scores(panel_train, factor_names, signed_w)
         scores_test  = build_scores(panel_test,  factor_names, signed_w)
         print(f"  Scores: {scores_train['date'].nunique()} train, "
               f"{scores_test['date'].nunique()} test months")
 
-        # ── Step 3: Build episode tables (normalise from training only) ────────
+        # Step 3: Build episode tables (normalise from training only)
         print(f"  Building episode tables ...")
         ep_train, norm_params = build_episodes(
             scores_train, weights, fit_norm=True)
@@ -706,7 +690,7 @@ def main():
             print(f"  WARNING: only {len(ep_train)} training months - skipping fold.")
             continue
 
-        # ── Step 4: Train SAC from scratch on training data ───────────────────
+        # Step 4: Train SAC from scratch on training data
         if HAS_TORCH:
             print(f"  Training SAC agent ({TRAIN_EPOCHS} epochs) ...")
             np.random.seed(SEED + fold_idx)
@@ -719,7 +703,7 @@ def main():
             print(f"  PyTorch not available - using rule-based fallback.")
             agent = None
 
-        # ── Step 5: Evaluate on test period ───────────────────────────────────
+        # Step 5: Evaluate on test period
         print(f"  Evaluating on test period ({fold_label}) ...")
         rl_bt, fixed_bt = evaluate_fold(agent, ep_test)
 
@@ -766,7 +750,7 @@ def main():
         all_rl_dfs.append(rl_bt)
         all_fixed_dfs.append(fixed_bt)
 
-    # ── Aggregate results ──────────────────────────────────────────────────────
+    # Aggregate results
     if not all_rl_dfs:
         print("\nNo results to aggregate. Exiting.")
         return
@@ -821,7 +805,7 @@ def main():
                   and s['rl_ir'] > s['fixed_ir'])
     print(f"\n  RL beats fixed alpha in {rl_wins}/{len(fold_summaries)} folds.")
 
-    # ── Save outputs ───────────────────────────────────────────────────────────
+    # Save outputs
     out_bt = DATA_DIR / "bt_wf_rl.csv"
     all_rl.reset_index().to_csv(out_bt, index=False)
     print(f"\nSaved -> {out_bt}")

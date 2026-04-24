@@ -1,6 +1,5 @@
 """
 5f_dynamic_portfolio_rl.py - Dynamic Portfolio RL with Asymmetric Tilt
-=======================================================================
 Conservative extension of 5e: the agent independently controls the
 long and short tilt, but n_frac (bucket size) stays fixed at 0.20.
 
@@ -59,7 +58,7 @@ except ImportError:
     HAS_TORCH = False
     print("WARNING: PyTorch not installed.")
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR     = Path("data")
 FIG_DIR      = Path("figures")
 FIG_DIR.mkdir(exist_ok=True)
@@ -68,7 +67,7 @@ PANEL_FILE   = DATA_DIR / "panel_monthly_enriched.parquet"
 FACTORS_FILE = DATA_DIR / "factor_selected.csv"
 WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
 
-# ── Walk-forward folds (same as 5c/5d/5e) ─────────────────────────────────────
+# Walk-forward folds (same as 5c/5d/5e)
 FOLDS = [
     ("2013-12-31", "2014-01-01", "2015-12-31", "2014–2015"),
     ("2015-12-31", "2016-01-01", "2017-12-31", "2016–2017"),
@@ -78,7 +77,7 @@ FOLDS = [
 ]
 TRAIN_START_GLOBAL = "2010-01-01"
 
-# ── Action space bounds ────────────────────────────────────────────────────────
+# Action space bounds
 ALPHA_L_MIN, ALPHA_L_MAX = 0.002, 0.050   # long tilt
 ALPHA_S_MIN, ALPHA_S_MAX = 0.002, 0.050   # short tilt
 
@@ -89,7 +88,7 @@ FIXED_N_FRAC = 0.20   # top/bottom 20% of universe (unchanged from 5e)
 FIXED_ALPHA_L = 0.010
 FIXED_ALPHA_S = 0.010
 
-# ── GRPO hyperparameters ───────────────────────────────────────────────────────
+# GRPO hyperparameters
 EPOCHS   = 400
 LR       = 3e-4
 G        = 4        # candidates per state
@@ -97,7 +96,7 @@ KL_BETA  = 0.01
 HIDDEN   = 64
 SEED     = 42
 
-# ── State features (same as 5e) ───────────────────────────────────────────────
+# State features (same as 5e)
 STATE_COLS = [
     "signal_strength",
     "signal_dispersion",
@@ -112,9 +111,7 @@ if HAS_TORCH:
     torch.manual_seed(SEED)
 
 
-# =============================================================================
 # FACTOR COMBO SCORES (same as 5e)
-# =============================================================================
 
 def compute_fold_weights(panel_train, factor_names, signs):
     ics = {}
@@ -160,9 +157,7 @@ def build_scores(panel_slice, factor_names, signed_w):
     return pd.DataFrame(rows)
 
 
-# =============================================================================
 # PORTFOLIO SIMULATION - 3D action
-# =============================================================================
 
 def _prep_month(scores_month, weights_month):
     """Merge + sort once. Returns numpy arrays for fast simulation."""
@@ -199,9 +194,7 @@ def simulate_month_fast(prep, alpha_long, alpha_short, n_frac):
             "active_ret": float(port_w @ fwd_ret) - float(spx_w @ fwd_ret)}
 
 
-# =============================================================================
 # HMM REGIME DETECTION (same as 5e)
-# =============================================================================
 
 def _fit_hmm(bench_vol_series, bench_ret_series):
     try:
@@ -234,9 +227,7 @@ def _hmm_predict(model, risk_off_state, df):
         return pd.Series(0.0, index=df.index)
 
 
-# =============================================================================
 # EPISODE TABLE
-# =============================================================================
 
 def build_episodes(scores, weights, ref_alpha_l=0.01, ref_alpha_s=0.01,
                    ref_n_frac=0.20, norm_params=None, fit_norm=False):
@@ -318,9 +309,7 @@ def build_episodes(scores, weights, ref_alpha_l=0.01, ref_alpha_s=0.01,
     return df, norm_params
 
 
-# =============================================================================
 # NEURAL NETWORK - 3D action output
-# =============================================================================
 
 if HAS_TORCH:
     LOG_STD_MIN, LOG_STD_MAX = -10, 2
@@ -381,9 +370,7 @@ if HAS_TORCH:
             return float(a[0]), float(a[1])
 
 
-# =============================================================================
 # GRPO TRAINING - 3D action
-# =============================================================================
 
 def _safe_state(row):
     return np.clip(
@@ -399,7 +386,7 @@ def train_grpo(actor, train_rows, ref_actor, verbose=True):
         epoch_rewards = []
         for dt, row in train_rows:
             state  = torch.FloatTensor(_safe_state(row)).unsqueeze(0)
-            # ── Sample G candidate actions ────────────────────────────────────
+            # Sample G candidate actions
             rewards, log_probs = [], []
             for _ in range(G):
                 action, log_p, _ = actor.sample(state)
@@ -415,7 +402,7 @@ def train_grpo(actor, train_rows, ref_actor, verbose=True):
             r_std = r_arr.std() + 1e-8
             advs  = (r_arr - r_arr.mean()) / r_std
 
-            # ── Policy gradient + KL penalty ──────────────────────────────────
+            # Policy gradient + KL penalty
             loss = torch.tensor(0.0)
             for log_p, adv in zip(log_probs, advs):
                 loss = loss - log_p * adv
@@ -440,9 +427,7 @@ def train_grpo(actor, train_rows, ref_actor, verbose=True):
             print(f"    Epoch {epoch+1:4d}  avg_reward={np.mean(epoch_rewards):+.4f}")
 
 
-# =============================================================================
 # EVALUATE
-# =============================================================================
 
 def evaluate(actor, ep_test):
     rl_rows, fixed_rows = [], []
@@ -491,9 +476,7 @@ def ie_stats(bt):
                 n_months=n)
 
 
-# =============================================================================
 # PLOTTING
-# =============================================================================
 
 def plot_results(all_bt, fold_summary):
     fig, axes = plt.subplots(2, 1, figsize=(13, 10))
@@ -545,9 +528,7 @@ def plot_results(all_bt, fold_summary):
     print(f"Saved -> {out}")
 
 
-# =============================================================================
 # MAIN
-# =============================================================================
 
 def main():
     print("=" * 70)
@@ -611,7 +592,7 @@ def main():
         train_rows = [(dt, ep_train.loc[dt]) for dt in ep_train.index]
         print(f"  Train: {len(train_rows)} months  |  Test: {len(ep_test)} months")
 
-        # ── Train ─────────────────────────────────────────────────────────────
+        # Train
         actor     = DynamicActor(state_dim)
         ref_actor = copy.deepcopy(actor)
         ref_actor.eval()
@@ -619,7 +600,7 @@ def main():
         print(f"\n  [Dynamic RL] Training {EPOCHS} epochs ...")
         train_grpo(actor, train_rows, ref_actor, verbose=True)
 
-        # ── Evaluate ──────────────────────────────────────────────────────────
+        # Evaluate
         rl_bt, fixed_bt = evaluate(actor, ep_test)
 
         rl_stats    = ie_stats(rl_bt)
@@ -666,7 +647,7 @@ def main():
 
     fold_df = pd.DataFrame(fold_summary)
 
-    # ── Summary ───────────────────────────────────────────────────────────────
+    # Summary
     print(f"\n{'='*70}")
     print("WALK-FORWARD RESULTS SUMMARY")
     print("="*70)
@@ -679,7 +660,7 @@ def main():
     print(f"  Fixed      - avg IR: {np.mean(fixed_irs):.3f}  "
           f"(folds: {' '.join(f'{v:.3f}' for v in fixed_irs)})")
 
-    # ── Save ──────────────────────────────────────────────────────────────────
+    # Save
     out_csv = DATA_DIR / "dynamic_portfolio_results.csv"
     fold_df.to_csv(out_csv, index=False)
     print(f"\nSaved -> {out_csv}")

@@ -1,6 +1,5 @@
 """
 3e_hp_sweep.py - Hyperparameter sweep for the CS-Transformer
-=============================================================
 Runs the full training pipeline across N config variants and records the
 test-period performance of each. Result: a single CSV you can use to
 pick the best config before doing a proper Kaggle retrain.
@@ -14,7 +13,6 @@ Variants tested (edit SWEEP below to add/remove):
   6. ensemble_3     - 3-seed ensemble (averaged predictions)
 
 How to run
-----------
 Locally (CPU, slow - each variant ~30-90 min):
     python 3e_hp_sweep.py
 
@@ -47,7 +45,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-# ── Import 3c's internals (filename starts with digit → importlib) ───────────
+# Import 3c's internals (filename starts with digit → importlib)
 _spec = importlib.util.spec_from_file_location(
     "cs_mod", Path(__file__).parent / "3c_cs_transformer.py"
 )
@@ -72,7 +70,7 @@ perf_stats                   = cs_mod.perf_stats
 TRANSFORMER_CS_PARAMS = cs_mod.TRANSFORMER_CS_PARAMS
 RL_FINETUNE_PARAMS    = cs_mod.RL_FINETUNE_PARAMS
 
-# ── Sweep definition ─────────────────────────────────────────────────────────
+# Sweep definition
 # Each entry: name + dict of keys to override in TRANSFORMER_CS_PARAMS.
 # To disable RL for a specific variant, set "rl_method" to None in rl_overrides.
 SWEEP = [
@@ -87,9 +85,7 @@ SWEEP = [
 RESULTS_CSV = DATA_DIR / "sweep_results.csv"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # SWEEP ORCHESTRATOR
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def run_one_variant(variant_name, overrides, panel, stock_feat_cols, macro_cols,
                     train_months, valid_months, test_months, cs_map):
@@ -190,7 +186,7 @@ def main():
     print(f"Variants: {len(SWEEP)}")
     print("=" * 74)
 
-    # ── Load panel once ───────────────────────────────────────────────────
+    # Load panel once
     print("\nLoading panel...")
     panel = pd.read_parquet(cs_mod.PANEL_IN)
     panel["date"] = pd.to_datetime(panel["date"])
@@ -231,7 +227,7 @@ def main():
     )
     cs_map = {cs["date"]: cs for cs in all_cs}
 
-    # ── Run sweep ─────────────────────────────────────────────────────────
+    # Run sweep
     results = []
     t_start = _time.time()
     for i, variant in enumerate(SWEEP, 1):
@@ -249,7 +245,7 @@ def main():
 
     total_min = (_time.time() - t_start) / 60
 
-    # ── Summary table ─────────────────────────────────────────────────────
+    # Summary table
     df = pd.DataFrame(results)
     ok = df[df["status"] == "ok"].copy() if "status" in df.columns else df.copy()
     if not ok.empty:

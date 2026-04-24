@@ -1,6 +1,5 @@
 """
 4b_index_enhancement.py - Index Enhancement Portfolio Construction
-=================================================================
 Builds an index-enhanced portfolio by tilting S&P 500 market-cap weights
 using ML model scores (LGBM, FT-Transformer, CS-Transformer).
 
@@ -32,7 +31,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR     = Path("data")
 WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
 
@@ -42,16 +41,14 @@ SCORE_FILES = {
     "CS-Transformer": DATA_DIR / "scores_cs_transformer.parquet",
 }
 
-# ── Tilt strength sweep ────────────────────────────────────────────────────────
+# Tilt strength sweep
 # α controls how aggressively to overweight/underweight vs benchmark.
 # Higher α → higher potential alpha but higher tracking error.
 # Target tracking error: 2–4% annualised.
 ALPHA_GRID = [0.002, 0.005, 0.01, 0.02, 0.03, 0.05]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # PORTFOLIO CONSTRUCTION
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def build_enhanced_portfolio(
     scores: pd.DataFrame,
@@ -136,9 +133,7 @@ def build_enhanced_portfolio(
     return pd.DataFrame(results).set_index("date").sort_index()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # PERFORMANCE STATS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def ie_stats(bt: pd.DataFrame) -> dict:
     """
@@ -202,12 +197,10 @@ def print_stats(label: str, s: dict):
           f"MaxDD={s['maxdd']*100:.1f}%")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    # ── Load SPX weights ─────────────────────────────────────────────────────────
+    # Load SPX weights
     if not WEIGHTS_FILE.exists():
         print(f"ERROR: {WEIGHTS_FILE} not found.")
         print("Run: python 1c_fetch_market_cap.py")
@@ -219,7 +212,7 @@ def main():
     print(f"  {len(weights):,} rows | {weights['date'].min().date()} → "
           f"{weights['date'].max().date()} | {weights['ticker'].nunique()} tickers")
 
-    # ── Sweep all models and alpha values ────────────────────────────────────────
+    # Sweep all models and alpha values
     summary_rows = []
     best_bt      = {}   # model → best-α backtest DataFrame
 
@@ -269,7 +262,7 @@ def main():
             best_bt[model_name] = bt.copy()
             print(f"  → No α hit target TE range - saved α=0.01 as fallback")
 
-    # ── Save best backtests ───────────────────────────────────────────────────────
+    # Save best backtests
     file_map = {
         "LGBM":           DATA_DIR / "bt_ie_lgbm.csv",
         "FT-Transformer": DATA_DIR / "bt_ie_transformer.csv",
@@ -280,13 +273,13 @@ def main():
         bt.reset_index().to_csv(out, index=False)
         print(f"\nSaved → {out}")
 
-    # ── Save summary table ────────────────────────────────────────────────────────
+    # Save summary table
     if summary_rows:
         summary = pd.DataFrame(summary_rows)
         summary.to_csv(DATA_DIR / "ie_summary.csv", index=False)
         print(f"Saved → {DATA_DIR / 'ie_summary.csv'}")
 
-    # ── Final comparison table ────────────────────────────────────────────────────
+    # Final comparison table
     print("\n" + "=" * 70)
     print("INDEX ENHANCEMENT - BEST RESULTS PER MODEL (target TE 2–4%)")
     print("=" * 70)

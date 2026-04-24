@@ -9,7 +9,7 @@ from pathlib import Path
 
 DATA_DIR = Path("data")
 
-# ── Date splits ───────────────────────────────────────────────────────────────
+# Date splits
 # With 20 years of data (~2004-2024):
 #   Option A - keep GFC cut (cleaner regime, ~168 months from 2010):
 #     START_DATE = "2010-01-01", TRAIN_END = "2020-12-31", VALID_END = "2022-12-31"
@@ -21,21 +21,21 @@ START_DATE    = "2010-01-01"   # cut pre-GFC data
 TRAIN_END     = "2022-12-31"   # ~156 months training (includes 2021-2022 vol regime)
 VALID_END     = "2024-06-30"   # ~18 months validation (Jan 2023–Jun 2024); test = Jul 2024+ (~12 months)
 
-# ── Portfolio construction ────────────────────────────────────────────────────
+# Portfolio construction
 TOP_N         = 100            # overweight top N stocks vs benchmark
 BOTTOM_N      = 100            # underweight bottom N stocks vs benchmark
 LONG_FRAC     = 0.20           # top/bottom fraction for long-short
 
-# ── Walk-forward retraining ───────────────────────────────────────────────────
+# Walk-forward retraining
 RETRAIN_EVERY = 12             # retrain every N months (expanding window)
 
-# ── PCA Risk Parity ───────────────────────────────────────────────────────────
+# PCA Risk Parity
 VOL_LOOKBACK  = 252            # trading days for covariance estimation
 MIN_OBS       = 150            # minimum daily observations per ticker
 N_PCA         = 10             # PCA components to keep
 RIDGE         = 1e-3           # ridge regularization on covariance
 
-# ── FT-Transformer (3a_ft_transformer.py) ───────────────────────────────────
+# FT-Transformer (3a_ft_transformer.py)
 # Architecture: each of the N input features is embedded into d_model-dim vectors,
 # then processed by multi-head self-attention to learn feature interactions.
 # CPU training time: ~45-60 min (3 folds × ~15-20 min each). GPU: ~15-25 min total.
@@ -51,7 +51,7 @@ TRANSFORMER_PARAMS = dict(
     batch_size=512,     # mini-batch size
 )
 
-# ── LightGBM ─────────────────────────────────────────────────────────────────
+# LightGBM
 LGBM_PARAMS = dict(
     n_estimators=3000,
     learning_rate=0.02,
@@ -67,7 +67,7 @@ LGBM_PARAMS = dict(
     verbosity=-1,          # suppress -inf/-nan split-gain warnings
 )
 
-# ── 100+ Factor Pipeline additions ───────────────────────────────────────────
+# 100+ Factor Pipeline additions
 # Feature variants
 USE_ORTHOGONALIZED_FEATURES = False   # True → load panel_monthly_orthogonalized.parquet
 USE_CANDIDATE_FEATURES      = True    # True → include 69 factor mining candidates in panel
@@ -109,7 +109,7 @@ TRANSFORMER_CS_PARAMS = dict(
     use_corr_bias=False,
 )
 
-# ── RL Fine-Tuning (Stage 2: GRPO/DAPO after MSE pre-train) ─────────────────
+# RL Fine-Tuning (Stage 2: GRPO/DAPO after MSE pre-train)
 # Methods: "grpo" (KL-penalised), "dapo" (asymmetric clip, no KL), "hybrid"
 # Patterns from 5e_dapo_agent.py adapted for CS-Transformer monthly cross-sections
 RL_FINETUNE_PARAMS = dict(

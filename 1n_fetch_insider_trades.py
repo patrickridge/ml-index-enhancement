@@ -1,6 +1,5 @@
 """
 1n_fetch_insider_trades.py - SEC EDGAR Form 4 insider filings
-===============================================================
 For each S&P 500 ticker, looks up the SEC CIK from the official
 ticker-to-CIK mapping, then pulls the filing history from the EDGAR
 submissions API and counts Form 4 (insider transaction) filings per
@@ -12,14 +11,12 @@ metadata. Frequency has been used as a stand-in in the literature
 (more filings roughly = more insider activity around a name).
 
 Features produced (per stock per month)
----------------------------------------
   insider_filings_30d   raw filing count in last 30 days
   insider_filings_90d   raw filing count in last 90 days
   insider_activity_30d  log1p of the 30-day count
   insider_activity_90d  log1p of the 90-day count
 
 References
-----------
   Lakonishok & Lee (2001) - insider purchases predict abnormal returns
   Jeng, Metrick & Zeckhauser (2003) - insider portfolio beats market
   Seyhun (1998) - aggregate insider trading predicts market returns
@@ -29,7 +26,6 @@ Rate limits: SEC allows 10 req/sec with a proper User-Agent.
 Run time: ~15-30 min for ~500 tickers.
 
 Environment
------------
   SEC_USER_AGENT="Your Name your_email@example.com"   (required)
 """
 
@@ -53,7 +49,7 @@ print("=" * 65)
 print("SEC EDGAR INSIDER TRADING DATA FETCH (Form 4)")
 print("=" * 65)
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# Config
 try:
     from config import START_DATE
     start = START_DATE
@@ -97,9 +93,7 @@ else:
     tickers = []
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # FETCH FORM 4 FILINGS FROM SEC EDGAR
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def load_ticker_cik_map() -> dict:
     """
@@ -261,9 +255,7 @@ def compute_insider_features(filings: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     if not tickers:

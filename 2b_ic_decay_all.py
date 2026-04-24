@@ -1,6 +1,5 @@
 """
 2b_ic_decay_all.py - IC Decay Grid for ALL Factors
-===================================================
 Generates a grid plot showing IC decay curves (0-60 months) for every factor.
 Used for meeting review to visually identify short-term vs long-term factors.
 """
@@ -35,7 +34,7 @@ MACRO_COLS = [
     "spx_ret_1m","spx_ret_3m","spx_ret_6m","spx_ret_12m","spx_vol_63d"
 ]
 
-# ── Load data ──────────────────────────────────────────────────────────────────
+# Load data
 TRAIN_START = "2010-01-01"
 TRAIN_END   = "2020-12-31"
 
@@ -49,7 +48,7 @@ n_months   = panel["date"].nunique()
 print(f"  {len(feat_cols)} features | {n_months} train months ({TRAIN_START[:4]}–{TRAIN_END[:4]}) | {panel['ticker'].nunique()} tickers")
 
 
-# ── IC decay helper ────────────────────────────────────────────────────────────
+# IC decay helper
 def ic_decay_series(factor: str) -> list:
     dates        = sorted(panel["date"].unique())
     date_to_idx  = {d: i for i, d in enumerate(dates)}
@@ -75,7 +74,7 @@ def ic_decay_series(factor: str) -> list:
     return decay
 
 
-# ── Compute IC decay for all factors ──────────────────────────────────────────
+# Compute IC decay for all factors
 print(f"\nComputing IC decay (lags 0–{MAX_IC_DECAY_LAGS}) for all {len(feat_cols)} factors …")
 all_decay = {}
 for i, fac in enumerate(feat_cols, 1):
@@ -88,7 +87,7 @@ decay_df.to_csv(DATA_DIR / "factor_ic_decay_all.csv")
 print("Saved → factor_ic_decay_all.csv")
 
 
-# ── Grid plot ─────────────────────────────────────────────────────────────────
+# Grid plot
 n_factors = len(feat_cols)
 n_cols    = 8
 n_rows    = math.ceil(n_factors / n_cols)

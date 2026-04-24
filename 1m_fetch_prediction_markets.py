@@ -1,6 +1,5 @@
 """
 1m_fetch_prediction_markets.py - Fetch Prediction Market / Fed Futures Data
-=============================================================================
 Downloads forward-looking market expectations from free sources:
 
   1. CME Fed Funds Futures (via yfinance) - implied Fed rate expectations
@@ -50,7 +49,7 @@ except ImportError:
     print("ERROR: yfinance not installed")
     raise SystemExit(1)
 
-# ── Date range (match pipeline) ──────────────────────────────────────────────
+# Date range (match pipeline)
 try:
     from config import START_DATE
     start = START_DATE
@@ -59,9 +58,7 @@ except ImportError:
 end = pd.Timestamp.today().strftime("%Y-%m-%d")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # 1. FED FUNDS RATE EXPECTATIONS
-# ═══════════════════════════════════════════════════════════════════════════════
 print("\n1. Fetching Fed Funds Effective Rate (DFF from FRED proxy)...")
 # Use the 1-month and 3-month T-bill rates as Fed expectation proxies
 # Fed Funds Rate itself from yfinance: ^IRX (13-week T-bill) as close proxy
@@ -111,9 +108,7 @@ except Exception as e:
     print(f"  [WARN] ZQ=F failed: {e}")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # 2. YIELD CURVE RECESSION PROBABILITY
-# ═══════════════════════════════════════════════════════════════════════════════
 print("\n2. Fetching yield curve data for recession probability...")
 # 10Y-2Y spread → calibrated recession probability using probit model
 # Adrian & Estrella (2010): P(recession in 12m) = Φ(-0.57 + (-0.83) × spread)
@@ -140,9 +135,7 @@ for tk, name in tickers_yc.items():
         print(f"  [WARN] {tk} failed: {e}")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # 3. VIX TERM STRUCTURE (contango/backwardation)
-# ═══════════════════════════════════════════════════════════════════════════════
 print("\n3. Fetching VIX term structure...")
 # VIX spot vs VIX 3-month futures - contango = complacency, backwardation = fear
 
@@ -167,9 +160,7 @@ for tk, name in tickers_vix.items():
         print(f"  [WARN] {tk} failed: {e}")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # COMPUTE DERIVED FACTORS
-# ═══════════════════════════════════════════════════════════════════════════════
 print("\n4. Computing derived prediction market factors...")
 
 # Combine all series into a single DataFrame
@@ -182,7 +173,7 @@ combined = pd.concat(all_series, axis=1).sort_index()
 combined.index.name = "date"
 print(f"  Combined raw data: {len(combined)} rows, columns: {list(combined.columns)}")
 
-# ── Fed rate change expectation ──────────────────────────────────────────────
+# Fed rate change expectation
 # If we have Fed Funds Futures, use implied rate vs current 3m T-bill
 if "ff_implied_rate" in combined.columns and "tbill_3m" in combined.columns:
     # Positive = market expects rate HIKE, negative = expects CUT
@@ -200,7 +191,7 @@ elif "tbill_3m" in combined.columns:
     combined["fed_cut_prob"]  = (-change).clip(lower=0) / 2.0
     print("  ✓ fed_rate_exp_change (T-bill proxy), fed_hike_prob, fed_cut_prob")
 
-# ── Recession probability (yield curve probit) ──────────────────────────────
+# Recession probability (yield curve probit)
 if "yield_10y_raw" in combined.columns and "yield_2y_raw" in combined.columns:
     spread = combined["yield_10y_raw"] - combined["yield_2y_raw"]
     # Estrella-Mishkin probit: P(recession) = Φ(-0.57 - 0.83 × spread)
@@ -214,12 +205,12 @@ elif "yield_10y_raw" in combined.columns:
 else:
     combined["recession_prob"] = np.nan
 
-# ── Policy uncertainty = max(hike_prob, cut_prob) ────────────────────────────
+# Policy uncertainty = max(hike_prob, cut_prob)
 if "fed_hike_prob" in combined.columns:
     combined["policy_uncertainty"] = combined[["fed_hike_prob", "fed_cut_prob"]].max(axis=1)
     print("  ✓ policy_uncertainty")
 
-# ── VIX term structure ───────────────────────────────────────────────────────
+# VIX term structure
 if "vix_spot" in combined.columns and "vix_3m" in combined.columns:
     # VIX contango ratio: VIX_3M / VIX_spot
     # > 1 = contango (complacency), < 1 = backwardation (fear/stress)
@@ -230,7 +221,7 @@ elif "vix_spot" in combined.columns:
     combined["vix_term_structure"] = np.nan
     print("  ✗ vix_term_structure (need VIX3M data)")
 
-# ── Composite prediction market sentiment ────────────────────────────────────
+# Composite prediction market sentiment
 # Simple equal-weight of normalised components
 sentiment_cols = []
 for c in ["fed_rate_exp_change", "recession_prob", "vix_term_structure"]:
@@ -247,7 +238,7 @@ if sentiment_cols:
     combined["pred_market_sentiment"] = pd.concat(z_frames, axis=1).mean(axis=1)
     print(f"  ✓ pred_market_sentiment (from {sentiment_cols})")
 
-# ── Select final output columns ──────────────────────────────────────────────
+# Select final output columns
 OUTPUT_COLS = [
     "fed_hike_prob", "fed_cut_prob", "recession_prob",
     "policy_uncertainty", "vix_term_structure", "pred_market_sentiment",
@@ -262,7 +253,7 @@ result["date"] = pd.to_datetime(result["date"])
 # Drop rows where everything is NaN
 result = result.dropna(subset=final_cols, how="all")
 
-# ── Save ──────────────────────────────────────────────────────────────────────
+# Save
 result.to_parquet(OUT_PATH, index=False)
 print(f"\nSaved → {OUT_PATH}")
 print(f"  Shape: {result.shape}")

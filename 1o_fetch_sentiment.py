@@ -1,6 +1,5 @@
 """
 1o_fetch_sentiment.py - Fetch News Sentiment Data
-====================================================
 Fetches company news from Finnhub (free tier: 60 calls/min) and scores
 headlines using VADER sentiment analysis (open source, no API key needed).
 
@@ -43,7 +42,7 @@ print("=" * 65)
 print("NEWS SENTIMENT DATA FETCH (Finnhub + VADER)")
 print("=" * 65)
 
-# ── Check dependencies ────────────────────────────────────────────────────────
+# Check dependencies
 try:
     import finnhub
 except ImportError:
@@ -56,7 +55,7 @@ except ImportError:
     print("[ERROR] vaderSentiment not installed. Run: pip install vaderSentiment")
     raise SystemExit(1)
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# Config
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "")
 if not FINNHUB_API_KEY:
     print("[WARN] FINNHUB_API_KEY not set in environment. Set it with:")
@@ -88,16 +87,14 @@ else:
     print("[WARN] No panel/prices parquet found - cannot get ticker list")
     raise SystemExit(1)
 
-# ── Finnhub client ────────────────────────────────────────────────────────────
+# Finnhub client
 client = finnhub.Client(api_key=FINNHUB_API_KEY)
 analyzer = SentimentIntensityAnalyzer()
 
 RATE_LIMIT_DELAY = 1.05  # ~60 calls/min → 1s per call with margin
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # FETCH NEWS AND SCORE SENTIMENT
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def fetch_news_for_ticker(ticker: str, from_date: str, to_date: str) -> list:
     """Fetch company news from Finnhub for a single ticker."""
@@ -242,9 +239,7 @@ def compute_sentiment_features(scored: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     scored = fetch_all_sentiment()

@@ -48,7 +48,7 @@ except ImportError:
     HAS_TORCH = False
     print("WARNING: PyTorch not installed - using rule-based fallback for all agents.")
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR = Path("data")
 FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(exist_ok=True)
@@ -57,7 +57,7 @@ PANEL_FILE   = DATA_DIR / "panel_monthly_enriched.parquet"
 FACTORS_FILE = DATA_DIR / "factor_selected.csv"
 WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
 
-# ── Walk-forward folds (same as 5c) ───────────────────────────────────────────
+# Walk-forward folds (same as 5c)
 FOLDS = [
     ("2013-12-31", "2014-01-01", "2015-12-31", "2014–2015"),
     ("2015-12-31", "2016-01-01", "2017-12-31", "2016–2017"),
@@ -67,7 +67,7 @@ FOLDS = [
 ]
 TRAIN_START_GLOBAL = "2010-01-01"
 
-# ── Shared hyperparameters ─────────────────────────────────────────────────────
+# Shared hyperparameters
 ALPHA_MIN   = 0.002
 ALPHA_MAX   = 0.050
 FIXED_ALPHA = 0.010
@@ -121,9 +121,7 @@ if HAS_TORCH:
     torch.manual_seed(SEED)
 
 
-# =============================================================================
 # FACTOR COMBO SCORES - recomputed per fold from training data only
-# =============================================================================
 
 def compute_fold_weights(panel_train, factor_names, signs):
     """Mean-|IC| weights from training data only. No forward-looking information."""
@@ -169,9 +167,7 @@ def build_scores(panel_slice, factor_names, signed_w):
     return pd.DataFrame(rows)
 
 
-# =============================================================================
 # PORTFOLIO SIMULATION
-# =============================================================================
 
 def simulate_month(scores_month, weights_month, alpha, top_n=100, bottom_n=100):
     df = scores_month.merge(
@@ -195,9 +191,7 @@ def simulate_month(scores_month, weights_month, alpha, top_n=100, bottom_n=100):
             "active_ret": port_ret - bench_ret}
 
 
-# =============================================================================
 # EPISODE TABLE - training-period normalisation only
-# =============================================================================
 
 def build_episodes(scores, weights, ref_alpha=0.01, norm_params=None, fit_norm=False):
     """
@@ -264,9 +258,7 @@ def build_episodes(scores, weights, ref_alpha=0.01, norm_params=None, fit_norm=F
     return df, norm_params
 
 
-# =============================================================================
 # SHARED NEURAL NETWORK COMPONENTS
-# =============================================================================
 
 if HAS_TORCH:
     LOG_STD_MIN, LOG_STD_MAX = -10, 2
@@ -361,9 +353,7 @@ def _safe_state(row):
         -5.0, 5.0)
 
 
-# =============================================================================
 # SAC AGENT - off-policy, replay buffer, twin critics
-# =============================================================================
 
 class SACAgent:
     name = "SAC"
@@ -450,9 +440,7 @@ class SACAgent:
         return avg_r
 
 
-# =============================================================================
 # PPO AGENT - on-policy, clipped surrogate, critic baseline
-# =============================================================================
 
 class PPOAgent:
     name = "PPO"
@@ -477,7 +465,7 @@ class PPOAgent:
     def train(self, train_rows, verbose=False):
         avg_r = 0.0
         for epoch in range(PPO_EPOCHS):
-            # ── Collect on-policy rollout ─────────────────────────────────
+            # Collect on-policy rollout
             rollout    = []
             ep_rewards = []
             for dt, row in train_rows:
@@ -501,13 +489,13 @@ class PPOAgent:
             rewards   = torch.FloatTensor([[x[2]] for x in rollout])
             log_p_old = torch.FloatTensor([[x[3]] for x in rollout])
 
-            # ── Advantage: A = r - V(s), single-step episodes ─────────────
+            # Advantage: A = r - V(s), single-step episodes
             with torch.no_grad():
                 values = self.critic(states)
             adv = rewards - values
             adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
-            # ── K PPO update steps on the collected rollout ───────────────
+            # K PPO update steps on the collected rollout
             for _ in range(PPO_K_UPDATES):
                 log_p_new = self.actor.log_prob_of(states, alphas)
                 ratio     = (log_p_new - log_p_old.detach()).exp()
@@ -534,9 +522,7 @@ class PPOAgent:
         return avg_r
 
 
-# =============================================================================
 # GRPO AGENT - Group Relative Policy Optimisation (DeepSeek-R1 method)
-# =============================================================================
 
 class GRPOAgent:
     """
@@ -634,9 +620,7 @@ class GRPOAgent:
         return avg_r
 
 
-# =============================================================================
 # DAPO AGENT (ByteDance/Seed 2025)
-# =============================================================================
 
 class DAPOAgent:
     """
@@ -742,9 +726,7 @@ class DAPOAgent:
         return avg_r
 
 
-# =============================================================================
 # RULE-BASED FALLBACK (no PyTorch)
-# =============================================================================
 
 class RuleBasedAgent:
     name = "Rule"
@@ -755,9 +737,7 @@ class RuleBasedAgent:
     def train(self, train_rows, verbose=False): return 0.0
 
 
-# =============================================================================
 # EVALUATE + STATS
-# =============================================================================
 
 def evaluate(agent, ep_test):
     rl_rows, fixed_rows = [], []
@@ -796,9 +776,7 @@ def ie_stats(bt):
                 n_months=n)
 
 
-# =============================================================================
 # PLOTTING
-# =============================================================================
 
 COLORS = {"SAC": "#4A9EE0", "PPO": "#FF9800", "GRPO": "#66BB6A",
           "DAPO": "#FF6B9D", "Fixed": "#AAAAAA", "Rule": "#CC88CC"}
@@ -856,9 +834,7 @@ def plot_comparison(all_bt, fold_summary, algo_names):
     print(f"Saved -> {out}")
 
 
-# =============================================================================
 # MAIN
-# =============================================================================
 
 def main():
     print("=" * 70)
@@ -869,7 +845,7 @@ def main():
     if not HAS_TORCH:
         print("WARNING: PyTorch not available - rule-based fallback only.\n")
 
-    # ── Load data ─────────────────────────────────────────────────────────────
+    # Load data
     print("\nLoading data ...")
     panel   = pd.read_parquet(PANEL_FILE)
     panel["date"] = pd.to_datetime(panel["date"])
@@ -886,7 +862,7 @@ def main():
           f"  ({panel['date'].nunique()} months)")
     print(f"  Factors: {len(factor_names)}")
 
-    # ── Agent classes to compare ──────────────────────────────────────────────
+    # Agent classes to compare
     AgentClasses = ([SACAgent, PPOAgent, GRPOAgent, DAPOAgent] if HAS_TORCH
                     else [RuleBasedAgent])
     algo_names   = [cls.name for cls in AgentClasses]
@@ -895,7 +871,7 @@ def main():
     all_bt     = {n: [] for n in algo_names + ["Fixed"]}
     fold_rows  = []
 
-    # ── Fold loop ─────────────────────────────────────────────────────────────
+    # Fold loop
     for fold_idx, (train_end, test_start, test_end, label) in enumerate(FOLDS):
         print(f"\n{'='*70}")
         print(f"FOLD {fold_idx+1}/{len(FOLDS)} - Test: {label}")
@@ -976,7 +952,7 @@ def main():
             line += f"  {(v*100 if pct else v):>{col_w}.{'2f' if pct else '3f'}}{'%' if pct else ' '}"
             print(line)
 
-    # ── Aggregate ─────────────────────────────────────────────────────────────
+    # Aggregate
     fold_summary = pd.DataFrame(fold_rows)
     for name in algo_names + ["Fixed"]:
         all_bt[name] = (pd.concat(all_bt[name]).sort_index()
@@ -1036,7 +1012,7 @@ def main():
         print(f"{name} {wins}/{len(FOLDS)}", end="  ")
     print()
 
-    # ── Save ──────────────────────────────────────────────────────────────────
+    # Save
     fold_summary.to_csv(DATA_DIR / "algo_comparison.csv", index=False)
     print(f"\nSaved -> data/algo_comparison.csv")
     plot_comparison(all_bt, fold_summary, algo_names)

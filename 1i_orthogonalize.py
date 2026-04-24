@@ -1,6 +1,5 @@
 """
 1i_orthogonalize.py
-====================
 PCA residualization of the factor panel.
 
 Reads:   data/panel_monthly_enriched.parquet

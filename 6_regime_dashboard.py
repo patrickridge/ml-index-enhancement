@@ -20,10 +20,10 @@ import plotly.express as px
 from pathlib import Path
 import streamlit as st
 
-# ── Paths ───────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR = Path("data")
 
-# ── Regime definitions (no emoji - clean labels) ────────────────────────────
+# Regime definitions (no emoji - clean labels)
 ALL_REGIMES = {
     "GFC Crash (2008–2009)":         ("2008-01-01", "2009-12-31", "#7B241C"),
     "Post-GFC Recovery (2010–2012)": ("2010-01-01", "2012-12-31", "#1A5276"),
@@ -63,7 +63,7 @@ _LAYOUT = dict(
     margin=dict(t=60, b=40, l=50, r=30),
 )
 
-# ── Custom CSS - academic, clean ────────────────────────────────────────────
+# Custom CSS - academic, clean
 _CSS = """
 <style>
 /* Layout */
@@ -129,7 +129,7 @@ hr { border: none; border-top: 1px solid #2A2D3A; margin: 1rem 0; }
 </style>
 """
 
-# ── Page config ─────────────────────────────────────────────────────────────
+# Page config
 st.set_page_config(
     page_title="IE Regime Dashboard",
     page_icon=None,
@@ -143,7 +143,7 @@ st.caption(
     "Models: CS-Transformer · FT-Transformer · LGBM · Factor-Combo baseline."
 )
 
-# ── Sidebar ─────────────────────────────────────────────────────────────────
+# Sidebar
 with st.sidebar:
     st.markdown("## Models")
     selected_models = st.multiselect(
@@ -174,7 +174,7 @@ with st.sidebar:
 show_gfc_note = "GFC Crash (2008–2009)" in selected_regimes
 
 
-# ── Helper functions ─────────────────────────────────────────────────────────
+# Helper functions
 
 def load_backtest(name: str) -> pd.DataFrame | None:
     path = DATA_DIR / MODEL_FILES[name]
@@ -252,7 +252,7 @@ def apply_layout(fig: go.Figure, **kwargs) -> go.Figure:
     return fig
 
 
-# ── Load backtest data ───────────────────────────────────────────────────────
+# Load backtest data
 @st.cache_data
 def load_all_data() -> dict:
     return {
@@ -279,7 +279,7 @@ if show_gfc_note:
         "can be extended if price data prior to 2010 is loaded."
     )
 
-# ── Tabs ─────────────────────────────────────────────────────────────────────
+# Tabs
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Regime Breakdown",
     "Bootstrap Analysis",
@@ -291,9 +291,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 ])
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # TAB 1 - Regime Breakdown
-# ═════════════════════════════════════════════════════════════════════════════
 with tab1:
 
     # Build regime stats table
@@ -306,7 +304,7 @@ with tab1:
             rows.append({"Model": model, "Regime": reg, **regime_stats(sub)})
     stats_df = pd.DataFrame(rows)
 
-    # ── IR bar chart
+    # IR bar chart
     st.markdown("## Information Ratio by Regime")
     st.caption("IR = annualised alpha / tracking error. IR > 0.5: institutional-grade. IR > 1.0: top-quartile.")
 
@@ -338,7 +336,7 @@ with tab1:
 
     st.divider()
 
-    # ── Cumulative active return
+    # Cumulative active return
     st.markdown("## Cumulative Active Return")
     st.caption("Portfolio cumulative alpha relative to the S&P 500 benchmark.")
 
@@ -372,7 +370,7 @@ with tab1:
 
     st.divider()
 
-    # ── Hit rate & ann alpha side by side
+    # Hit rate & ann alpha side by side
     col1, col2 = st.columns(2)
 
     with col1:
@@ -412,9 +410,7 @@ with tab1:
         st.plotly_chart(fig_alpha, use_container_width=True)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # TAB 2 - Bootstrap Analysis
-# ═════════════════════════════════════════════════════════════════════════════
 with tab2:
     st.markdown("## Block Bootstrap - IR Confidence Intervals")
     st.caption(
@@ -555,9 +551,7 @@ with tab2:
                    f"({sub_sel.dropna().shape[0]} months - minimum 6 required).")
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # TAB 3 - Monte Carlo Projection
-# ═════════════════════════════════════════════════════════════════════════════
 with tab3:
     st.markdown("## Monte Carlo Forward Projection")
     st.caption(
@@ -652,9 +646,7 @@ with tab3:
     )
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # TAB 4 - Statistics
-# ═════════════════════════════════════════════════════════════════════════════
 with tab4:
     st.markdown("## Performance Statistics - All Models × Regimes")
     st.caption("IR > 0.5 = good (institutional grade). IR > 1.0 = excellent (top-quartile).")
@@ -746,11 +738,9 @@ with tab4:
     st.plotly_chart(fig_hm, use_container_width=True)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # TAB 5 - Volatility Surface
-# ═════════════════════════════════════════════════════════════════════════════
 with tab5:
-    # ── Section 1: Stochastic MC Portfolio Vol Surface ───────────────────────
+    # Section 1: Stochastic MC Portfolio Vol Surface
     st.markdown("## Stochastic Portfolio Volatility Surface")
     st.caption(
         "Monte Carlo portfolio vol surface generated by 1,000 regime-switching paths per grid point - "
@@ -900,7 +890,7 @@ with tab5:
     )
     st.plotly_chart(fig_mc, use_container_width=True)
 
-    # ── Backtest Replay Animation ─────────────────────────────────────────────
+    # Backtest Replay Animation
     st.divider()
     st.markdown("## Backtest Replay - Vol Surface Through Time")
     st.caption(
@@ -923,7 +913,7 @@ with tab5:
         if 2013 <= yr <= 2019:                   return 0.05, 1.3   # QE bull
         return 0.12, 2.0                                            # default
 
-    # ── Controls ─────────────────────────────────────────────────────────────
+    # Controls
     col_a, col_b, col_c, col_d = st.columns([1, 1, 1, 1])
     with col_a:
         play_speed = st.select_slider(
@@ -943,7 +933,7 @@ with tab5:
                              use_container_width=True,
                              disabled="replay_frames" not in st.session_state)
 
-    # ── Precompute ────────────────────────────────────────────────────────────
+    # Precompute
     if precompute_btn:
         frames = []
         prog   = st.progress(0.0, text="Precomputing frames…")
@@ -967,7 +957,7 @@ with tab5:
         prog.empty()
         st.success(f"Done - {n} frames precomputed. Press ▶ Play Animation.")
 
-    # ── Play ──────────────────────────────────────────────────────────────────
+    # Play
     if play_btn and "replay_frames" in st.session_state:
         chart_slot  = st.empty()
         status_slot = st.empty()
@@ -1027,7 +1017,7 @@ with tab5:
 
     st.divider()
 
-    # ── Section 2: Historical Cross-Sectional Return Distribution ────────────
+    # Section 2: Historical Cross-Sectional Return Distribution
     st.markdown("## Historical Cross-Sectional Return Distribution")
     st.caption(
         "Historical view: 3-D surface of the cross-sectional distribution of S&P 500 "
@@ -1166,9 +1156,7 @@ with tab5:
         st.plotly_chart(fig_ts, use_container_width=True)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # TAB 6 - Walk-Forward RL Backtest
-# ═════════════════════════════════════════════════════════════════════════════
 with tab6:
     st.markdown("## Walk-Forward RL Backtest - No Data Leakage")
     st.markdown(
@@ -1189,7 +1177,7 @@ with tab6:
         wf   = pd.read_csv(WF_FILE,   parse_dates=["date"]).sort_values("date")
         fold = pd.read_csv(FOLD_FILE)
 
-        # ── Headline metrics ─────────────────────────────────────────────────
+        # Headline metrics
         rl_alpha_ann = wf["active_ret"].mean() * 12
         rl_te        = wf["active_ret"].std() * (12 ** 0.5)
         rl_ir        = rl_alpha_ann / rl_te if rl_te > 0 else 0.0
@@ -1216,7 +1204,7 @@ with tab6:
 
         st.markdown("---")
 
-        # ── Cumulative active return chart ───────────────────────────────────
+        # Cumulative active return chart
         st.markdown("### Cumulative Out-of-Sample Active Return")
 
         wf = wf.sort_values("date").copy()
@@ -1264,7 +1252,7 @@ with tab6:
         )
         st.plotly_chart(fig_cum, use_container_width=True)
 
-        # ── Per-fold IR bar chart ─────────────────────────────────────────────
+        # Per-fold IR bar chart
         st.markdown("### Per-Fold Information Ratio")
 
         bar_colors_rl    = ["#4A9EE0"] * len(fold)
@@ -1303,7 +1291,7 @@ with tab6:
         )
         st.plotly_chart(fig_fold, use_container_width=True)
 
-        # ── Fold summary table ────────────────────────────────────────────────
+        # Fold summary table
         st.markdown("### Fold Summary")
         disp = fold.copy()
         disp.columns = ["Fold", "Months", "RL IR", "RL Alpha", "RL TE", "Fixed IR"]
@@ -1334,7 +1322,7 @@ with tab6:
         else:
             ac = pd.read_csv(ALGO_FILE)
 
-            # ── Headline overall IR ───────────────────────────────────────────
+            # Headline overall IR
             # Compute weighted-average IR across folds (weighted by n_months)
             def wavg_ir(col):
                 return float((ac[col] * ac["n_months"]).sum() / ac["n_months"].sum())
@@ -1347,7 +1335,7 @@ with tab6:
 
             st.markdown("---")
 
-            # ── Per-fold IR bar chart ────────────────────────────────────────
+            # Per-fold IR bar chart
             ALGO_COLORS = {
                 "SAC":   "#4A9EE0",
                 "PPO":   "#F5A623",
@@ -1388,7 +1376,7 @@ with tab6:
             )
             st.plotly_chart(fig_algo, use_container_width=True)
 
-            # ── Summary table ────────────────────────────────────────────────
+            # Summary table
             st.markdown("### Detailed Metrics by Fold")
             disp_ac = pd.DataFrame({
                 "Fold":        ac["label"],
@@ -1411,9 +1399,7 @@ with tab6:
             )
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # TAB 7 - Backtest Engine
-# ═════════════════════════════════════════════════════════════════════════════
 with tab7:
     st.markdown("## Backtest Engine")
     st.caption(
@@ -1421,7 +1407,7 @@ with tab7:
         "walk-forward (no leakage), and synthetic stress test."
     )
 
-    # ── Top summary: all three modes side by side ────────────────────────────
+    # Top summary: all three modes side by side
     st.markdown("### Summary Across All Modes")
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -1466,7 +1452,7 @@ with tab7:
 
     st.markdown("---")
 
-    # ── Mode selector ────────────────────────────────────────────────────────
+    # Mode selector
     mode = st.radio(
         "Select backtest mode:",
         ["Normal Backtest", "Walk-Forward (No Leakage)", "Stress Test"],
@@ -1474,9 +1460,7 @@ with tab7:
         key="bt_engine_mode",
     )
 
-    # ════════════════════════════════════════════════════════════════════════
     # MODE 1 - Normal Backtest
-    # ════════════════════════════════════════════════════════════════════════
     if mode == "Normal Backtest":
         st.markdown("### Normal Backtest - Single Train / Test Split")
         st.caption(
@@ -1544,9 +1528,7 @@ with tab7:
                 f"All results are out-of-sample on the test split._"
             )
 
-    # ════════════════════════════════════════════════════════════════════════
     # MODE 2 - Walk-Forward
-    # ════════════════════════════════════════════════════════════════════════
     elif mode == "Walk-Forward (No Leakage)":
         st.markdown("### Walk-Forward Backtest - No Data Leakage")
         st.caption(
@@ -1650,9 +1632,7 @@ with tab7:
             disp["Beats?"]   = (fold["rl_ir"] > fold["fixed_ir"]).map({True: "✓", False: "✗"})
             st.dataframe(disp, use_container_width=True, hide_index=True)
 
-    # ════════════════════════════════════════════════════════════════════════
     # MODE 3 - Stress Test
-    # ════════════════════════════════════════════════════════════════════════
     else:
         st.markdown("### Stress Test - Synthetic Bear Market")
         st.caption(
@@ -1709,7 +1689,7 @@ with tab7:
             )
 
 
-# ── Footer ───────────────────────────────────────────────────────────────────
+# Footer
 st.markdown("---")
 st.caption(
     "ML-Driven S&P 500 Index Enhancement  ·  "

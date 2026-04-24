@@ -1,6 +1,5 @@
 """
 1j_fetch_simfin.py - Fetch Quarterly Fundamentals from Simfin (Free API)
-=========================================================================
 Downloads quarterly income, balance sheet, and cash flow data from the Simfin
 bulk data API (free tier).  Computes trailing-twelve-month (TTM) aggregates
 and standard valuation / quality ratios.
@@ -40,7 +39,7 @@ print("=" * 65)
 print("SIMFIN FUNDAMENTAL DATA FETCH")
 print("=" * 65)
 
-# ── Load Simfin bulk data ─────────────────────────────────────────────────────
+# Load Simfin bulk data
 SIMFIN_API_KEY = None  # Set your free key from simfin.com, or None to use yfinance fallback
 
 try:
@@ -64,7 +63,7 @@ except FileNotFoundError:
     print("  [WARN] panel_monthly.parquet not found - fetching all US tickers")
     our_tickers = None
 
-# ── Download quarterly financial statements ───────────────────────────────────
+# Download quarterly financial statements
 df_income = pd.DataFrame()
 df_balance = pd.DataFrame()
 df_cashflow = pd.DataFrame()
@@ -95,7 +94,7 @@ if df_income.empty and df_balance.empty:
     print("  NOTE: To use Simfin, register free at simfin.com and set SIMFIN_API_KEY.")
     USE_YFINANCE_FALLBACK = True
 
-# ── Ticker mapping ────────────────────────────────────────────────────────────
+# Ticker mapping
 # Simfin uses plain tickers (AAPL), our pipeline may use exchange-suffixed (AAPL.O)
 # Build bidirectional mapping
 
@@ -115,7 +114,7 @@ else:
     plain_to_pipeline = None
 
 
-# ── Helper: reset Simfin multi-index to flat DataFrame ────────────────────────
+# Helper: reset Simfin multi-index to flat DataFrame
 def flatten_simfin(df):
     """Simfin returns MultiIndex (Ticker, Report Date). Flatten to columns."""
     if df.empty:
@@ -138,7 +137,7 @@ df_i = flatten_simfin(df_income)
 df_b = flatten_simfin(df_balance)
 df_c = flatten_simfin(df_cashflow)
 
-# ── Map Simfin tickers to pipeline tickers ────────────────────────────────────
+# Map Simfin tickers to pipeline tickers
 def map_tickers(df, mapping):
     """Map Simfin Ticker column to pipeline tickers. Drop unmapped."""
     if mapping is None:
@@ -164,7 +163,7 @@ print(f"    Balance: {len(df_b):,} rows, {df_b['ticker'].nunique() if 'ticker' i
 print(f"    CashFlow:{len(df_c):,} rows, {df_c['ticker'].nunique() if 'ticker' in df_c.columns else 0} tickers")
 
 
-# ── Compute TTM aggregates and ratios ─────────────────────────────────────────
+# Compute TTM aggregates and ratios
 # Use publish_date as the point-in-time observation date
 # For each (ticker, publish_date), compute TTM = sum of last 4 quarterly values
 
@@ -275,7 +274,7 @@ def compute_fundamentals(df_i, df_b, df_c):
             # Use book value ratios that don't need price (ROE, ROA, margins)
             # Price-based ratios (PE, PB, PS) need market cap - use shares × close from prices
 
-            # ── Ratios that DON'T need price ──
+            # Ratios that DON'T need price
             # ROE = NI_TTM / Equity
             rec["roe"] = ni / total_eq if total_eq and abs(total_eq) > 1e6 else np.nan
             # ROA = NI_TTM / Total Assets
@@ -288,7 +287,7 @@ def compute_fundamentals(df_i, df_b, df_c):
             # Debt to equity
             rec["debt_to_equity"] = total_debt / total_eq if total_eq and abs(total_eq) > 1e6 else np.nan
 
-            # ── Growth rates (YoY) ──
+            # Growth rates (YoY)
             if idx >= 4:
                 rev_1y = rev_ttm.iloc[idx - 4] if rev_ttm is not None else np.nan
                 ni_1y  = ni_ttm.iloc[idx - 4]  if ni_ttm  is not None else np.nan
@@ -298,7 +297,7 @@ def compute_fundamentals(df_i, df_b, df_c):
                 rec["revenue_growth_yoy"] = np.nan
                 rec["eps_growth_yoy"]     = np.nan
 
-            # ── Earnings quality = CFO_TTM / NI_TTM (Sloan 1996) ──
+            # Earnings quality = CFO_TTM / NI_TTM (Sloan 1996)
             if not tk_c.empty and cfo_col:
                 mask_c = tk_c["publish_date" if "publish_date" in tk_c.columns else "report_date"] <= obs_date
                 if mask_c.any():
@@ -311,7 +310,7 @@ def compute_fundamentals(df_i, df_b, df_c):
             else:
                 rec["earnings_quality"] = np.nan
 
-            # ── Price-dependent ratios (set to NaN - will be computed in 1h using market prices) ──
+            # Price-dependent ratios (set to NaN - will be computed in 1h using market prices)
             # PE, PB, PS, EV/EBITDA require market cap = shares × close
             # Store per-share values so 1h can divide by price
             if shares and shares > 0:
@@ -343,9 +342,7 @@ def compute_fundamentals(df_i, df_b, df_c):
     return result
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # YFINANCE FALLBACK - fetch fundamentals ticker-by-ticker
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def fetch_fundamentals_yfinance(tickers, batch_size=20):
     """
@@ -376,18 +373,18 @@ def fetch_fundamentals_yfinance(tickers, batch_size=20):
         try:
             obj = yf.Ticker(yf_tk)
 
-            # ── Quarterly financials (income statement) ──
+            # Quarterly financials (income statement)
             inc = obj.quarterly_financials  # line items × dates
             if inc is None or inc.empty:
                 failed += 1
                 continue
 
-            # ── Quarterly balance sheet ──
+            # Quarterly balance sheet
             bal = obj.quarterly_balance_sheet
             if bal is None:
                 bal = pd.DataFrame()
 
-            # ── Quarterly cash flow ──
+            # Quarterly cash flow
             cf = obj.quarterly_cashflow
             if cf is None:
                 cf = pd.DataFrame()
@@ -421,7 +418,7 @@ def fetch_fundamentals_yfinance(tickers, batch_size=20):
             cfo   = get(cf_t, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"])
             capex = get(cf_t, ["Capital Expenditure"])
 
-            # ── TTM (trailing 4 quarters) ──
+            # TTM (trailing 4 quarters)
             def ttm(s):
                 return s.rolling(4, min_periods=3).sum()
 
@@ -430,7 +427,7 @@ def fetch_fundamentals_yfinance(tickers, batch_size=20):
             cogs_ttm = ttm(cogs)
             cfo_ttm = ttm(cfo)
 
-            # ── For each quarter, compute ratios ──
+            # For each quarter, compute ratios
             for j, dt in enumerate(inc_t.index):
                 rec = {"date": pd.Timestamp(dt), "ticker": tk}
 
@@ -519,7 +516,7 @@ def fetch_fundamentals_yfinance(tickers, batch_size=20):
     return result
 
 
-# ── Run ───────────────────────────────────────────────────────────────────────
+# Run
 if USE_YFINANCE_FALLBACK:
     print("\nFetching fundamentals via yfinance (ticker-by-ticker)...")
     print("  This may take 10-20 min for 500+ tickers.")

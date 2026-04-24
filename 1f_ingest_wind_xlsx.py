@@ -1,6 +1,5 @@
 """
 1f_ingest_wind_xlsx.py - Ingest Wind platform XLSX exports into prices.parquet
-==============================================================================
 The Wind platform can export historical OHLCV data for any S&P 500
 constituent (including delisted stocks). This script reads all XLSX files
 from data/wind_exports/ and merges them into prices.parquet.
@@ -38,7 +37,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pathlib import Path
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR    = Path("data")
 WIND_DIR    = DATA_DIR / "wind_exports"       # drop xlsx files here
 PRICES_IN   = DATA_DIR / "prices.parquet"
@@ -69,7 +68,7 @@ def parse_wind_xlsx(path: Path) -> tuple[str, pd.DataFrame] | None:
             engine="openpyxl"
         )
 
-        # ── Extract ticker ────────────────────────────────────────────────────
+        # Extract ticker
         ticker = None
         for r in range(min(10, len(raw))):
             for c in range(min(5, raw.shape[1])):
@@ -93,7 +92,7 @@ def parse_wind_xlsx(path: Path) -> tuple[str, pd.DataFrame] | None:
                 print(f"  Error: cannot determine ticker from {path.name}")
                 return None
 
-        # ── Find data start row ───────────────────────────────────────────────
+        # Find data start row
         # Data starts after the bilingual header block.
         # Look for the first row where column B is a parseable date.
         data_start = None
@@ -113,7 +112,7 @@ def parse_wind_xlsx(path: Path) -> tuple[str, pd.DataFrame] | None:
             print(f"  Error: no date data found in {path.name}")
             return None
 
-        # ── Read data block ────────────────────────────────────────────────────
+        # Read data block
         data_raw = raw.iloc[data_start:].copy()
         data_raw = data_raw.iloc[:, 1:6]   # columns B–F: date, open, high, low, close
 
@@ -154,7 +153,7 @@ def main():
     print("INGEST WIND XLSX EXPORTS → prices.parquet")
     print("=" * 65)
 
-    # ── Collect xlsx files ───────────────────────────────────────────────────
+    # Collect xlsx files
     xlsx_files = []
 
     # Check wind_exports/ folder
@@ -183,14 +182,14 @@ def main():
     for f in xlsx_files:
         print(f"  {f}")
 
-    # ── Load existing prices ─────────────────────────────────────────────────
+    # Load existing prices
     print(f"\nLoading {PRICES_IN} …")
     prices = pq.read_table(PRICES_IN).to_pandas()
     prices["date"] = pd.to_datetime(prices["date"]).dt.tz_localize(None)
     existing_tickers = set(prices["ticker"].unique())
     print(f"  {len(existing_tickers)} tickers | {len(prices):,} rows")
 
-    # ── Parse all xlsx files ─────────────────────────────────────────────────
+    # Parse all xlsx files
     new_dfs  = []
     ok_list  = []
     bad_list = []
@@ -225,7 +224,7 @@ def main():
     if not new_dfs:
         print("\nNo new data to add to prices.parquet.")
     else:
-        # ── Merge ────────────────────────────────────────────────────────────
+        # Merge
         print(f"\nMerging {len(new_dfs)} new dataset(s) …")
         new_data = pd.concat(new_dfs, ignore_index=True)
 
@@ -248,7 +247,7 @@ def main():
         n_new = prices_updated["ticker"].nunique()
         print(f"  Updated: {n_new} tickers | {len(prices_updated):,} rows")
 
-        # ── Save ─────────────────────────────────────────────────────────────
+        # Save
         date_col = pa.field("date", pa.timestamp("us"))
         table = pa.Table.from_pandas(prices_updated, preserve_index=False)
         # Ensure date has no timezone
@@ -261,7 +260,7 @@ def main():
         pq.write_table(table, PRICES_IN, compression="snappy")
         print(f"  Saved → {PRICES_IN}")
 
-    # ── Update ticker log ────────────────────────────────────────────────────
+    # Update ticker log
     if ok_list and TICKER_LOG.exists():
         print("\nUpdating ticker log …")
         log_df = pd.read_csv(TICKER_LOG)
@@ -276,7 +275,7 @@ def main():
         log_df.to_csv(TICKER_LOG, index=False)
         print(f"  Updated {len(ok_list)} ticker(s) → status: ok_wind")
 
-    # ── Summary ──────────────────────────────────────────────────────────────
+    # Summary
     print(f"\n{'='*65}")
     print("WIND INGEST COMPLETE")
     print(f"{'='*65}")

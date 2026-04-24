@@ -1,6 +1,5 @@
 """
 4d_benchmark_spx.py
-==================
 Compares all strategy returns against S&P 500 (^GSPC).
 
 Strategies benchmarked:
@@ -25,7 +24,7 @@ import time as _time; _t0 = _time.time()
 
 OUT_PATH = DATA_DIR / "benchmark_comparison.csv"
 
-# ── Strategy registry ──────────────────────────────────────────────────────────
+# Strategy registry
 # (display label, csv filename, return column, warning note)
 STRATEGIES = [
     ("LGBM Long-Only (Top 50)",        "bt_lgbm.csv",             "port_ret",   ""),
@@ -38,7 +37,7 @@ STRATEGIES = [
 ]
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# Helpers
 def get_spx_monthly(start_date: str) -> pd.Series:
     try:
         import yfinance as yf
@@ -131,7 +130,7 @@ def print_comparison(label: str, port: pd.Series, spx: pd.Series) -> dict:
 
 
 def main():
-    # ── Find earliest start date across all available strategies ──────────────
+    # Find earliest start date across all available strategies
     all_starts = []
     series_map = {}
     for label, filename, ret_col, note in STRATEGIES:
@@ -150,7 +149,7 @@ def main():
     print(f"Downloading SPX from {start}...")
     spx = get_spx_monthly(start)
 
-    # ── Print individual comparisons ──────────────────────────────────────────
+    # Print individual comparisons
     summary_rows = []
     for label, (port, note) in series_map.items():
         display = label + (f"  [{note}]" if note else "")
@@ -158,7 +157,7 @@ def main():
         row["label"] = label   # clean label for CSV
         summary_rows.append(row)
 
-    # ── Summary ranking table ─────────────────────────────────────────────────
+    # Summary ranking table
     # Add SPX itself as a row
     spx_stats = perf_stats(spx)
     summary_rows.append(dict(
@@ -193,7 +192,7 @@ def main():
         print(f"  {lbl:<38} {sharpe:>7}  {ann:>8}  {beta:>6}  {alpha:>8}  {maxdd:>8}")
     print(f"{'=' * 75}")
 
-    # ── Save ──────────────────────────────────────────────────────────────────
+    # Save
     df_summary.to_csv(OUT_PATH)
     print(f"\nSaved to {OUT_PATH}")
     print(f"Done in {(_time.time() - _t0) / 60:.1f} min")

@@ -1,6 +1,5 @@
 """
 1d_fetch_missing_tickers.py - Recover Price Data for Failed Historical Tickers
-===============================================================================
 Script 1b_fetch_constituents.py fetched ~440 historical S&P 500
 members but ~252 tickers failed, typically due to a yfinance timezone bug
 (YFTzMissingError) or because the ticker was fully delisted.
@@ -53,12 +52,12 @@ except ImportError:
     print("WARNING: pandas_datareader not installed - Method 2 (Stooq) unavailable.")
     print("         Install with: pip install pandas-datareader")
 
-# ── Paths ───────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR   = Path("data")
 PRICES_PATH    = DATA_DIR / "prices.parquet"
 TICKER_LOG = DATA_DIR / "historical_tickers.csv"
 
-# ── Fetch settings ──────────────────────────────────────────────────────────────
+# Fetch settings
 FETCH_START = "2005-01-01"
 FETCH_END   = "2026-01-01"
 MIN_ROWS    = 20   # minimum trading days required to accept a result
@@ -67,9 +66,7 @@ MIN_ROWS    = 20   # minimum trading days required to accept a result
 PROGRESS_EVERY = 25
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def to_yf_ticker(tk: str) -> str:
     """
@@ -130,7 +127,7 @@ def normalise_ohlcv(df: pd.DataFrame, ticker: str) -> pd.DataFrame | None:
     return df if len(df) >= MIN_ROWS else None
 
 
-# ── Method 1: yf.Ticker.history() ───────────────────────────────────────────────
+# Method 1: yf.Ticker.history()
 
 def fetch_yf_history(ticker: str) -> pd.DataFrame | None:
     """
@@ -159,7 +156,7 @@ def fetch_yf_history(ticker: str) -> pd.DataFrame | None:
         return None
 
 
-# ── Method 2: Stooq via pandas_datareader ───────────────────────────────────────
+# Method 2: Stooq via pandas_datareader
 
 def fetch_stooq(ticker: str) -> pd.DataFrame | None:
     """
@@ -191,16 +188,14 @@ def fetch_stooq(ticker: str) -> pd.DataFrame | None:
         return None
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     print("=" * 65)
     print("RECOVER MISSING TICKERS (YFTzMissingError Fix + Stooq)")
     print("=" * 65)
 
-    # ── Load ticker log ──────────────────────────────────────────────────────
+    # Load ticker log
     if not TICKER_LOG.exists():
         print(f"\nERROR: {TICKER_LOG} not found.")
         print("Run 1b_fetch_constituents.py first.")
@@ -219,14 +214,14 @@ def main():
         print("\nNo failed tickers to retry - nothing to do.")
         return
 
-    # ── Load existing prices ─────────────────────────────────────────────────
+    # Load existing prices
     print(f"\nLoading {PRICES_PATH} …")
     prices_existing = pq.read_table(PRICES_PATH).to_pandas()
     prices_existing["date"] = pd.to_datetime(prices_existing["date"])
     print(f"  {prices_existing['ticker'].nunique()} tickers | "
           f"{len(prices_existing):,} rows")
 
-    # ── Retry each failed ticker ─────────────────────────────────────────────
+    # Retry each failed ticker
     print(f"\nRetrying {n_total} failed tickers …\n")
 
     new_frames = []
@@ -276,7 +271,7 @@ def main():
             print(f"  {i}/{n_total}  |  ok={n_ok}  failed={n_fail}  "
                   f"| elapsed {elapsed:.1f}m")
 
-    # ── Summary of retry results ─────────────────────────────────────────────
+    # Summary of retry results
     ok_tickers      = [tk for tk, r in retry_results.items() if r["status"] == "ok"]
     still_failed    = [tk for tk, r in retry_results.items() if r["status"] == "missing"]
     via_yf_history  = [tk for tk, r in retry_results.items() if r["method"] == "yf_history"]
@@ -298,7 +293,7 @@ def main():
         if len(still_failed) > 30:
             print(f"    … and {len(still_failed) - 30} more")
 
-    # ── Update ticker log ────────────────────────────────────────────────────
+    # Update ticker log
     for idx, row in log_df.iterrows():
         tk = row["ticker"]
         if tk in retry_results:
@@ -310,7 +305,7 @@ def main():
     log_df.to_csv(TICKER_LOG, index=False)
     print(f"\nUpdated ticker log → {TICKER_LOG}")
 
-    # ── Merge recovered data with existing prices ────────────────────────────
+    # Merge recovered data with existing prices
     if not new_frames:
         print("\nNo new data recovered - prices.parquet unchanged.")
         print(f"\nDone in {(_time.time() - _t0) / 60:.1f} min")
@@ -346,13 +341,13 @@ def main():
     print(f"  Total:    {len(merged):,}")
     print(f"  Tickers:  {merged['ticker'].nunique()}")
 
-    # ── Save updated prices.parquet ──────────────────────────────────────────
+    # Save updated prices.parquet
     table = pa.Table.from_pandas(merged, preserve_index=False)
     pq.write_table(table, PRICES_PATH, compression="snappy")
     print(f"\nSaved → {PRICES_PATH}  ({len(merged):,} rows | "
           f"{merged['ticker'].nunique()} tickers)")
 
-    # ── Final summary ────────────────────────────────────────────────────────
+    # Final summary
     print(f"\n{'='*65}")
     print("RECOVERY COMPLETE")
     print(f"{'='*65}")

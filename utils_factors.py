@@ -1,6 +1,5 @@
 """
 utils_factors.py
-================
 Centralised factor library for the ML trading pipeline.
 
 All per-ticker functions accept a prices DataFrame sorted by [ticker, date] with columns:
@@ -36,9 +35,7 @@ from pathlib import Path
 from typing import Optional
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # HELPER UTILITIES
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _rolling_maxdd(x: pd.Series, w: int) -> pd.Series:
     """
@@ -111,9 +108,7 @@ def _trend_r2(x: pd.Series, w: int) -> pd.Series:
     return x.rolling(w, min_periods=w).apply(_r2, raw=True)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 1 - MULTI-HORIZON MOMENTUM  (6 new daily-computed factors)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_momentum_daily(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -144,9 +139,7 @@ def add_momentum_daily(prices: pd.DataFrame) -> pd.DataFrame:
     return prices
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 2 - VOLATILITY REGIMES  (8 new factors)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_volatility_features(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -191,9 +184,7 @@ def add_volatility_features(prices: pd.DataFrame) -> pd.DataFrame:
     return prices
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 3 - TAIL RISK  (6 new factors)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_tail_risk(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -251,9 +242,7 @@ def add_tail_risk(prices: pd.DataFrame) -> pd.DataFrame:
     return prices
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 4 - PRICE LEVEL / TREND  (11 new factors)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_price_trend(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -328,9 +317,7 @@ def add_price_trend(prices: pd.DataFrame) -> pd.DataFrame:
     return prices
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 5 - VOLUME & LIQUIDITY  (6 new factors; degrades gracefully without volume)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_volume_liquidity(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -387,9 +374,7 @@ def add_volume_liquidity(prices: pd.DataFrame) -> pd.DataFrame:
     return prices
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 6 - MARKET BETA / CORRELATION  (8 new factors)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_beta_correlation(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -467,9 +452,7 @@ def add_beta_correlation(prices: pd.DataFrame) -> pd.DataFrame:
     return prices
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 7 - INTRADAY / MICROSTRUCTURE  (5 new factors)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_microstructure(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -533,9 +516,7 @@ def add_microstructure(prices: pd.DataFrame) -> pd.DataFrame:
     return prices
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 8 - CROSS-SECTIONAL RELATIVE  (6 new monthly factors)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_cross_sectional_relative(
     panel: pd.DataFrame,
@@ -579,9 +560,7 @@ def add_cross_sectional_relative(
     return panel
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 9 - FUNDAMENTAL / QUALITY  (12 factors, optional)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 FUNDAMENTAL_COLS = [
     "pe_ratio", "pb_ratio", "ps_ratio", "ev_ebitda",
@@ -621,9 +600,7 @@ def add_fundamental_factors(
     return panel
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 10 - MACRO / REGIME  (9 factors, fetched from yfinance)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 MACRO_TICKERS = {
     "^VIX":      "vix",
@@ -735,10 +712,8 @@ def add_macro_factors(
     return result.sort_values(["date", "ticker"]).reset_index(drop=True)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 11 - TIME SIGNAL FACTORS  (5 new factors)
 # Trend quality, momentum consistency, skewness - regime-sensitive signals
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_time_signal_factors(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -795,10 +770,8 @@ def add_time_signal_factors(prices: pd.DataFrame) -> pd.DataFrame:
     return prices
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 12 - BARRA-STYLE FACTORS  (4 new factors)
 # Size proxy, vol-of-vol, beta stability - cross-sectional risk exposures
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_barra_style_factors(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -856,11 +829,9 @@ def add_barra_style_factors(prices: pd.DataFrame) -> pd.DataFrame:
     return prices
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 13 - CROSS-SECTIONAL INTERACTION FACTORS  (5 new factors, monthly level)
 # Multi-dimensional cross-sectional signals and CAPM residuals
 # Called AFTER add_macro_factors() so spx_ret_* cols are present in panel
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def add_macro_interaction_factors(panel: pd.DataFrame) -> pd.DataFrame:
     """
@@ -926,9 +897,7 @@ def add_macro_interaction_factors(panel: pd.DataFrame) -> pd.DataFrame:
     return panel
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 14 - SIZE FACTOR  (log market cap, fetched from yfinance with caching)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def fetch_market_cap_data(
     tickers: list,
@@ -1068,9 +1037,7 @@ def add_size_factor(
     return merged.sort_values(["date", "ticker"]).reset_index(drop=True)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # CAT 15 - TAIL RANKING FEATURES
-# ══════════════════════════════════════════════════════════════════════════════
 
 def add_tail_ranking_features(
     panel: pd.DataFrame,
@@ -1138,9 +1105,7 @@ def add_tail_ranking_features(
     return panel
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # CAT 16 - FACTOR MINING (new alpha signals from prices)
-# ══════════════════════════════════════════════════════════════════════════════
 
 def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -1190,16 +1155,16 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
         spx      = grp["spx_ret"].values if "spx_ret" in grp.columns else np.full(len(grp), np.nan)
         n        = len(grp)
 
-        # ── nearness_52w_high ────────────────────────────────────────────────
+        # nearness_52w_high
         high_252 = pd.Series(close).rolling(252, min_periods=126).max().values
         prices.loc[idx, "nearness_52w_high"] = _safe_div(close, high_252)
 
-        # ── max_ret_21d (MAX effect) ─────────────────────────────────────────
+        # max_ret_21d (MAX effect)
         prices.loc[idx, "max_ret_21d"] = (
             pd.Series(ret_d).rolling(21, min_periods=10).max().values
         )
 
-        # ── risk_adj_mom ─────────────────────────────────────────────────────
+        # risk_adj_mom
         # Require at least 63 days of clean returns for volatility estimate
         ret_126 = pd.Series(close).pct_change(126).values
         ret_252 = pd.Series(close).pct_change(252).values
@@ -1208,7 +1173,7 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
         prices.loc[idx, "risk_adj_mom_6m"]  = _safe_div(ret_126, vol_126)
         prices.loc[idx, "risk_adj_mom_12m"] = _safe_div(ret_252, vol_252)
 
-        # ── residual_mom (strip market beta from momentum) ───────────────────
+        # residual_mom (strip market beta from momentum)
         # Use rolling 252d beta × SPX return to get market-neutral momentum
         # beta already computed in Cat 6; use spx cumulative return proxy here
         if not np.all(np.isnan(spx)):
@@ -1226,13 +1191,13 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
             prices.loc[idx, "residual_mom_6m"]  = np.nan
             prices.loc[idx, "residual_mom_12m"] = np.nan
 
-        # ── up_down_vol_ratio ────────────────────────────────────────────────
+        # up_down_vol_ratio
         ret_s    = pd.Series(ret_d)
         upvol_63 = ret_s.where(ret_s > 0, 0).rolling(63, min_periods=21).std().values
         dnvol_63 = ret_s.where(ret_s < 0, 0).rolling(63, min_periods=21).std().values
         prices.loc[idx, "up_down_vol_ratio"] = _safe_div(upvol_63, dnvol_63)
 
-        # ── co_skewness_63d ──────────────────────────────────────────────────
+        # co_skewness_63d
         # Harvey & Siddique (2000): E[(r - μ)*(rm - μm)²] / (σ * σm²)
         # Stocks with negative coskewness earn a premium
         if not np.all(np.isnan(spx)):
@@ -1246,7 +1211,7 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
         else:
             prices.loc[idx, "co_skewness_63d"] = np.nan
 
-        # ── vol_contraction_signal ───────────────────────────────────────────
+        # vol_contraction_signal
         # 1 when short-term vol < 85% of medium-term vol = vol regime compressing
         vol_21 = ret_s.rolling(21, min_periods=10).std().values
         vol_63 = ret_s.rolling(63, min_periods=21).std().values
@@ -1254,7 +1219,7 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
             (vol_21 < vol_63 * 0.85).astype(np.float32)
         )
 
-        # ── mom_quality ──────────────────────────────────────────────────────
+        # mom_quality
         # ret_12m × fraction of trailing 12 months with positive return
         # High momentum from consistent monthly gains > erratic gains
         monthly_pos_frac = (
@@ -1264,12 +1229,12 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
         )
         prices.loc[idx, "mom_quality"] = ret_252 * monthly_pos_frac
 
-        # ── price_range_ratio ────────────────────────────────────────────────
+        # price_range_ratio
         # (52w high - 52w low) / close  - uncertainty / ambiguity premium
         low_252 = pd.Series(close).rolling(252, min_periods=126).min().values
         prices.loc[idx, "price_range_ratio"] = _safe_div(high_252 - low_252, close)
 
-        # ── reversal_size ────────────────────────────────────────────────────
+        # reversal_size
         # Lehmann (1990): short-term reversal stronger in large liquid stocks
         # = -ret_1m × log(dollar_vol_21d).  Signed: negative = contrarian long.
         ret_1m = pd.Series(close).pct_change(21).values
@@ -1292,9 +1257,7 @@ def add_mined_factors(prices: pd.DataFrame) -> pd.DataFrame:
     return prices
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # CAT 17 - TIME-SIGNAL FACTORS (WHEN to apply a signal)
-# ══════════════════════════════════════════════════════════════════════════════
 
 def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -1347,7 +1310,7 @@ def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
         ret_s = pd.Series(ret_d, index=idx)
         cls_s = pd.Series(close, index=idx)
 
-        # ── CAT A: Time-Series Momentum ───────────────────────────────────────
+        # CAT A: Time-Series Momentum
         # Moskowitz, Ooi & Pedersen (2012): sign of own past return.
         # BINARY {+1, -1} per stock - not ranked cross-sectionally.
         ret_252 = cls_s.pct_change(252)   # ~12-month return (1 year of trading days)
@@ -1359,7 +1322,7 @@ def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
         # Magnitude: how strong is the own trend (absolute return)
         prices.loc[idx, "tsmom_magnitude"] = np.abs(ret_252.values)
 
-        # ── CAT B: Moving Average Regime ──────────────────────────────────────
+        # CAT B: Moving Average Regime
         # Han, Kim & Mukherjee (2013): above MA = uptrend for THIS stock.
         # Binary flag - not ranked vs peers.
         ma200 = cls_s.rolling(200, min_periods=100).mean()
@@ -1390,7 +1353,7 @@ def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
                  .values
         )
 
-        # ── CAT C: 52-Week High Timing ────────────────────────────────────────
+        # CAT C: 52-Week High Timing
         # George & Hwang (2004): nearness to own 52w high signals anchoring.
         high_252 = cls_s.rolling(252, min_periods=126).max()
         low_252  = cls_s.rolling(252, min_periods=126).min()
@@ -1408,7 +1371,7 @@ def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
             ret_from_low = ((cls_s - low_252) / (low_252 + 1e-10)).values
         prices.loc[idx, "ret_since_52w_low"] = ret_from_low
 
-        # ── CAT D: Volume Confirmation ────────────────────────────────────────
+        # CAT D: Volume Confirmation
         # Gervais, Kaniel & Mingelgrin (2001): unusually high own volume = informed.
         if has_volume:
             vol_s = grp["volume"].values
@@ -1436,7 +1399,7 @@ def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
                 (vol_5d > vol_21d).astype(np.float32).values
             )
 
-        # ── CAT E: Earnings Drift Proxy ───────────────────────────────────────
+        # CAT E: Earnings Drift Proxy
         # Bernard & Thomas (1989): large overnight gap on high volume = earnings day.
         # We proxy this from prices alone (no earnings calendar needed).
         if has_high_low and has_volume:
@@ -1464,7 +1427,7 @@ def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
                 prices.loc[idx, "earnings_gap"]          = np.nan
                 prices.loc[idx, "post_earnings_drift"]   = np.nan
 
-        # ── CAT F: Serial Correlation Sign ────────────────────────────────────
+        # CAT F: Serial Correlation Sign
         # Lo & MacKinlay (1988): each stock has its own autocorrelation character.
         # BINARY {+1, -1} - is THIS stock in momentum or mean-reversion state?
         # NOT ranked vs other stocks.
@@ -1523,9 +1486,7 @@ def add_proper_time_signals(prices: pd.DataFrame) -> pd.DataFrame:
 add_time_signal_v2 = add_proper_time_signals
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # CAT 18 - SEASONALITY FACTORS
-# ══════════════════════════════════════════════════════════════════════════════
 
 def add_seasonality_factors(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -1552,7 +1513,7 @@ def add_seasonality_factors(prices: pd.DataFrame) -> pd.DataFrame:
     """
     prices = prices.copy()
 
-    # ── Per-ticker: same-month returns from prior years ──────────────────────
+    # Per-ticker: same-month returns from prior years
     # Step 1: Compute monthly returns per ticker (total return over each month)
     prices["_year"]  = prices["date"].dt.year
     prices["_month"] = prices["date"].dt.month
@@ -1601,7 +1562,7 @@ def add_seasonality_factors(prices: pd.DataFrame) -> pd.DataFrame:
     merge_key = monthly_close[["ticker", "_year", "_month"] + season_cols].drop_duplicates()
     prices = prices.merge(merge_key, on=["ticker", "_year", "_month"], how="left")
 
-    # ── Calendar dummies (same for all stocks on a given day) ────────────────
+    # Calendar dummies (same for all stocks on a given day)
     # Turn of month: last 1 trading day of prev month + first 3 of current
     # Since we observe at month-end, the month-end date IS in the "turn" zone
     # We mark: is this date within 3 days of month start or 1 day of month end?
@@ -1623,9 +1584,7 @@ def add_seasonality_factors(prices: pd.DataFrame) -> pd.DataFrame:
     return prices
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 19 - Short Interest Factors
-# ═══════════════════════════════════════════════════════════════════════════════
 # Drechsler & Drechsler (2016) - short interest cost and equity returns
 # Asquith, Pathak & Ritter (2005) - short interest and returns
 # Diether, Lee & Werner (2009) - short-selling
@@ -1675,9 +1634,7 @@ def add_short_interest_factors(
     return panel
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CAT 20 - Institutional Ownership Factors
-# ═══════════════════════════════════════════════════════════════════════════════
 # Gompers & Metrick (2001) - institutional ownership and stock returns
 # Yan & Zhang (2009) - institutional investors and cross-section
 # Chen, Hong & Stein (2002) - breadth of ownership

@@ -27,7 +27,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from pathlib import Path
 import time as _time; _t0 = _time.time()
 
-# ── Paths (override via env vars for local testing) ───────────────────────────
+# Paths (override via env vars for local testing)
 DATA_DIR = Path(os.environ.get("ML_DATA_DIR", "/kaggle/input/datasets/patrickridge/investsoc-ml-data"))
 OUT_DIR  = Path(os.environ.get("ML_OUT_DIR",  "/kaggle/working"))
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -38,17 +38,17 @@ OUT_SCORES   = OUT_DIR  / "scores_transformer.parquet"
 OUT_BT_LO    = OUT_DIR  / "bt_transformer.csv"
 OUT_BT_LS    = OUT_DIR  / "bt_transformer_ls.csv"
 
-# ── Date splits ───────────────────────────────────────────────────────────────
+# Date splits
 START_DATE  = "2010-01-01"
 TRAIN_END   = "2020-12-31"
 VALID_END   = "2022-12-31"
 
-# ── Portfolio construction ────────────────────────────────────────────────────
+# Portfolio construction
 TOP_N       = 100
 LONG_FRAC   = 0.20
 RETRAIN_EVERY = 12
 
-# ── FT-Transformer hyperparameters (tweak freely on Kaggle) ──────────────────
+# FT-Transformer hyperparameters (tweak freely on Kaggle)
 D_MODEL      = 64
 N_HEADS      = 4
 N_LAYERS     = 3
@@ -62,7 +62,7 @@ BATCH_SIZE   = 512
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-# ── Performance helpers ────────────────────────────────────────────────────────
+# Performance helpers
 def perf_stats(r: pd.Series) -> dict:
     r = r.dropna()
     if len(r) < 6:
@@ -100,7 +100,7 @@ def long_short_ret(df_month: pd.DataFrame, frac: float) -> float:
     return sub_s.head(k)["fwd_ret_1m"].mean() - sub_s.tail(k)["fwd_ret_1m"].mean()
 
 
-# ── FT-Transformer model ───────────────────────────────────────────────────────
+# FT-Transformer model
 class FeatureTokenizer(nn.Module):
     def __init__(self, n_features: int, d_model: int):
         super().__init__()
@@ -143,7 +143,7 @@ class FTTransformer(nn.Module):
         return self.head(cls_out).squeeze(-1)
 
 
-# ── Training ───────────────────────────────────────────────────────────────────
+# Training
 def make_tensors(df: pd.DataFrame, feat_cols: list):
     X = torch.tensor(df[feat_cols].fillna(0).values, dtype=torch.float32)
     y = torch.tensor(df["fwd_ret_1m"].values, dtype=torch.float32)
@@ -214,7 +214,7 @@ def predict(model: FTTransformer, X: torch.Tensor, batch_size: int = 2048) -> np
     return np.concatenate(preds)
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# Main
 def main():
     print(f"Device: {DEVICE}")
     print("Loading enriched panel...")

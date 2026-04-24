@@ -1,6 +1,5 @@
 """
 4c_regime_engine.py - Per-Regime Backtest Breakdown
-====================================================
 Loads existing index enhancement backtest results and breaks performance
 out by market regime to answer: does the strategy hold up in bear markets,
 not just the AI bull run?
@@ -37,7 +36,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# Config
 DATA_DIR = Path("data")
 FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -59,7 +58,7 @@ MODELS = {
 }
 
 
-# ── Stats helper ───────────────────────────────────────────────────────────────
+# Stats helper
 def regime_stats(df: pd.DataFrame) -> dict:
     """Compute annualised performance metrics for a slice of monthly returns."""
     n = len(df)
@@ -87,7 +86,7 @@ def regime_stats(df: pd.DataFrame) -> dict:
                 n_months=n)
 
 
-# ── Rule-based regime labels ───────────────────────────────────────────────────
+# Rule-based regime labels
 def label_regimes_rule(dates: pd.Series) -> pd.Series:
     """Assign each date a regime label using hardcoded date ranges."""
     covid_s = pd.Timestamp(COVID_EXCLUDE[0])
@@ -103,7 +102,7 @@ def label_regimes_rule(dates: pd.Series) -> pd.Series:
     return labels
 
 
-# ── HMM regime labels ──────────────────────────────────────────────────────────
+# HMM regime labels
 def label_regimes_hmm(dates: pd.Series) -> pd.Series:
     """
     Fit a 2-state Gaussian HMM on SPX monthly returns + VIX level from the
@@ -150,7 +149,7 @@ def label_regimes_hmm(dates: pd.Series) -> pd.Series:
     return labels
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+# Main
 def main():
     use_hmm = "--hmm" in sys.argv
 
@@ -159,7 +158,7 @@ def main():
     print(f"Method: {'HMM (2-state)' if use_hmm else 'Rule-based (4 regimes)'}")
     print("=" * 65)
 
-    # ── Load backtest results ─────────────────────────────────────────────────
+    # Load backtest results
     all_dfs = {}
     for model_name, fpath in MODELS.items():
         if not fpath.exists():
@@ -175,7 +174,7 @@ def main():
         print("No backtest files found. Run 4b_index_enhancement.py first.")
         return
 
-    # ── Assign regimes ────────────────────────────────────────────────────────
+    # Assign regimes
     # Use the date range from the first model for labelling
     sample_dates = next(iter(all_dfs.values()))["date"]
     if use_hmm:
@@ -189,7 +188,7 @@ def main():
     else:
         regime_names = [r for r in REGIMES.keys() if r in regime_labels.values]
 
-    # ── Compute per-regime stats ──────────────────────────────────────────────
+    # Compute per-regime stats
     records = []
     for model_name, df in all_dfs.items():
         labels = label_regimes_rule(df["date"]) if not use_hmm else label_regimes_hmm(df["date"])
@@ -206,7 +205,7 @@ def main():
 
     results = pd.DataFrame(records)
 
-    # ── Print table ───────────────────────────────────────────────────────────
+    # Print table
     print(f"\n{'─'*80}")
     print(f"{'MODEL':<20} {'REGIME':<28} {'ANN α':>7} {'TE':>6} {'IR':>7} {'HIT%':>6} {'MaxDD':>7} {'N':>4}")
     print(f"{'─'*80}")
@@ -226,12 +225,12 @@ def main():
     print("  ann_alpha = annualised active return vs benchmark")
     print("  TE = tracking error  |  IR = Information Ratio  |  HIT% = % months beating benchmark")
 
-    # ── Save CSV ──────────────────────────────────────────────────────────────
+    # Save CSV
     out_csv = DATA_DIR / "ie_regime_breakdown.csv"
     results.to_csv(out_csv, index=False)
     print(f"\nSaved → {out_csv}")
 
-    # ── Plot: IR by regime per model ──────────────────────────────────────────
+    # Plot: IR by regime per model
     plot_df = results[results["regime"] != "FULL PERIOD"].copy()
     plot_df = plot_df[plot_df["n_months"] >= 3]  # skip regimes with too few months
     plot_df = plot_df.dropna(subset=["info_ratio"])

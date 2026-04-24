@@ -57,7 +57,7 @@ from pathlib import Path
 from collections import deque
 import random
 
-# ── PyTorch (optional - falls back to rule-based if not available) ─────────────
+# PyTorch (optional - falls back to rule-based if not available)
 try:
     import torch
     import torch.nn as nn
@@ -67,7 +67,7 @@ try:
 except ImportError:
     HAS_TORCH = False
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 DATA_DIR     = Path("data")
 FIG_DIR      = Path("figures")
 FIG_DIR.mkdir(exist_ok=True)
@@ -78,7 +78,7 @@ SCORES_FILE  = DATA_DIR / "scores_cs_transformer.parquet"
 WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
 L1_IC_FILE   = DATA_DIR / "l1_rl_ic_full.csv"   # Layer 1 IC - produced by 5a_rl_factor_agent.py
 
-# ── Hyperparameters ────────────────────────────────────────────────────────────
+# Hyperparameters
 ALPHA_MIN   = 0.002
 ALPHA_MAX   = 0.050
 TE_TARGET   = 0.030          # 3% annualised tracking error (used in state feature only)
@@ -118,9 +118,7 @@ MACRO_STATE_COLS = ["vix_level", "yield_10y", "yield_spread_10y2y"]
 STATE_COLS = BASE_STATE_COLS.copy()   # default - overridden in main() if L1 data found
 
 
-# =============================================================================
 # PORTFOLIO SIMULATION
-# =============================================================================
 
 def simulate_month(scores_month, weights_month, alpha,
                    top_n=100, bottom_n=100):
@@ -155,9 +153,7 @@ def simulate_month(scores_month, weights_month, alpha,
     }
 
 
-# =============================================================================
 # BUILD TRAINING SCORES FROM PANEL
-# =============================================================================
 
 def build_factor_combo_scores(panel, factors_df):
     """
@@ -194,9 +190,7 @@ def build_factor_combo_scores(panel, factors_df):
     return pd.DataFrame(rows)
 
 
-# =============================================================================
 # BUILD EPISODE TABLE
-# =============================================================================
 
 def build_episodes(scores, weights, ref_alpha=0.01, l1_ic_df=None, macro_df=None):
     """
@@ -280,9 +274,7 @@ def build_episodes(scores, weights, ref_alpha=0.01, l1_ic_df=None, macro_df=None
     return df
 
 
-# =============================================================================
 # SAC COMPONENTS - MLP only, no memory
-# =============================================================================
 
 if HAS_TORCH:
     LOG_STD_MIN, LOG_STD_MAX = -10, 2
@@ -356,9 +348,7 @@ class ReplayBuffer:
         return len(self.buf)
 
 
-# =============================================================================
 # SAC AGENT
-# =============================================================================
 
 class SACAgent:
     """SAC with auto-tuned temperature. Stateless MLP - no memory."""
@@ -438,9 +428,7 @@ class SACAgent:
                 "temperature": self.temperature}
 
 
-# =============================================================================
 # REWARD
-# =============================================================================
 
 def compute_reward(active_ret: float, bench_vol_ann: float = 0.0,
                    rolling_te_ann: float = 0.0) -> float:
@@ -456,9 +444,7 @@ def compute_reward(active_ret: float, bench_vol_ann: float = 0.0,
     return active_ret * 12.0
 
 
-# =============================================================================
 # TRAINING
-# =============================================================================
 
 def train(agent, episodes):
     train_rows = [
@@ -511,9 +497,7 @@ def train(agent, episodes):
     return reward_hist
 
 
-# =============================================================================
 # EVALUATION
-# =============================================================================
 
 def evaluate(agent, episodes, fixed_alpha=0.01):
     rl_rows, fixed_rows = [], []
@@ -548,9 +532,7 @@ def evaluate(agent, episodes, fixed_alpha=0.01):
     return rl_bt, fixed_bt
 
 
-# =============================================================================
 # STATS
-# =============================================================================
 
 def ie_stats(bt):
     if bt.empty or "active_ret" not in bt.columns:
@@ -569,9 +551,7 @@ def ie_stats(bt):
                 hit_rate=hit_rate, max_active_dd=max_dd, n_months=n)
 
 
-# =============================================================================
 # PLOTTING
-# =============================================================================
 
 def plot_results(rl_bt, fixed_bt):
     fig, axes = plt.subplots(3, 1, figsize=(12, 10))
@@ -631,9 +611,7 @@ def plot_results(rl_bt, fixed_bt):
     print(f"Saved -> {out}")
 
 
-# =============================================================================
 # MAIN
-# =============================================================================
 
 def main():
     print("=" * 65)

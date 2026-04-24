@@ -1,6 +1,5 @@
 """
 2e_ic_optimise.py - Differentiable IC Optimisation of Factor Weights
-=====================================================================
 Finds the optimal linear combination of the 43 selected factors that
 maximises mean cross-sectional IC on the training set (2010–2020).
 
@@ -43,7 +42,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# Config
 DATA_DIR   = Path("data")
 FIG_DIR    = Path("figures")
 FIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -57,7 +56,7 @@ LR       = 0.01
 MIN_STOCKS = 30   # minimum stocks per month to include that month
 
 
-# ── Load data ──────────────────────────────────────────────────────────────────
+# Load data
 print("=" * 65)
 print("DIFFERENTIABLE IC OPTIMISATION")
 print("=" * 65)
@@ -98,7 +97,7 @@ if missing_facs:
 n_factors = len(factors)
 
 
-# ── Build monthly cross-sections ──────────────────────────────────────────────
+# Build monthly cross-sections
 def build_monthly_data(df: pd.DataFrame) -> list[tuple]:
     """
     Returns list of (factor_matrix, fwd_ret) tuples per month.
@@ -136,7 +135,7 @@ print(f"  Train: {len(train_months)} valid months")
 print(f"  Val:   {len(val_months)} valid months")
 
 
-# ── IC computation (numpy, differentiable via manual grad) ──────────────────
+# IC computation (numpy, differentiable via manual grad)
 def compute_ic(X: np.ndarray, y: np.ndarray, w: np.ndarray) -> float:
     """Pearson IC between combined score and forward returns."""
     score = X @ w                           # (n_stocks,)
@@ -150,7 +149,7 @@ def mean_ic(months: list, w: np.ndarray) -> float:
     return float(np.mean([compute_ic(X, y, w) for X, y in months]))
 
 
-# ── Gradient of mean IC w.r.t. log-weights (softmax parameterisation) ────────
+# Gradient of mean IC w.r.t. log-weights (softmax parameterisation)
 def grad_mean_ic(months: list, log_w: np.ndarray) -> np.ndarray:
     """
     Compute gradient of mean IC w.r.t. log_w using finite differences.
@@ -173,7 +172,7 @@ def softmax(x: np.ndarray) -> np.ndarray:
     return e / e.sum()
 
 
-# ── Try PyTorch first (faster + exact gradients) ─────────────────────────────
+# Try PyTorch first (faster + exact gradients)
 USE_TORCH = False
 try:
     import torch
@@ -251,7 +250,7 @@ def optimise_numpy(train_months: list) -> np.ndarray:
     return best_w
 
 
-# ── Baseline IC using current IC-decay weights ────────────────────────────────
+# Baseline IC using current IC-decay weights
 print("\nBaseline (current IC-decay weights):")
 baseline_w    = current_weights / current_weights.sum()   # normalise just in case
 baseline_tr   = mean_ic(train_months, baseline_w * signs)  # signs already in X, undo
@@ -261,7 +260,7 @@ baseline_tr   = mean_ic(train_months, baseline_w)
 baseline_val  = mean_ic(val_months,   baseline_w)
 print(f"  Train IC: {baseline_tr:.4f}  |  Val IC: {baseline_val:.4f}")
 
-# ── Optimise ──────────────────────────────────────────────────────────────────
+# Optimise
 print(f"\nOptimising weights ({EPOCHS} epochs, lr={LR}) …")
 if USE_TORCH:
     opt_weights = optimise_torch(train_months)
@@ -275,7 +274,7 @@ print(f"  Train IC: {opt_tr:.4f}  (vs baseline {baseline_tr:.4f}, Δ={opt_tr-bas
 print(f"  Val IC:   {opt_val:.4f}  (vs baseline {baseline_val:.4f}, Δ={opt_val-baseline_val:+.4f})")
 
 
-# ── Comparison table ──────────────────────────────────────────────────────────
+# Comparison table
 print(f"\n{'─'*65}")
 print(f"{'Factor':<28} {'Current Wt':>10} {'Opt Wt':>10} {'Change':>10}")
 print(f"{'─'*65}")
@@ -297,13 +296,13 @@ if len(factors) > 20:
 print(f"{'─'*65}")
 
 
-# ── Save updated factor_selected ──────────────────────────────────────────────
+# Save updated factor_selected
 out_csv = DATA_DIR / "factor_selected_optimised.csv"
 factor_df.to_csv(out_csv, index=False)
 print(f"\nSaved → {out_csv}")
 
 
-# ── Plot: current vs optimised weights ───────────────────────────────────────
+# Plot: current vs optimised weights
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
 # Sort by optimised weight descending
