@@ -256,9 +256,9 @@ times, so these rows are not a like-for-like horse race.
 
 | Model | Window | Months | Ann. alpha | Tracking error | IR | Hit rate |
 |---|---|---|---|---|---|---|
-| CS-Transformer | 2024-07 to 2025-11 | 17 | 6.62 % | 3.82 % | **1.74** | 70.6 % |
-| LightGBM | 2023-01 to 2025-10 | 18 | 1.35 % | 1.82 % | 0.74 | 50.0 % |
-| FT-Transformer | 2023-01 to 2025-10 | 24 | 0.64 % | 1.00 % | 0.64 | 50.0 % |
+| CS-Transformer | 2024-07 to 2025-11 | 17 | 5.81 % | 4.04 % | **1.44** | 47.1 % |
+| LightGBM | 2023-01 to 2025-11 | 18 | 1.33 % | 1.82 % | 0.73 | 50.0 % |
+| FT-Transformer | 2023-01 to 2025-11 | 24 | 0.64 % | 1.00 % | 0.64 | 50.0 % |
 
 For context: IR > 0.5 is institutional-grade, > 1.0 is top-quartile.
 
@@ -266,16 +266,44 @@ Reproduce with `python 4b_index_enhancement.py`. The full α sweep, including
 the tracking-error/IR tradeoff curve for each model, lands in
 `data/ie_summary.csv`.
 
-Three things to be honest about before reading too much into the top row:
+### Where the CS-Transformer's edge actually comes from
 
-- 17 months is a short window. The IR has a wide confidence interval and the
-  period is almost entirely one regime.
-- The CS-Transformer's stock-level IC over a longer 38-month audit is roughly
-  zero (`Notes/Improvements.md`, item 16). The portfolio-level result and the
-  signal-level diagnostic do not currently agree, and that gap is unresolved.
-- The linear factor-combo baseline in `data/bt_ie_factor_combo.csv` predates
-  the transaction-cost model and has not been rerun, so it is left out of the
-  table rather than quoted at a number that is no longer comparable.
+Its whole-universe Spearman IC is about −0.007, statistically indistinguishable
+from zero, which looks irreconcilable with an IR of 1.44. It is not. Forward
+returns by score decile over the same 17 months:
+
+| Score decile | Ann. return | t |
+|---|---|---|
+| 10 (highest) | +86.8 % | 1.94 |
+| 9 | +21.2 % | 1.32 |
+| 1-8 | +8.5 % to +15.8 %, no ordering | < 1.7 |
+
+The entire edge sits in the top decile. Deciles 1 through 9 are flat noise with
+no monotonic structure, and restricting IC to the tails makes it *more* negative
+(−0.039 on the top and bottom 10 %), meaning the model cannot rank within the
+extremes either. It identifies a small group of winners without ordering them.
+Spearman IC, a rank correlation weighting all ~500 names equally, is close to
+blind to that. A conviction-weighted tilt is not, which is why the z-score
+construction beats the flat top/bottom-100 block tilt.
+
+A permutation test confirms the effect is real rather than an artifact of the
+weighting scheme. Shuffling scores within each month, 200 draws, holding the
+universe and construction fixed: null mean alpha −0.33 %, standard deviation
+0.51 %, 95th percentile +0.66 %. The actual +5.81 % sits outside the entire null
+distribution, roughly twelve standard deviations above its mean.
+
+### Caveats that matter
+
+- **Sub-50 % hit rate.** The strategy loses slightly more months than it wins
+  and makes it back on magnitude. That is a concentrated, fragile payoff
+  profile, not a steady grind.
+- **17 months, t ≈ 1.9 on the top decile.** Suggestive, not established. The
+  window is almost entirely the mega-cap AI rally.
+- **A single decile carrying +86.8 % annualised** is extreme enough that it
+  warrants checking whether a handful of names dominate it. Not yet done.
+- **The factor-combo baseline** in `data/bt_ie_factor_combo.csv` predates the
+  transaction-cost model and has not been rerun, so it is omitted rather than
+  quoted at a stale number.
 
 ### RL walk-forward (95 OOS months, 2014–2025)
 

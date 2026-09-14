@@ -141,8 +141,16 @@ def build_enhanced_portfolio(
             tilt.iloc[:top_n] = alpha
             tilt.iloc[n - bottom_n:] = -alpha
 
+        # Benchmark restricted to the universe we actually score, renormalised
+        # to sum to 1. Tilting off the raw column instead would inflate α by
+        # 1/coverage once the portfolio leg gets renormalised below.
+        coverage = grp["spx_weight"].sum()
+        if coverage < 1e-8:
+            continue
+        bench_w = grp["spx_weight"] / coverage
+
         # Active weights = benchmark + tilt, clipped long-only, renormalised
-        raw_w = (grp["spx_weight"] + tilt).clip(lower=0.0)
+        raw_w = (bench_w + tilt).clip(lower=0.0)
         total = raw_w.sum()
         if total < 1e-8:
             continue
@@ -158,9 +166,10 @@ def build_enhanced_portfolio(
                        for t in all_tickers)
         txn_cost = ONE_WAY_COST * turnover   # bps on every dollar traded
 
-        # Returns (gross then net of costs)
+        # Returns (gross then net of costs). Both legs are now normalised over
+        # the same universe, so neither is under-invested relative to the other.
         port_ret_gross = (grp["port_weight"] * grp["fwd_ret_1m"]).sum()
-        bench_ret      = (grp["spx_weight"]  * grp["fwd_ret_1m"]).sum()
+        bench_ret      = (bench_w * grp["fwd_ret_1m"]).sum()
         port_ret       = port_ret_gross - txn_cost  # net
 
         results.append({
@@ -172,6 +181,7 @@ def build_enhanced_portfolio(
             "turnover":      turnover,
             "txn_cost":      txn_cost,
             "n_stocks":      len(grp),
+            "coverage":      coverage,   # share of index weight actually scored
         })
 
         prev_weights = cur_weights

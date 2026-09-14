@@ -113,7 +113,7 @@ After retraining on 240 months, FT-Transformer IE IR collapsed to 0.015. It is n
 
 **Fixed (3 Apr 2026):** `predict()` now uses `np.searchsorted` against sorted training feature columns to compute true percentile ranks of test months against the training distribution. Verified: COVID-crash months correctly classified as Risk-Off, calm bull months as Risk-On.
 
-### 16. CS-Transformer Signal Has Near-Zero OOS Predictive Power
+### 16. CS-Transformer Signal Has Near-Zero OOS Predictive Power - Resolved, see item 21
 
 **Finding (3 Apr 2026):** `3e_cs_transformer_audit.py` shows IC = −0.002, ICIR = −0.013 over 38 out-of-sample months. The model has a mild contrarian/mean-reversion tilt (loads negatively on price_to_ma50, rsi_14, ir_3m) but no statistically significant predictive power. Marginal positive IC in Risk-Off regimes (IC = +0.006) vs negative in Risk-On (IC = −0.010), neither significant.
 
@@ -165,3 +165,60 @@ reproduce the README's old 1.87 at 2.22 % TE, and the window is 17 months rather
 than the 35 once claimed. The scores in `data/` predate the Macro FiLM upgrade
 (see README status), so the old figures were likely produced against a different
 model that was never synced back. README now quotes what actually reproduces.
+
+(Superseded by item 20: the 1.736 itself was inflated by a benchmark bug.)
+
+### 20. Benchmark Leg Was Under-Invested ✓ Fixed
+
+**Problem:** `build_enhanced_portfolio` renormalised the portfolio weights to sum
+to 1 but computed `bench_ret` from the raw `spx_weight` column. Over the scored
+universe that column sums to **0.8138**, not 1 - roughly 19 % of index market cap
+has no score or no forward return and silently drops out of the merge.
+
+So a fully-invested portfolio was being measured against an 81 %-invested
+benchmark. In a rising market the missing exposure books straight through as
+alpha. Measured cost of the bug on the CS-T window: benchmark understated by
+**3.84 %/yr** (16.17 % as coded vs 20.01 % properly normalised).
+
+**Fixed:** benchmark is renormalised over the traded universe before both the
+tilt and the return calculation, so neither leg is under-invested. Tilting off
+the raw column was separately inflating effective α by 1/coverage ≈ 1.23×; that
+is gone too. A `coverage` column is now written to every backtest CSV so the
+problem cannot recur silently.
+
+**Effect at matched tracking error:** CS-T drops from IR 1.736 @ 3.82 % TE to
+**IR 1.438 @ 4.04 % TE**, alpha 6.62 % → 5.81 %.
+
+### 21. The IC ≈ 0 Paradox, Resolved
+
+Item 16 flagged that the CS-T has essentially zero whole-universe IC while the
+portfolio posts a strong IR. Both are true, and they are consistent.
+
+**Forward return by score decile, 17 OOS months:**
+
+| Decile | Ann. return | t |
+|---|---|---|
+| 10 | +86.8 % | 1.94 |
+| 9 | +21.2 % | 1.32 |
+| 1-8 | +8.5 % to +15.8 %, unordered | < 1.7 |
+
+The edge is entirely in decile 10. Everything below it is flat. Restricting IC to
+the tails makes it *more* negative (−0.0387 on the top and bottom 10 %), so the
+model cannot rank within the extremes either - it identifies a group of winners
+without ordering them. Spearman IC is a rank correlation weighting all ~500 names
+equally and is close to blind to a single-decile effect like this.
+
+This also explains why the z-score tilt beats the block tilt (item 19): flat ±α
+across 100 names dilutes a top-decile effect, conviction weighting concentrates
+on it.
+
+**Permutation test (200 shuffles of scores within month, universe and
+construction held fixed):** null mean alpha −0.33 %, sd 0.51 %, p95 +0.66 %.
+Actual +5.81 % sits outside the entire null distribution, ~12 sd above its mean.
+The alpha is not a construction artifact.
+
+**What this does not establish:** t ≈ 1.9 on decile 10 over 17 months is
+suggestive, not significant. Hit rate is 47.1 %, below half - the strategy wins on
+magnitude, not frequency, which is a fragile profile. And +86.8 % annualised for
+one decile is extreme enough that it should be checked for domination by a few
+names before anyone leans on it. Not yet done.
