@@ -248,16 +248,34 @@ stock signals.
 
 ## Headline results
 
-### Index enhancement over the OOS test period (Jan 2023 – Nov 2025)
+### Index enhancement, out-of-sample, net of 10 bps per side
 
-| Model | Ann. alpha | Tracking error | IR | Hit rate |
-|---|---|---|---|---|
-| CS-Transformer | 4.16 % | 2.22 % | **1.87** | ~67 % |
-| FT-Transformer | ~0.9 % | ~2.6 % | 0.44 | - |
-| LightGBM | ~0.5 % | ~2.0 % | 0.38 | - |
-| Linear factor combo baseline | - | - | −0.05 | - |
+Each model is shown at the α whose tracking error sits closest to the 2-4 %
+budget. Windows differ because the three models were last scored at different
+times, so these rows are not a like-for-like horse race.
+
+| Model | Window | Months | Ann. alpha | Tracking error | IR | Hit rate |
+|---|---|---|---|---|---|---|
+| CS-Transformer | 2024-07 to 2025-11 | 17 | 6.62 % | 3.82 % | **1.74** | 70.6 % |
+| LightGBM | 2023-01 to 2025-10 | 18 | 1.35 % | 1.82 % | 0.74 | 50.0 % |
+| FT-Transformer | 2023-01 to 2025-10 | 24 | 0.64 % | 1.00 % | 0.64 | 50.0 % |
 
 For context: IR > 0.5 is institutional-grade, > 1.0 is top-quartile.
+
+Reproduce with `python 4b_index_enhancement.py`. The full α sweep, including
+the tracking-error/IR tradeoff curve for each model, lands in
+`data/ie_summary.csv`.
+
+Three things to be honest about before reading too much into the top row:
+
+- 17 months is a short window. The IR has a wide confidence interval and the
+  period is almost entirely one regime.
+- The CS-Transformer's stock-level IC over a longer 38-month audit is roughly
+  zero (`Notes/Improvements.md`, item 16). The portfolio-level result and the
+  signal-level diagnostic do not currently agree, and that gap is unresolved.
+- The linear factor-combo baseline in `data/bt_ie_factor_combo.csv` predates
+  the transaction-cost model and has not been rerun, so it is left out of the
+  table rather than quoted at a number that is no longer comparable.
 
 ### RL walk-forward (95 OOS months, 2014–2025)
 

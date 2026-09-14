@@ -5,13 +5,13 @@
 
 | Assumption | Detail |
 |---|---|
-| **No transaction costs** | All results assume month-end close prices with zero slippage or commissions. A rough sensitivity check on the LGBM strategy (~30–40% monthly turnover) suggests real-world impact of ~0.05–0.15 Sharpe reduction at 5–10 bps per trade. |
+| **Transaction costs** | ~~Zero slippage and commissions assumed.~~ Superseded: `4b_index_enhancement.py` charges 10 bps per side on every dollar of notional traded. Realised drag is 0.3–0.9 %/yr depending on model. See item 3 below. |
 | **Survivorship bias** | Universe is a fixed historical S&P 500 list. Stocks that were removed from the index before our data starts (e.g. companies that went bankrupt pre-2010) are not included, introducing mild upward bias. Stocks removed during the sample period are included up to their removal date. |
 | **No look-ahead bias** | Enforced by walk-forward design: test months (2023–2025) are never seen during training or validation. Each feature uses only data available at the time of prediction. The forward return (`fwd_ret_1m`) is the label - it is never a feature. |
-| **Equal weighting** | Long-only portfolio uses 2% per stock (50 stocks). Equal-weighting avoids portfolio optimisation over-fitting; any optimised weights would require a further layer of cross-validation to avoid data snooping. |
+| **Weighting** | ~~Long-only equal weight, 2% per stock across 50 names.~~ Superseded by index enhancement: weights tilt around SPX cap weights via `w_i = w_SPX_i + α × z_i`, long-only, renormalised. The old equal-weight top-50 construction survives only in the archived `bt_lgbm.csv` runs. |
 | **Monthly rebalancing** | Assumes full portfolio rebalance at month-end close. Intra-month price moves are ignored. |
 | **2010 start date** | Excludes 2008–2009 GFC regime. The GFC had structurally different correlations and liquidity dynamics compared to post-crisis markets. Starting in 2010 gives a cleaner, more stationary training distribution. |
-| **Cross-sectional rank normalisation** | All 26 features are ranked within each month and scaled to [−0.5, +0.5]. This removes the absolute level of each feature (e.g. whether 6-month momentum is 5% or 50% in absolute terms) and makes signals stable across different market conditions. A stock ranked in the top decile on momentum always maps to the same input value regardless of what year it is. |
+| **Cross-sectional rank normalisation** | Per-stock features (~270 as of the current panel, 26 when this note was written) are ranked within each month and scaled to [−0.5, +0.5]. Macro columns are time-series z-scored instead, since ranking a value identical across all stocks yields a constant. This removes the absolute level of each feature (e.g. whether 6-month momentum is 5% or 50% in absolute terms) and makes signals stable across different market conditions. A stock ranked in the top decile on momentum always maps to the same input value regardless of what year it is. |
 | **No short-selling constraints** | Long-Short results assume you can freely short any stock in the bottom decile. In practice, borrow costs and availability vary. |
 
 ---
@@ -24,11 +24,35 @@ The PCA Risk Parity weighting produces beta = 2.07 (twice the market exposure). 
 ### 2. Validation Period (2022 Bear Market)
 Early stopping on the old fixed 2022 validation split hit at just 4 trees because 2022 was a pure bear market - nothing looked good on the validation set. The current pipeline uses a full walk-forward retrain which avoids this. Not a critical issue, but the validation split could still be improved (e.g. a rolling validation window rather than a fixed one).
 
-### 3. No Transaction Costs
-All results assume zero slippage and zero commissions. Monthly turnover for the LGBM Long-Only strategy is approximately 30–40% per month (stocks entering and leaving the top 50). At 10 bps per trade, this reduces the Sharpe by approximately 0.1–0.15.
+### 3. No Transaction Costs ✓ Fixed
+~~All results assume zero slippage and zero commissions.~~
 
-### 4. No Fundamental Data
-All 26 features are price-derived. Adding fundamental signals (P/E ratio, earnings growth, quality metrics) could improve predictive power, particularly for the long-short strategy.
+**Fixed (Phase 19-20):** `4b_index_enhancement.py` applies `ONE_WAY_COST = 0.0010`
+(10 bps per side) against `sum|Δw|` each month, so reported `port_ret` is net.
+Backtests carry `port_ret_gross`, `turnover` and `txn_cost` columns alongside it.
+
+Measured drag on the current runs:
+
+| Model | Turnover / month | Cost drag | IR gross | IR net |
+|---|---|---|---|---|
+| CS-Transformer | 64.5 % | 0.77 %/yr | 1.399 | 1.322 |
+| FT-Transformer | 72.7 % | 0.87 %/yr | 0.590 | 0.538 |
+| LGBM | 24.4 % | 0.29 %/yr | 0.385 | 0.178 |
+
+(Those IRs are from the block-tilt run; see item 19. The ranking of cost impact
+holds either way.) Note how much harder costs bite LGBM: its gross alpha is
+barely above the drag, so the same absolute cost more than halves its IR.
+
+Remaining imprecision: turnover is measured against last month's *target*
+weights rather than their drifted end-of-month values, so passive drift is
+counted as traded. That overstates turnover and therefore overstates cost.
+
+### 4. No Fundamental Data - Partly Addressed
+~~All 26 features are price-derived.~~ The panel now carries ~270 features across
+24 categories, including fundamentals (Cat 9), short interest (19), institutional
+ownership (20), insider filings (23) and news sentiment (24). What remains true is
+that fundamental *history* is thin: only a handful of recent quarterly snapshots,
+so Cat 9 contributes far less than its column count suggests. See item 7.
 
 ### 5. Regime Stability Filter Uses Full Panel (Minor Look-Ahead)
 In `2a_factor_analysis.py`, the regime stability check (which decides whether a factor survives into the final 43) is run on the full panel including the test period (2023–2025 AI bull regime). The IC calculation, quintile tests, and all model training are strictly train-only (≤ 2020), but the regime filter uses data it should not technically see.
@@ -104,3 +128,40 @@ After retraining on 240 months, FT-Transformer IE IR collapsed to 0.015. It is n
 ### 18. Factor Correlation Analysis Added ✓
 
 **Added (3 Apr 2026):** New section in `2f_factor_diagnostics.py` - `factor_correlation_analysis()`. Computes Spearman correlation between monthly IC time-series of all 43 factors, clusters via Ward linkage on (1 − |corr|), outputs `figures/factor_ic_correlation.png` and `data/factor_clusters.csv`. Identifies groups of redundant factors to inform future factor pruning.
+
+### 19. Tilt Formula Had Drifted From the Documented One ✓ Fixed
+
+**Problem:** README and the `4b_index_enhancement.py` docstring both described a
+conviction-weighted tilt, `w_i = w_SPX_i + α × z_i`. The code underneath applied a
+flat ±α to the top and bottom 100 names instead, with the middle 300 pinned at
+benchmark weight. Two different constructions, and the docstring sat directly on
+top of code that contradicted it.
+
+The consequence showed up in tracking error. Under the block tilt no α in the old
+grid (which started at 0.002) came near the stated 2-4 % budget: the tightest
+setting gave 5.31 % and the saved run was at 11.94 %. The README meanwhile quoted
+2.22 %. None of the published headline numbers reproduced from the repo.
+
+**Fixed:** `TILT_MODE` now selects between `"zscore"` (default, the documented
+construction) and `"block"` (the previous behaviour, kept so older runs can be
+reproduced). The α grid was extended down to 0.0002, because the zscore tilt
+reaches a given tracking error at a far smaller α than the block tilt does.
+
+**Result:** restoring the documented formula both lands inside the TE budget and
+performs better. Matched as closely as the grid allows on tracking error:
+
+| Model | Block tilt | zscore tilt |
+|---|---|---|
+| CS-Transformer | IR 1.509 @ 3.88 % TE | **IR 1.736 @ 3.82 % TE** |
+| LGBM | IR 0.178 @ 1.62 % TE | **IR 0.738 @ 1.82 % TE** |
+| FT-Transformer | IR 0.640 @ 1.74 % TE | IR 0.635 @ 1.00 % TE |
+
+Conviction weighting wins or ties everywhere, which is itself informative: if the
+signal's edge really were confined to the tails, spreading weight proportionally
+across the whole cross-section should have diluted it. It did not.
+
+**Still unreconciled:** even after the fix, the CS-Transformer's 1.736 does not
+reproduce the README's old 1.87 at 2.22 % TE, and the window is 17 months rather
+than the 35 once claimed. The scores in `data/` predate the Macro FiLM upgrade
+(see README status), so the old figures were likely produced against a different
+model that was never synced back. README now quotes what actually reproduces.
