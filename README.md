@@ -274,8 +274,19 @@ times, so these rows are not a like-for-like horse race.
 |---|---|---|---|---|---|---|
 | LightGBM | 18 | +0.83 % | 1.47 % | +0.56 | [−0.69, +2.12] | 81 % |
 | Factor-combo | 35 | — | — | +0.44 | [−0.84, +1.21] | 79 % |
+| CS-Transformer | 17 | −0.38 % | 1.22 % | −0.31 | [−1.54, +0.88] | 31 % |
 | FT-Transformer | 24 | −0.74 % | 1.44 % | −0.52 | [−2.04, +0.91] | 23 % |
-| CS-Transformer | 17 | −2.52 % | 4.64 % | −0.54 | [−1.63, +0.38] | 13 % |
+
+The CS-Transformer row is from a model retrained on the cleaned universe. An
+earlier run, trained on the panel that still contained delisted tickers, gave
+−2.52 % alpha at 4.64 % TE for an IR of −0.54. Removing the zombies from
+*training* cut the alpha drag by 85 % and the tracking error to a quarter:
+validation MSE fell from 0.234 to 0.0072 and validation IC went from −0.002 to
++0.046. The model was previously spending its capacity trying to fit returns
+that were fabricated.
+
+It improved toward zero without crossing it, and at 17 months the interval is
+far too wide to call either way.
 
 **Every one of those intervals contains zero.** No ranking model in this study
 is statistically distinguishable from no skill at all.
