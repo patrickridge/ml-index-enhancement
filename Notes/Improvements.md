@@ -221,4 +221,68 @@ The alpha is not a construction artifact.
 suggestive, not significant. Hit rate is 47.1 %, below half - the strategy wins on
 magnitude, not frequency, which is a fragile profile. And +86.8 % annualised for
 one decile is extreme enough that it should be checked for domination by a few
-names before anyone leans on it. Not yet done.
+names before anyone leans on it.
+
+**That check was run. See item 22 - the conclusion above is wrong.**
+
+### 22. The Alpha Was Delisted Tickers ✓ Fixed
+
+The decile-10 concentration check that item 21 deferred turned out to overturn it.
+
+**Finding.** The single largest contributor to decile-10 return is `CPWR`,
+Compuware, **delisted in 2014**. It sits in the 2024-25 test window printing
++1500 %, +900 %, +552 %, +212 % and +200 % in separate months. Alongside it:
+FNMA and FMCC (OTC since the 2008 conservatorship), NKTR and FOSL (removed from
+the index in 2019), KG (acquired 2011), ADCT.
+
+| | Share of decile-10 total return |
+|---|---|
+| Top 1 ticker | **63.6 %** |
+| Top 3 | 76.8 % |
+| Top 10 | 97.3 % |
+
+Mean monthly decile-10 return +5.34 % against a **median of +0.53 %**, skew 16.8.
+Drop the single best name each month and +86.8 % annualised becomes +4.4 %. Drop
+two and it goes negative.
+
+**Mechanism.** These names carry `spx_weight ≈ 1e-9`, so the benchmark leg
+effectively ignores them, but a score-driven tilt sizes positions on *score*, not
+weight. The portfolio therefore holds real positions in delisted stocks whose
+price series are stale stubs, and is measured against a benchmark that holds none
+of them. Pure fictional alpha.
+
+Root cause is upstream in `1c_fetch_market_cap.py`: it assigns a weight to every
+ticker in `prices.parquet` by multiplying whatever yfinance reports as *current*
+shares outstanding by the historical close, with no check on index membership at
+the date in question.
+
+**On the permutation test in item 21.** It was measuring the wrong thing.
+Shuffling scores within a month destroys the model's ability to *locate* the
+zombies, so the null collapsed and the real run looked like twelve sigma. The
+test established that the selection was non-random. It could not distinguish
+genuine skill from systematically selecting corrupted observations.
+
+**Fixed:** `clean_universe()` in `config.py`. Minimum index weight 5e-6, plus a
+hard gate on any monthly return above 100 %. Calibrated so every known zombie
+observation drops while the largest surviving return falls to +99 % (AppLovin,
+Oct 2024, real). Logs what it removes rather than filtering silently. Wired into
+`4a`, `4b`, `5b`, `5c`, `5d`; `4f` and `4g` inherit it through `4b`.
+
+**Corrected out-of-sample results** (net of 10 bps/side, clean universe):
+
+| Model | Months | Ann. alpha | TE | IR |
+|---|---|---|---|---|
+| LightGBM | 35 | +0.83 % | 1.47 % | **+0.56** |
+| FT-Transformer | 39 | −0.74 % | 1.44 % | −0.52 |
+| CS-Transformer | 17 | −2.52 % | 4.64 % | −0.54 |
+
+Both transformers are negative at every α in the sweep, and their alpha degrades
+monotonically as the tilt grows (CS-T: −0.19 % at the smallest α to −5.35 % at
+the largest). That is a signal that is actively wrong, not merely absent.
+LightGBM degrades in the opposite direction, which is what a weak but real signal
+looks like.
+
+**Caveat on interpretation.** The CS-T scores in `data/` predate the Macro FiLM
+upgrade, so this tests a stale artifact rather than the model currently in the
+code. The correct claim is "the scored artifact shows negative alpha", not "the
+architecture does not work". A Kaggle retrain is needed to separate those.

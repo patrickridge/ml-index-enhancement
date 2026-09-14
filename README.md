@@ -16,10 +16,18 @@ multi-strat hedge funds all run some version. The headline metric is the
 **information ratio** (IR = annualised alpha ÷ tracking error). IR > 0.5 is
 considered institutional-grade; > 1.0 is top-quartile.
 
-This repo is a working implementation of that strategy on the S&P 500. Test
-window (2023–2025, 35 months): **IR 1.87** at 2.22% tracking error, ~67% hit
-rate. Written as a working record of what was built and what the numbers
-actually show - not a marketing page.
+This repo implements that strategy on the S&P 500 and tests whether a
+cross-sectional transformer can outperform simpler models at the ranking step.
+
+**The result is negative.** Once the universe is cleaned of delisted tickers
+with corrupt price data, neither transformer beats the benchmark
+out-of-sample. A LightGBM baseline is the only model with positive alpha, at
+IR 0.56. An earlier version of this README reported IR 1.87 for the
+CS-Transformer; that number was an artifact, and the audit that found it is
+documented in full below.
+
+Written as a working record of what was built and what the numbers actually
+show, including where they turned out to be wrong.
 
 ## How the strategy works
 
@@ -36,24 +44,28 @@ actually show - not a marketing page.
    flag, yield-curve features) and outputs α, trained directly on the
    information ratio.
 
-## Why deep learning
+## The hypothesis being tested
 
-Tree ensembles like LightGBM look at each stock in isolation. Ranking 500
-stocks against each other is inherently relational - a volatility reading of
-30% means one thing when most of the universe is at 15% and something else
-when most are at 45%, and the signal strength at the *tails* of the
-cross-section matters more than absolute levels. A Cross-Sectional
-Transformer handles this directly: a first attention stage operates within
-each stock's feature vector; a second stage attends across every stock in
-the universe that month, so each score is aware of its peers. Macro state
-(VIX, yield curve, Fed rate expectations) is injected through FiLM
-conditioning so the model knows what regime it's scoring in.
+Tree ensembles like LightGBM score each stock in isolation. Ranking 500 stocks
+against each other is inherently relational: a volatility reading of 30% means
+one thing when most of the universe sits at 15% and something else when most
+sit at 45%. The hypothesis was that an architecture which sees the whole
+cross-section at once should rank better than one that does not.
 
-Training is two-stage. First a standard masked-MSE pre-train so the model
-learns cross-sectional rank structure. Then a portfolio-level RL fine-tune
-(GRPO or DAPO) that optimises portfolio return directly - bridging the gap
-between "predicting labels" and "actually making money", since those two
-objectives are not the same.
+The Cross-Sectional Transformer implements that directly. A first attention
+stage operates within each stock's feature vector; a second attends across
+every stock in the universe that month, so each score is aware of its peers.
+Macro state (VIX, yield curve, Fed rate expectations) enters through FiLM
+conditioning. Training is two-stage: masked-MSE pre-train, then a
+portfolio-level RL fine-tune (GRPO or DAPO) optimising portfolio return rather
+than per-stock label accuracy.
+
+**The corrected results do not support the hypothesis.** On clean data the
+CS-Transformer posts IR −0.54 against LightGBM's +0.56, and it is negative at
+every tilt size tested. Whether that reflects the architecture, the training
+setup, the 17-month evaluation window, or the fact that its scores predate the
+Macro FiLM upgrade is not resolved here. What can be said is that the
+cross-sectional attention did not earn its complexity on this data.
 
 ## Why reinforcement learning on top
 
@@ -65,11 +77,15 @@ month with a clear top/bottom split, a timid tilt wastes signal). A learned
 policy adapts tilt size to what the market is actually doing.
 
 Validation is a 5-fold expanding-window walk-forward from 2014 to 2025 - no
-shared training data between folds, factor weights refitted from scratch
-each fold, agent retrained fresh. On 95 OOS months the SAC overlay delivers
-**IR 0.88 vs 0.28** for the fixed-α baseline, with max active drawdown
-almost halved (−6.04% vs −10.50%). GRPO and PPO reach similar IR; SAC wins
-on sample efficiency given the ~100-month fold sizes.
+shared training data between folds, factor weights refitted from scratch each
+fold, agent retrained fresh. That design is sound and is the most defensible
+part of the evaluation setup here.
+
+> **Numbers under re-validation.** Earlier runs reported IR 0.88 for the SAC
+> overlay against 0.28 for a fixed-α baseline. Those runs carried the same
+> benchmark-normalisation bug and the same contaminated universe as the index
+> enhancement results above. `5b`, `5c` and `5d` have been fixed and are being
+> re-run; the previous figures should not be quoted until they are replaced.
 
 ## What the pipeline does
 
@@ -254,56 +270,84 @@ Each model is shown at the α whose tracking error sits closest to the 2-4 %
 budget. Windows differ because the three models were last scored at different
 times, so these rows are not a like-for-like horse race.
 
-| Model | Window | Months | Ann. alpha | Tracking error | IR | Hit rate |
-|---|---|---|---|---|---|---|
-| CS-Transformer | 2024-07 to 2025-11 | 17 | 5.81 % | 4.04 % | **1.44** | 47.1 % |
-| LightGBM | 2023-01 to 2025-11 | 18 | 1.33 % | 1.82 % | 0.73 | 50.0 % |
-| FT-Transformer | 2023-01 to 2025-11 | 24 | 0.64 % | 1.00 % | 0.64 | 50.0 % |
+| Model | Window | Months | Ann. alpha | Tracking error | IR |
+|---|---|---|---|---|---|
+| LightGBM | 2023-01 to 2025-11 | 35 | +0.83 % | 1.47 % | **+0.56** |
+| FT-Transformer | 2023-01 to 2025-11 | 39 | −0.74 % | 1.44 % | −0.52 |
+| CS-Transformer | 2024-07 to 2025-11 | 17 | −2.52 % | 4.64 % | −0.54 |
 
-For context: IR > 0.5 is institutional-grade, > 1.0 is top-quartile.
+The headline finding of this project is negative: **neither transformer beats
+the benchmark once the universe is clean.** The gradient-boosting baseline they
+were built to improve on is the only model with positive out-of-sample alpha,
+and even that is modest.
 
-Reproduce with `python 4b_index_enhancement.py`. The full α sweep, including
-the tracking-error/IR tradeoff curve for each model, lands in
+Both transformers are negative at *every* α in the sweep, and their alpha
+degrades monotonically as the tilt grows — CS-Transformer runs from −0.19 % at
+the smallest α to −5.35 % at the largest. That is the signature of a signal
+that is actively wrong rather than merely absent: acting on it harder loses
+more. LightGBM degrades in the opposite direction (IR 0.66 at small α down to
+0.08 at large), which is what a weak but genuine signal looks like.
+
+Reproduce with `python 4b_index_enhancement.py`. Full α sweep in
 `data/ie_summary.csv`.
 
-### Where the CS-Transformer's edge actually comes from
+### How an earlier version of this README reported IR 1.87
 
-Its whole-universe Spearman IC is about −0.007, statistically indistinguishable
-from zero, which looks irreconcilable with an IR of 1.44. It is not. Forward
-returns by score decile over the same 17 months:
+Worth documenting, because the failure mode is instructive and the diagnostic
+path is most of the actual research content here.
 
-| Score decile | Ann. return | t |
-|---|---|---|
-| 10 (highest) | +86.8 % | 1.94 |
-| 9 | +21.2 % | 1.32 |
-| 1-8 | +8.5 % to +15.8 %, no ordering | < 1.7 |
+Earlier runs reported an IR of 1.87 for the CS-Transformer, later 1.74, then
+1.44 as two separate bugs were fixed. All of it was spurious. Three compounding
+problems:
 
-The entire edge sits in the top decile. Deciles 1 through 9 are flat noise with
-no monotonic structure, and restricting IC to the tails makes it *more* negative
-(−0.039 on the top and bottom 10 %), meaning the model cannot rank within the
-extremes either. It identifies a small group of winners without ordering them.
-Spearman IC, a rank correlation weighting all ~500 names equally, is close to
-blind to that. A conviction-weighted tilt is not, which is why the z-score
-construction beats the flat top/bottom-100 block tilt.
+**1. The tilt formula had drifted from the documented one.** README and
+docstring described `w_i = w_SPX_i + α × z_i`; the code applied a flat ±α to the
+top and bottom 100 names. Under the block tilt no α reached the stated 2-4 %
+tracking-error budget, so no published number reproduced.
 
-A permutation test confirms the effect is real rather than an artifact of the
-weighting scheme. Shuffling scores within each month, 200 draws, holding the
-universe and construction fixed: null mean alpha −0.33 %, standard deviation
-0.51 %, 95th percentile +0.66 %. The actual +5.81 % sits outside the entire null
-distribution, roughly twelve standard deviations above its mean.
+**2. The benchmark leg was under-invested.** Portfolio weights were renormalised
+to sum to 1, benchmark weights were not. Over the scored universe `spx_weight`
+sums to 0.81, not 1, because ~19 % of index market cap fails the merge. A
+fully-invested portfolio measured against an 81 %-invested benchmark books the
+missing exposure as alpha — worth 3.84 %/yr in a rising market.
 
-### Caveats that matter
+**3. Delisted tickers with corrupt prices.** This was the fatal one.
+`prices.parquet` retains names that left the index years ago, and `1c` assigns
+them a market-cap weight anyway. Their weights come out near zero, so the
+benchmark ignores them, but a score-driven tilt still opens real positions in
+them. Their price series are stale stubs producing impossible returns.
 
-- **Sub-50 % hit rate.** The strategy loses slightly more months than it wins
-  and makes it back on magnitude. That is a concentrated, fragile payoff
-  profile, not a steady grind.
-- **17 months, t ≈ 1.9 on the top decile.** Suggestive, not established. The
-  window is almost entirely the mega-cap AI rally.
-- **A single decile carrying +86.8 % annualised** is extreme enough that it
-  warrants checking whether a handful of names dominate it. Not yet done.
-- **The factor-combo baseline** in `data/bt_ie_factor_combo.csv` predates the
-  transaction-cost model and has not been rerun, so it is omitted rather than
-  quoted at a stale number.
+Compuware (`CPWR`), **delisted in 2014**, appears in the 2024-25 test window
+printing +1500 %, +900 %, +552 %, +212 % and +200 % in separate months.
+Alongside it: FNMA and FMCC (OTC since 2008), NKTR and FOSL (removed 2019), KG
+(acquired 2011).
+
+Concentration in the top score decile before the fix:
+
+| | Share of decile-10 return |
+|---|---|
+| Top 1 ticker | **63.6 %** |
+| Top 3 tickers | 76.8 % |
+| Top 10 tickers | 97.3 % |
+
+Mean monthly decile-10 return was +5.34 % against a **median of +0.53 %**, skew
+16.8. Dropping the single best name per month took it from +86.8 % annualised to
++4.4 %. Dropping two took it negative.
+
+A permutation test had earlier appeared to vindicate the strategy at roughly
+twelve standard deviations above a shuffled-score null. It was measuring the
+wrong thing: shuffling destroys the model's ability to *locate the zombies*, so
+the null collapsed. The test proved the selection was non-random, which is not
+the same as proving it was skilful.
+
+**The fix** is `clean_universe()` in `config.py`: a minimum index weight of 5e-6
+plus a hard gate on any monthly return above 100 %. The threshold is calibrated
+so that every known zombie observation is removed while the largest surviving
+return falls to +99 % (AppLovin, October 2024, which is real). It logs what it
+drops rather than filtering silently.
+
+Applied to the CS-Transformer test panel it removes 2,620 of 8,840 stock-months,
+all on the weight criterion. Those rows were carrying the entire result.
 
 ### RL walk-forward (95 OOS months, 2014–2025)
 

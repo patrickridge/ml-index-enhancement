@@ -50,6 +50,11 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
+from config import clean_universe
+
+# Print the universe-filter line once per model rather than once per α
+_verbose = True
+
 # Paths
 DATA_DIR     = Path(os.environ.get("ML_DATA_DIR", "data"))
 OUT_DIR      = Path(os.environ.get("ML_OUT_DIR", str(DATA_DIR)))
@@ -118,6 +123,7 @@ def build_enhanced_portfolio(
     df = scores.merge(weights[["date", "ticker", "spx_weight"]],
                       on=["date", "ticker"], how="inner")
     df = df.dropna(subset=["score", "spx_weight", "fwd_ret_1m"])
+    df = clean_universe(df, verbose=_verbose)
 
     results = []
     prev_weights = {}      # ticker → weight last month
@@ -288,8 +294,11 @@ def main():
         best_ir   = -np.inf
         best_alpha = None
 
+        global _verbose
+        _verbose = True
         for alpha in ALPHA_GRID:
             bt = build_enhanced_portfolio(scores, weights, alpha)
+            _verbose = False
             if bt.empty:
                 continue
             s = ie_stats(bt)

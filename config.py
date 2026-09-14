@@ -21,6 +21,56 @@ START_DATE    = "2010-01-01"   # cut pre-GFC data
 TRAIN_END     = "2022-12-31"   # ~156 months training (includes 2021-2022 vol regime)
 VALID_END     = "2024-06-30"   # ~18 months validation (Jan 2023–Jun 2024); test = Jul 2024+ (~12 months)
 
+# Universe hygiene
+#
+# prices.parquet carries tickers that left the index years ago (CPWR delisted
+# 2014, FNMA/FMCC in OTC conservatorship since 2008, and so on). 1c assigns
+# them a market-cap weight anyway, because it multiplies whatever yfinance
+# reports as current shares outstanding by the historical close. The weights
+# come out at ~1e-9, effectively zero, so the benchmark ignores them - but a
+# score-driven tilt still opens real positions in them, and their price series
+# are stale stubs that produce absurd returns (CPWR printed +1500% in a single
+# month of 2025). That combination books pure fictional alpha.
+#
+# The floor below is calibrated on the OOS panel: 5e-6 removes every known
+# zombie while the largest surviving monthly return falls to +99% (AppLovin,
+# Oct 2024), which is real. The return gate is a second line of defence
+# against data errors in names that clear the weight floor.
+MIN_SPX_WEIGHT       = 5e-6    # ~0.0005% of index cap; below this is a stub
+MAX_ABS_MONTHLY_RET  = 1.0     # |ret| > 100% in one month = treat as bad data
+
+
+def clean_universe(df, weight_col="spx_weight", ret_col="fwd_ret_1m",
+                   label="", verbose=True):
+    """
+    Drop stub tickers and impossible returns before any portfolio maths.
+
+    Returns the filtered frame. Prints what it removed when verbose, because a
+    silent universe filter is its own kind of bug.
+    """
+    n0 = len(df)
+    out = df[df[weight_col] >= MIN_SPX_WEIGHT]
+    n_weight = n0 - len(out)
+
+    if ret_col in out.columns:
+        bad = out[ret_col].abs() > MAX_ABS_MONTHLY_RET
+        n_ret = int(bad.sum())
+        if verbose and n_ret:
+            worst = out.loc[bad].nlargest(min(3, n_ret), ret_col)
+            for _, r in worst.iterrows():
+                print(f"    [data] dropped {r.get('ticker', '?')} "
+                      f"{r.get('date', '')} ret={r[ret_col]:+.1%}")
+        out = out[~bad]
+    else:
+        n_ret = 0
+
+    if verbose:
+        tag = f" ({label})" if label else ""
+        print(f"  universe filter{tag}: {n0:,} -> {len(out):,} rows "
+              f"[-{n_weight:,} sub-threshold weight, -{n_ret:,} bad return]")
+    return out
+
+
 # Portfolio construction
 TOP_N         = 100            # overweight top N stocks vs benchmark
 BOTTOM_N      = 100            # underweight bottom N stocks vs benchmark

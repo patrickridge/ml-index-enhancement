@@ -68,7 +68,11 @@ except ImportError:
     HAS_TORCH = False
 
 # Paths
-DATA_DIR     = Path("data")
+import os
+
+from config import clean_universe
+
+DATA_DIR     = Path(os.environ.get("ML_DATA_DIR", "data"))
 FIG_DIR      = Path("figures")
 FIG_DIR.mkdir(exist_ok=True)
 
@@ -127,6 +131,8 @@ def simulate_month(scores_month, weights_month, alpha,
         weights_month[["ticker", "spx_weight"]], on="ticker", how="inner"
     ).dropna(subset=["score", "spx_weight", "fwd_ret_1m"])
 
+    df = clean_universe(df, verbose=False)
+
     if len(df) < top_n + bottom_n:
         return None
 
@@ -137,14 +143,22 @@ def simulate_month(scores_month, weights_month, alpha,
     tilt.iloc[:top_n]        = +alpha
     tilt.iloc[n - bottom_n:] = -alpha
 
-    raw_w = (df["spx_weight"] + tilt).clip(lower=0.0)
+    # Benchmark renormalised over the scored universe - see 5c for the full
+    # explanation. Using the raw column understates bench_ret and books the
+    # missing index exposure as alpha.
+    coverage = df["spx_weight"].sum()
+    if coverage < 1e-8:
+        return None
+    bench_w = df["spx_weight"] / coverage
+
+    raw_w = (bench_w + tilt).clip(lower=0.0)
     total = raw_w.sum()
     if total < 1e-8:
         return None
 
     port_w    = raw_w / total
-    port_ret  = (port_w          * df["fwd_ret_1m"]).sum()
-    bench_ret = (df["spx_weight"] * df["fwd_ret_1m"]).sum()
+    port_ret  = (port_w  * df["fwd_ret_1m"]).sum()
+    bench_ret = (bench_w * df["fwd_ret_1m"]).sum()
 
     return {
         "port_ret":   port_ret,

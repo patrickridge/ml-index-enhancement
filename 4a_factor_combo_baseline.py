@@ -22,6 +22,7 @@ Outputs:
 import time as _time
 _t0 = _time.time()
 
+import os
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -32,7 +33,9 @@ import pyarrow.parquet as pq
 from pathlib import Path
 
 # Config
-DATA_DIR = Path("data")
+from config import clean_universe
+
+DATA_DIR = Path(os.environ.get("ML_DATA_DIR", "data"))
 
 # Use optimised weights if available, else fall back to IC-decay weights
 FACTOR_FILE = DATA_DIR / "factor_selected_optimised.csv"
@@ -143,6 +146,7 @@ print(f"  Saved → data/scores_factor_combo.parquet")
 print("\nRunning IE portfolio construction …")
 merged = scores.merge(spx[["date", "ticker", "spx_weight"]], on=["date", "ticker"], how="inner")
 merged = merged.dropna(subset=["spx_weight", "score", "fwd_ret_1m"])
+merged = clean_universe(merged, label="factor-combo")
 
 results = []
 bt_records = {}
@@ -158,7 +162,15 @@ for alpha in ALPHA_VALUES:
         s_std  = grp["score"].std() + 1e-9
         score_z = (grp["score"] - s_mean) / s_std
 
-        w_active = grp["spx_weight"].values + alpha * score_z.values
+        # Tilt off the renormalised benchmark, not the raw column. Tilting off
+        # raw and normalising afterwards scales the effective alpha by
+        # 1/coverage (~1.23x here), so the swept alpha would not mean what it says.
+        coverage = grp["spx_weight"].sum()
+        if coverage < 1e-9:
+            continue
+        bench_w = grp["spx_weight"].values / coverage
+
+        w_active = bench_w + alpha * score_z.values
         w_active = np.clip(w_active, 0, None)
         w_sum    = w_active.sum()
         if w_sum < 1e-9:
@@ -166,8 +178,7 @@ for alpha in ALPHA_VALUES:
         w_active /= w_sum
 
         port_ret  = float((w_active * grp["fwd_ret_1m"].values).sum())
-        bench_ret = float((grp["spx_weight"].values / grp["spx_weight"].sum()
-                           * grp["fwd_ret_1m"].values).sum())
+        bench_ret = float((bench_w * grp["fwd_ret_1m"].values).sum())
         active_ret = port_ret - bench_ret
         monthly.append(dict(date=dt, port_ret=port_ret, bench_ret=bench_ret,
                              active_ret=active_ret, n_stocks=len(grp)))
