@@ -270,16 +270,42 @@ Each model is shown at the α whose tracking error sits closest to the 2-4 %
 budget. Windows differ because the three models were last scored at different
 times, so these rows are not a like-for-like horse race.
 
-| Model | Window | Months | Ann. alpha | Tracking error | IR |
-|---|---|---|---|---|---|
-| LightGBM | 2023-01 to 2025-11 | 35 | +0.83 % | 1.47 % | **+0.56** |
-| FT-Transformer | 2023-01 to 2025-11 | 39 | −0.74 % | 1.44 % | −0.52 |
-| CS-Transformer | 2024-07 to 2025-11 | 17 | −2.52 % | 4.64 % | −0.54 |
+| Model | Months | Ann. alpha | TE | IR | 95 % CI | P(IR>0) |
+|---|---|---|---|---|---|---|
+| LightGBM | 18 | +0.83 % | 1.47 % | +0.56 | [−0.69, +2.12] | 81 % |
+| Factor-combo | 35 | — | — | +0.44 | [−0.84, +1.21] | 79 % |
+| FT-Transformer | 24 | −0.74 % | 1.44 % | −0.52 | [−2.04, +0.91] | 23 % |
+| CS-Transformer | 17 | −2.52 % | 4.64 % | −0.54 | [−1.63, +0.38] | 13 % |
 
-The headline finding of this project is negative: **neither transformer beats
-the benchmark once the universe is clean.** The gradient-boosting baseline they
-were built to improve on is the only model with positive out-of-sample alpha,
-and even that is modest.
+**Every one of those intervals contains zero.** No ranking model in this study
+is statistically distinguishable from no skill at all.
+
+That cuts both ways, and it is worth being blunt about. LightGBM's +0.56 is not
+evidence that gradient boosting works here. The CS-Transformer's −0.54 is not
+evidence that cross-sectional attention fails. The two intervals overlap across
+nearly their whole range, so the data cannot separate them either. The point
+estimates differ; the evidence does not.
+
+The cause is sample size, not modelling. These models have 17 to 35
+out-of-sample months, where the standard error on an information ratio is
+roughly ±0.7 - far larger than any effect this strategy could plausibly
+produce. Intervals are 10,000-resample circular block bootstraps with six-month
+blocks, from `4h_bootstrap_ci.py`.
+
+### The one result that does survive
+
+| | Months | IR | 95 % CI | P(IR>0) |
+|---|---|---|---|---|
+| **RL tilt overlay** | **143** | **+0.494** | **[+0.046, +0.919]** | **98.5 %** |
+
+The reinforcement-learning overlay that sizes the tilt is the only finding here
+whose confidence interval excludes zero, and it clears it narrowly. It has 143
+out-of-sample months rather than 17, which is the whole reason it can be
+measured at all.
+
+The defensible summary of this work: **learning how aggressively to act on a
+signal is measurable and adds value; whether any of these models produce a
+better signal in the first place is not settled by the data available.**
 
 Both transformers are negative at *every* α in the sweep, and their alpha
 degrades monotonically as the tilt grows — CS-Transformer runs from −0.19 % at

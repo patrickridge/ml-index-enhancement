@@ -1335,6 +1335,35 @@ def main():
     scores_df.to_parquet(OUT_SCORES, index=False)
     print(f"\nSaved scores: {OUT_SCORES} | rows={len(scores_df):,}")
 
+    # Checkpoint the final ensemble alongside the scores.
+    #
+    # Without this a 90-minute run produces the project's headline artifact and
+    # keeps nothing that generated it: you cannot audit which model produced a
+    # given scores file, re-score without retraining, or reproduce a result
+    # after config drifts. That gap is how stale scores ended up being compared
+    # against current code for months without anyone noticing.
+    #
+    # Config is stored next to the weights so a checkpoint is self-describing.
+    try:
+        import torch as _torch
+        ckpt_path = OUT_SCORES.with_name(OUT_SCORES.stem + "_model.pt")
+        _torch.save({
+            "state_dicts":      [m.state_dict() for m in models],
+            "n_stock_features": n_stock_features,
+            "n_macro":          n_macro,
+            "stock_feat_cols":  stock_feat_cols,
+            "macro_cols":       macro_cols,
+            "params":           dict(p),
+            "rl_method":        rl_method,
+            "oos_start":        str(oos_start),
+            "train_end":        str(train_months[-1]),
+            "n_seeds":          len(models),
+            "scores_rows":      len(scores_df),
+        }, ckpt_path)
+        print(f"Saved checkpoint: {ckpt_path}")
+    except Exception as e:
+        print(f"[WARN] checkpoint not saved: {e}")
+
     # Backtests
     lo_rets = scores_df.groupby("date").apply(long_only_ret, top_n=TOP_N).rename("port_ret")
     lo_rets = lo_rets.dropna().reset_index()
