@@ -79,10 +79,16 @@ TRANSFORMER_CS_PARAMS = dict(
     epochs=150, patience=20, max_stocks=520,
     l1_lambda=1e-6,
     l2_lambda=1e-6,
-    # FiLM disabled for first-pass retrain - re-enable once base model converges
-    use_macro_film=False,
+    # Macro FiLM was switched off during an earlier debugging pass to isolate a
+    # training-stability problem, and never switched back on. The README
+    # describes it as the model's distinguishing feature, so evaluating with it
+    # off does not test the architecture the project claims to be testing.
+    #
+    # Toggle from the notebook rather than editing this file:
+    #   os.environ["ML_USE_FILM"] = "1"
+    use_macro_film=os.environ.get("ML_USE_FILM", "0") == "1",
     d_macro=64,
-    use_corr_bias=False,
+    use_corr_bias=os.environ.get("ML_USE_CORR_BIAS", "0") == "1",
 )
 
 # RL Fine-Tuning (GRPO / DAPO / Hybrid)
