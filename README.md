@@ -377,10 +377,41 @@ premia and microstructure effects, not alpha - which is consistent with the
 models built on it showing no significant skill, and with the short-horizon
 technical factors being the ones that flip sign out of sample.
 
-One caveat on our own result: the universe filter cuts at `spx_weight >= 5e-6`,
-itself a size and liquidity threshold. Filtering on a size boundary and then
-finding size factors significant is a mechanism worth ruling out by rerunning at
-1e-6 and 1e-5 to check the t-statistics hold. Not yet done.
+#### Threshold sensitivity, and a caveat on the above
+
+The universe filter cuts at `spx_weight >= 5e-6`, itself a size and liquidity
+threshold. Finding size factors significant after filtering on a size boundary
+is a mechanism that could manufacture the result, so the IC t-statistics were
+recomputed across five weight floors.
+
+| Factor | floor 0 | 1e-6 | **5e-6** | 1e-5 | 5e-5 |
+|---|---|---|---|---|---|
+| `log_mktcap` | −1.95 | −2.22 | **−5.05** | −3.03 | −2.05 |
+| `size_proxy` | −4.28 | −4.43 | **−5.83** | −4.38 | −2.64 |
+| `high_vol_week` | −2.76 | −3.81 | **−5.69** | −4.35 | −2.65 |
+| `amihud_illiq_21d` | +4.50 | +4.98 | **+4.95** | +4.35 | +3.09 |
+| `volume` | −0.87 | −2.15 | **−3.38** | −2.33 | −2.06 |
+
+**Every survivor peaks at 5e-6 - the threshold actually used.** Mean |t| range
+across floors is 2.50 for survivors against 0.48 for a control group of factors
+that failed BHY.
+
+The effects are real: signs are stable across all five floors (0 of 9 flip) and
+most hold |t| > 2 everywhere. But **the |t| ≈ 5.8 quoted above is not robust.**
+The defensible range is 2.5 to 4.5, and `log_mktcap` at no filter at all is
+−1.95, below conventional significance. The survivor count of 17 would shrink at
+other thresholds.
+
+Two readings, both partly right. Benign: 5e-6 sits near the genuine
+member/non-member boundary, so below it stubs dilute the signal and above it the
+size distribution gets truncated - a peak at the correct cut is expected.
+Concerning: the coincidence is close enough to disclose rather than explain
+away. The threshold was calibrated on zombie removal before any factor testing,
+not tuned for significance, but that is an assurance rather than a proof.
+
+The control group is the reassuring part: factors that failed BHY stay
+insignificant at every floor, so the filter is not distorting the cross-section
+broadly. Override with `ML_MIN_WEIGHT` to reproduce any row above.
 
 ### Survivorship bias, quantified
 

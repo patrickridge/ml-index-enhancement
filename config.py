@@ -36,7 +36,7 @@ VALID_END     = "2024-06-30"   # ~18 months validation (Jan 2023–Jun 2024); te
 # zombie while the largest surviving monthly return falls to +99% (AppLovin,
 # Oct 2024), which is real. The return gate is a second line of defence
 # against data errors in names that clear the weight floor.
-MIN_SPX_WEIGHT       = 5e-6    # ~0.0005% of index cap; below this is a stub
+MIN_SPX_WEIGHT       = float(os.environ.get("ML_MIN_WEIGHT", 5e-6))
 MAX_ABS_MONTHLY_RET  = 1.0     # |ret| > 100% in one month = treat as bad data
 
 
