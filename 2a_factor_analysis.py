@@ -30,6 +30,7 @@ Outputs (all to data/):
 Run AFTER 1h_feature_engineering.py.
 """
 
+import os
 import time as _time
 _t0 = _time.time()
 
@@ -47,7 +48,9 @@ from pathlib import Path
 from scipy.stats import spearmanr
 
 try:
-    from config import MACRO_COLS, DATA_DIR as _cfg_dir, TRAIN_END as _cfg_train_end, START_DATE as _cfg_start
+    from config import (MACRO_COLS, DATA_DIR as _cfg_dir,
+                        TRAIN_END as _cfg_train_end, START_DATE as _cfg_start,
+                        clean_universe)
     _DATA_DIR       = _cfg_dir
     _CFG_TRAIN_END  = _cfg_train_end
     _CFG_TRAIN_START = _cfg_start
@@ -57,8 +60,11 @@ except ImportError:
     _CFG_TRAIN_END   = None
     _CFG_TRAIN_START = None
 
+    def clean_universe(df, **kwargs):   # config.py unavailable; no filtering
+        return df
+
 # Paths
-DATA_DIR = Path("data")
+DATA_DIR = Path(os.environ.get("ML_DATA_DIR", "data"))
 FIG_DIR  = Path("figures")
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 PANEL_IN = DATA_DIR / "panel_monthly_enriched.parquet"
@@ -397,6 +403,30 @@ def main():
     panel = pq.read_table(PANEL_IN).to_pandas()
     panel["date"] = pd.to_datetime(panel["date"])
     panel = panel[panel["date"] >= TRAIN_START].reset_index(drop=True)
+
+    # Restrict to genuine index members before measuring anything.
+    #
+    # The panel carries tickers that left the index years ago, with price series
+    # that have gone stale and produce impossible returns (see Notes item 22).
+    # Spearman IC is rank-based so a single absurd return does not blow up a
+    # correlation the way Pearson would, but roughly a third of each
+    # cross-section being non-members still dilutes every IC estimate here.
+    #
+    # The weight column lives in spx_weights.parquet rather than the panel, so
+    # it has to be merged in. If that file is missing the analysis still runs,
+    # on the unfiltered panel, and says so.
+    weights_path = DATA_DIR / "spx_weights.parquet"
+    if weights_path.exists():
+        _w = pd.read_parquet(weights_path, columns=["date", "ticker", "spx_weight"])
+        _w["date"] = pd.to_datetime(_w["date"])
+        n_before = len(panel)
+        panel = panel.merge(_w, on=["date", "ticker"], how="inner")
+        panel = clean_universe(panel, label="factor analysis")
+        panel = panel.drop(columns=["spx_weight"]).reset_index(drop=True)
+        print(f"  panel {n_before:,} -> {len(panel):,} rows after index-member filter")
+    else:
+        print(f"  [WARN] {weights_path.name} not found - running on the raw panel.")
+        print( "         IC estimates will include delisted tickers.")
 
     always_exclude = {"date", "ticker", "fwd_ret_1m"}
     macro_in_panel = [c for c in MACRO_COLS if c in panel.columns]

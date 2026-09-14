@@ -81,11 +81,11 @@ shared training data between folds, factor weights refitted from scratch each
 fold, agent retrained fresh. That design is sound and is the most defensible
 part of the evaluation setup here.
 
-> **Numbers under re-validation.** Earlier runs reported IR 0.88 for the SAC
-> overlay against 0.28 for a fixed-α baseline. Those runs carried the same
-> benchmark-normalisation bug and the same contaminated universe as the index
-> enhancement results above. `5b`, `5c` and `5d` have been fixed and are being
-> re-run; the previous figures should not be quoted until they are replaced.
+On 143 out-of-sample months the SAC overlay returns **IR 0.314 against 0.025**
+for a fixed-α baseline, beating it in 4 of 5 folds. That is well short of the
+0.88 an earlier version of this README claimed, but it is the one headline
+number here that survived the data audit. Full table below, including the
+tracking-error problem it comes with.
 
 ## What the pipeline does
 
@@ -349,15 +349,44 @@ drops rather than filtering silently.
 Applied to the CS-Transformer test panel it removes 2,620 of 8,840 stock-months,
 all on the weight criterion. Those rows were carrying the entire result.
 
-### RL walk-forward (95 OOS months, 2014–2025)
+### RL walk-forward (143 OOS months, 2014-2025)
+
+Clean universe, benchmark renormalised, all parameters refit per fold.
 
 |  | RL (SAC) | Fixed α = 1 % |
 |---|---|---|
-| Ann. alpha | **7.19 %** | 1.87 % |
-| Tracking error | 8.18 % | 6.77 % |
-| IR | **0.88** | 0.28 |
-| Hit rate | 50.5 % | 48.4 % |
-| Max active DD | **−6.04 %** | −10.50 % |
+| Ann. alpha | **3.05 %** | 0.19 % |
+| Tracking error | 9.71 % | 7.76 % |
+| IR | **0.314** | 0.025 |
+| Hit rate | 46.2 % | 47.6 % |
+| Max active DD | **−14.37 %** | −20.42 % |
+
+| Fold | Months | RL IR | Fixed IR |
+|---|---|---|---|
+| 2014-2015 | 24 | −0.103 | −1.231 |
+| 2016-2017 | 24 | 0.596 | 0.680 |
+| 2018-2019 | 24 | 0.447 | −0.168 |
+| 2020-2021 | 24 | 0.184 | 0.122 |
+| 2022-2025 | 47 | 0.486 | 0.274 |
+
+**The RL overlay beats a fixed tilt in 4 of 5 folds**, across four distinct
+regimes, with factor weights, state normalisation and the policy all refit
+inside each fold's training slice. This is the one result in the project that
+survived the audit intact, and the fold-level consistency is what makes it
+worth anything — a single concatenated IR of 0.31 on its own would not be.
+
+An earlier version reported IR 0.88 against 0.28. Those runs carried the same
+benchmark-normalisation bug and contaminated universe as everything else here.
+
+Two things to be clear about:
+
+- **Tracking error is 9.71 %, not 2-4 %.** The agent picks a mean α of 2.61 %
+  and tops out at the 5 % cap. Whatever its IR, this is not operating inside
+  an index-enhancement mandate. Constraining α to hold TE in budget, and
+  re-measuring, is unfinished work.
+- **It runs on factor-combo scores, not CS-Transformer scores.** So this is a
+  different signal from the model comparison above, and the two results cannot
+  be chained together.
 
 ### RL algorithm comparison
 
