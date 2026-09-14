@@ -24,9 +24,22 @@ Both jobs read from the same Kaggle Dataset.
    trains on delisted tickers, which is the bug that invalidated the previous
    results.
 
-3. Note the dataset path Kaggle assigns. It is usually
-   `/kaggle/input/investsoc-ml-data`, but if it differs, set `ML_DATA_DIR` in
-   the first cell to match.
+3. Check where Kaggle actually mounted it before running anything. It nests
+   uploads under your username, so the path is usually
+
+       /kaggle/input/datasets/<your-username>/investsoc-ml-data
+
+   not `/kaggle/input/investsoc-ml-data`. Confirm with:
+
+   ```python
+   import os
+   for root, dirs, files in os.walk("/kaggle/input"):
+       for f in files:
+           print(os.path.join(root, f))
+   ```
+
+   Set `ML_DATA_DIR` to whatever directory that prints. Getting this wrong
+   gives a `FileNotFoundError` on `pd.read_parquet(PANEL_IN)`.
 
 Re-upload `panel_monthly_enriched.parquet` whenever you rebuild it with
 `1h_feature_engineering.py`, or the GPU run will train on a stale panel.
@@ -42,7 +55,7 @@ FiLM upgrade, so they test a model that no longer matches the code.
 
 ```python
 import os
-os.environ["ML_DATA_DIR"] = "/kaggle/input/investsoc-ml-data"
+os.environ["ML_DATA_DIR"] = "/kaggle/input/datasets/patrickridge/investsoc-ml-data"
 os.environ["ML_OUT_DIR"]  = "/kaggle/working"
 ```
 
