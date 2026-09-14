@@ -1203,7 +1203,10 @@ def main():
     # Correlation matrix (computed from IS training data only)
     corr_matrix = None
     if p.get("use_corr_bias", False):
-        train_panel = panel[panel["date"] <= train_end]
+        # train_months[-1], not the old fixed TRAIN_END: the split is now driven
+        # by ML_OOS_START, so the correlation matrix has to follow it or it
+        # would be computed over data the initial model never saw.
+        train_panel = panel[panel["date"] <= train_months[-1]]
         corr_np = train_panel[stock_feat_cols].corr(method="spearman").values
         corr_matrix = torch.FloatTensor(corr_np).to(DEVICE)
         print(f"  Correlation bias: {corr_matrix.shape[0]}x{corr_matrix.shape[1]} Spearman matrix")
@@ -1274,8 +1277,11 @@ def main():
     # inspected or re-run afterwards.
     try:
         ckpt_path = OUT_SCORES.with_name(OUT_SCORES.stem + "_model.pt")
+        # 3d trains a single model via train_cs_model; 3c ensembles. Wrap so the
+        # checkpoint format matches across both.
+        _nets = model if isinstance(model, (list, tuple)) else [model]
         torch.save({
-            "state_dicts":      [m.state_dict() for m in models],
+            "state_dicts":      [m.state_dict() for m in _nets],
             "n_stock_features": n_stock_features,
             "n_macro":          n_macro,
             "stock_feat_cols":  stock_feat_cols,
@@ -1284,7 +1290,7 @@ def main():
             "rl_method":        rl_method,
             "oos_start":        str(oos_start),
             "train_end":        str(train_months[-1]),
-            "n_seeds":          len(models),
+            "n_seeds":          len(_nets),
             "scores_rows":      len(scores_df),
         }, ckpt_path)
         print(f"Saved checkpoint: {ckpt_path}  (download this too)")

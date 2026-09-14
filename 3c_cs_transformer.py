@@ -1265,7 +1265,9 @@ def main():
     # Correlation matrix (computed from IS training data only)
     corr_matrix = None
     if p.get("use_corr_bias", False):
-        train_panel = panel[panel["date"] <= train_end]
+        # train_months[-1] rather than a fixed TRAIN_END: the split now follows
+        # ML_OOS_START, so the correlation matrix must follow it too.
+        train_panel = panel[panel["date"] <= train_months[-1]]
         corr_np = train_panel[stock_feat_cols].corr(method="spearman").values
         corr_matrix = torch.FloatTensor(corr_np).to(DEVICE)
         print(f"  Correlation bias: {corr_matrix.shape[0]}x{corr_matrix.shape[1]} Spearman matrix")

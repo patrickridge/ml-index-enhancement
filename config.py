@@ -5,6 +5,7 @@ Date splits, portfolio sizing, model hyperparameters. Imported by the 2*, 3*,
 4*, and 5* scripts. Kaggle scripts (3b, 3d, 3e_hp_sweep_kaggle) inline a copy
 of the subset they need so they run without this module.
 """
+import os
 from pathlib import Path
 
 DATA_DIR = Path("data")
