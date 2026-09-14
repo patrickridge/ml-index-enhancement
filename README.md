@@ -292,20 +292,106 @@ roughly ±0.7 - far larger than any effect this strategy could plausibly
 produce. Intervals are 10,000-resample circular block bootstraps with six-month
 blocks, from `4h_bootstrap_ci.py`.
 
-### The one result that does survive
+### The RL overlay, and an awkward tension
 
-| | Months | IR | 95 % CI | P(IR>0) |
+The overlay that sizes the tilt is the only part of the project with enough
+out-of-sample data to measure - 143 months rather than 17. Two configurations
+matter, and they do not agree:
+
+| α cap | Ann. alpha | TE | IR | 95 % CI | Folds won | In mandate? |
+|---|---|---|---|---|---|---|
+| 1.8 % | 3.58 % | 7.24 % | 0.494 | [+0.046, +0.919] | 5/5 | no |
+| **0.4 %** | 1.14 % | **3.82 %** | 0.299 | [−0.173, +0.787] | **5/5** | **yes** |
+
+**The configuration that fits the 2-4 % mandate is the one whose interval spans
+zero. The configuration whose interval excludes zero breaches the budget by
+roughly 2×.** Reporting only the second would be the same selective reading
+that produced the original IR 1.87.
+
+What rescues the result is that those intervals test the wrong question. They
+ask whether absolute IR exceeds zero. The claim worth making is relative:
+
+- **5 of 5 folds** beat the fixed-α baseline. Under a coin-flip null that is
+  p = 0.5⁵ = **0.031**.
+- Paired t-test across matched folds: **p = 0.024** for PPO, with all four
+  algorithms pointing the same way (`5h_algo_significance.py`).
+- Max active drawdown falls from **−20.4 % to −5.9 %** at the compliant cap.
+
+Matched-sample tests difference out the period effect, so they carry far more
+power than comparing two noisy information ratios.
+
+**The defensible statement:** adaptive tilt sizing reliably outperforms a static
+tilt, inside the tracking-error budget, with drawdown cut by more than a third.
+Whether its absolute information ratio is positive is not settled by 143 months.
+
+### α is a risk parameter, not a performance one
+
+| α cap | Ann. alpha | TE | IR | Folds |
 |---|---|---|---|---|
-| **RL tilt overlay** | **143** | **+0.494** | **[+0.046, +0.919]** | **98.5 %** |
+| 0.004 | 1.14 % | 3.82 % | 0.299 | 5/5 |
+| 0.006 | 1.33 % | 4.50 % | 0.297 | 4/5 |
+| 0.009 | 2.24 % | 6.41 % | 0.349 | 5/5 |
+| 0.012 | 2.49 % | 6.86 % | 0.363 | 5/5 |
+| 0.018 | 3.58 % | 7.24 % | 0.494 | 5/5 |
+| 0.050 | 3.05 % | 9.71 % | 0.314 | 4/5 |
 
-The reinforcement-learning overlay that sizes the tilt is the only finding here
-whose confidence interval excludes zero, and it clears it narrowly. It has 143
-out-of-sample months rather than 17, which is the whole reason it can be
-measured at all.
+IR spans 0.297 to 0.494 across the sweep - a range of 0.197 against a bootstrap
+CI half-width near ±0.44. **The whole sweep fits inside one confidence
+interval**, so the apparent optimum at 0.018 is noise and cannot be tuned
+toward. Tracking error, by contrast, moves monotonically over a 2.5× range.
 
-The defensible summary of this work: **learning how aggressively to act on a
-signal is measurable and adds value; whether any of these models produce a
-better signal in the first place is not settled by the data available.**
+So α controls risk, not return. Pick it to meet the mandate, not to maximise a
+backtested IR.
+
+### Which RL algorithm? It does not matter
+
+| | SAC | PPO | GRPO | DAPO | Fixed |
+|---|---|---|---|---|---|
+| IR | 0.462 | 0.672 | 0.339 | 0.599 | 0.025 |
+| Folds won | 5/5 | 5/5 | 3/5 | 4/5 | — |
+
+Every pairwise comparison is insignificant - PPO vs DAPO differ by 0.001
+(p = 0.997), the closest pair p = 0.189. DAPO's *mean* improvement over the
+baseline (+0.687) marginally exceeds PPO's (+0.686) yet fails significance
+purely because it is more variable across folds, which is exactly the trap a
+point-estimate ranking falls into.
+
+An earlier version of this README reported GRPO 0.88 / PPO 0.87 / SAC 0.79. On
+clean data that ordering inverts. The value comes from sizing the tilt at all,
+not from the choice of policy gradient.
+
+### Factor library, after multiple-testing correction
+
+Of 237 factors with computable t-statistics, 24 pass a raw p < 0.05 against
+roughly 12 expected by chance. **17 survive Benjamini-Hochberg-Yekutieli at
+FDR 0.10** - BHY rather than BH because factor IC series are heavily
+cross-correlated and BH assumes independence.
+
+Every survivor is size, illiquidity, dollar volume or realised volatility:
+`size_proxy`, `log_mktcap`, `amihud_illiq_21d`, `dollar_vol_21d/63d`,
+`cand_kyle_lambda_21d`, `vol_above_avg`, `high_vol_week` and their tail dummies.
+
+**No momentum, value, quality, seasonality, insider, sentiment or mined-alpha
+factor survives.** What the library reliably contains is well-documented risk
+premia and microstructure effects, not alpha - which is consistent with the
+models built on it showing no significant skill, and with the short-horizon
+technical factors being the ones that flip sign out of sample.
+
+One caveat on our own result: the universe filter cuts at `spx_weight >= 5e-6`,
+itself a size and liquidity threshold. Filtering on a size boundary and then
+finding size factors significant is a mechanism worth ruling out by rerunning at
+1e-6 and 1e-5 to check the t-statistics hold. Not yet done.
+
+### Survivorship bias, quantified
+
+The 247 unfetchable tickers cannot be recovered without CRSP or Compustat, so
+the bias is estimated instead (`1q_survivorship_bias.py`). Index leavers
+underperform by **−4.16 %/month** over their final six months. Spread across
+149,094 stock-months and scaled to the missing names, that implies roughly
+**+0.50 %/yr of spurious alpha** in every backtest here.
+
+Material against alphas of 0.8-3.6 %: read any headline figure as about half a
+point per year optimistic.
 
 Both transformers are negative at *every* α in the sweep, and their alpha
 degrades monotonically as the tilt grows — CS-Transformer runs from −0.19 % at
