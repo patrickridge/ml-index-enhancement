@@ -52,6 +52,10 @@ BOTTOM_N      = 100
 LONG_FRAC     = 0.20
 RETRAIN_EVERY = 12
 
+# Universe hygiene (mirrors config.py; inlined so this file stays standalone)
+MIN_SPX_WEIGHT      = 5e-6   # below this an index "member" is a delisted stub
+MAX_ABS_MONTHLY_RET = 1.0    # |ret| > 100% in one month = bad data, not a trade
+
 # Feature panel selection
 USE_ORTHOGONALIZED_FEATURES = False
 
@@ -1094,20 +1098,40 @@ def main():
     panel["date"] = pd.to_datetime(panel["date"])
     panel = panel[panel["date"] >= START_DATE].reset_index(drop=True)
 
-    # Zombie-ticker filter: keep only point-in-time S&P 500 constituents
+    # Zombie-ticker filter: keep only real point-in-time S&P 500 constituents.
+    #
+    # This used to test membership of spx_weights.parquet by (date, ticker) and
+    # dropped almost nothing, because 1c writes a row for every ticker in
+    # prices.parquet regardless of whether it is still in the index. CPWR, which
+    # delisted in 2014, has 24 rows after 2024 at weight 0.000000 and sailed
+    # straight through. The model was training on its fabricated returns.
+    #
+    # Membership now requires a non-trivial index weight, not mere presence.
     spx_weights_path = DATA_DIR / "spx_weights.parquet"
     if spx_weights_path.exists():
         spx_w = pd.read_parquet(spx_weights_path)
         spx_w["date"] = pd.to_datetime(spx_w["date"]) + pd.offsets.MonthEnd(0)
         panel["date"] = pd.to_datetime(panel["date"]) + pd.offsets.MonthEnd(0)
+
+        spx_w = spx_w[spx_w["spx_weight"] >= MIN_SPX_WEIGHT]
         valid_keys = set(zip(spx_w["date"], spx_w["ticker"]))
         pre_rows = len(panel)
         mask = list(zip(panel["date"], panel["ticker"]))
         panel = panel[[k in valid_keys for k in mask]].reset_index(drop=True)
+
+        if "fwd_ret_1m" in panel.columns:
+            bad = panel["fwd_ret_1m"].abs() > MAX_ABS_MONTHLY_RET
+            if bad.any():
+                print(f"Return gate: dropping {int(bad.sum()):,} rows with "
+                      f"|fwd_ret_1m| > {MAX_ABS_MONTHLY_RET:.0%}")
+                panel = panel[~bad].reset_index(drop=True)
+
         print(f"Zombie filter: {pre_rows:,} → {len(panel):,} rows "
-              f"({pre_rows - len(panel):,} non-SPX pairs dropped)")
+              f"({pre_rows - len(panel):,} non-member pairs dropped, "
+              f"weight floor {MIN_SPX_WEIGHT:.0e})")
     else:
         print(f"[WARN] {spx_weights_path} not found - skipping zombie filter")
+        print( "       The model will train on delisted tickers. See Notes item 22.")
 
     # Separate stock vs macro features
     exclude   = {"date", "ticker", "fwd_ret_1m"}
@@ -1122,14 +1146,35 @@ def main():
 
     p = TRANSFORMER_CS_PARAMS
 
-    # Time splits
-    months       = sorted(panel["date"].unique())
-    train_end    = pd.Timestamp(TRAIN_END)
-    valid_end    = pd.Timestamp(VALID_END)
-    train_months = [m for m in months if m <= train_end]
-    valid_months = [m for m in months if train_end < m <= valid_end]
-    test_months  = [m for m in months if m > valid_end]
+    # Time splits  (mirrors 3c_cs_transformer.py)
+    #
+    # Scoring starts the month after OOS_START. Everything at or before it fits
+    # the initial model; the loop below retrains every RETRAIN_EVERY months on
+    # an expanding window, so no month is scored by a model that saw it.
+    #
+    # Default reproduces the original single 17-month test window. Set earlier
+    # to emit scores across history, which is what 5c's RL walk-forward needs:
+    #
+    #   ML_OOS_START=2013-12-31   (as a Kaggle notebook env var, or edit below)
+    #
+    # That trains five-plus times over, so budget several hours of GPU.
+    months    = sorted(panel["date"].unique())
+    oos_start = pd.Timestamp(os.environ.get("ML_OOS_START", VALID_END))
 
+    pre_oos = [m for m in months if m <= oos_start]
+    if len(pre_oos) < 24:
+        raise SystemExit(f"Only {len(pre_oos)} months before {oos_start.date()}; "
+                         "need at least 24 to fit an initial model.")
+
+    n_val        = min(18, max(6, len(pre_oos) // 5))
+    train_months = pre_oos[:-n_val]
+    valid_months = pre_oos[-n_val:]
+    test_months  = [m for m in months if m > oos_start]
+
+    if not test_months:
+        raise SystemExit(f"No months after {oos_start.date()} to score.")
+
+    print(f"OOS starts after: {oos_start.date()}")
     print(f"Train: {train_months[0].date()} → {train_months[-1].date()} ({len(train_months)} months)")
     print(f"Valid: {valid_months[0].date()} → {valid_months[-1].date()} ({len(valid_months)} months)")
     print(f"Test:  {test_months[0].date()} → {test_months[-1].date()} ({len(test_months)} months)")

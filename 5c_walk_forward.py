@@ -78,8 +78,17 @@ FOLDS = [
 TRAIN_START_GLOBAL = "2010-01-01"
 
 # SAC / simulation hyperparameters
-ALPHA_MIN  = 0.002
-ALPHA_MAX  = 0.050
+#
+# ALPHA_MAX bounds the action space, and therefore the tracking error the agent
+# can produce. At the old 0.050 the policy ran straight into the cap (mean α
+# 2.61%, max 5.00%) and realised 9.71% tracking error - a long way outside the
+# 2-4% budget that defines an index-enhancement mandate. The IR was real but it
+# was earned by a portfolio no such mandate would permit.
+#
+# 0.018 keeps the agent inside the budget. Override to reproduce the old
+# unconstrained behaviour:  ML_ALPHA_MAX=0.05 python 5c_walk_forward.py
+ALPHA_MIN  = float(os.environ.get("ML_ALPHA_MIN", 0.002))
+ALPHA_MAX  = float(os.environ.get("ML_ALPHA_MAX", 0.018))
 FIXED_ALPHA = 0.010       # baseline to beat
 
 TRAIN_EPOCHS = 400
