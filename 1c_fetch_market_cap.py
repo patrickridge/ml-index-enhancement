@@ -179,13 +179,27 @@ def main():
     total_cap = mktcap_long.groupby("date")["mktcap"].transform("sum")
     mktcap_long["spx_weight"] = mktcap_long["mktcap"] / total_cap
 
-    # Winsorise: cap any single stock at 8% and renormalise
+    # Winsorise: cap any single stock at 8% and renormalise.
     # Prevents any outlier (wrong shares data) from dominating the benchmark.
-    # Real S&P 500 largest holdings are ~6–7% (AAPL, NVDA, MSFT).
+    # Real S&P 500 largest holdings are ~6-7% (AAPL, NVDA, MSFT).
+    #
+    # This has to iterate. Clipping drops the monthly sum below 1, so a single
+    # renormalise divides by a number less than one and pushes every capped
+    # name straight back over the ceiling: an 8% cap was coming out at 12.65%,
+    # with four stocks pinned at exactly that value because they had all been
+    # clipped to the same number first. Repeating until nothing breaches the
+    # cap converges on the right answer, which is the excess redistributed
+    # across the uncapped names only.
     CAP = 0.08
-    mktcap_long["spx_weight"] = mktcap_long["spx_weight"].clip(upper=CAP)
-    total_w = mktcap_long.groupby("date")["spx_weight"].transform("sum")
-    mktcap_long["spx_weight"] = mktcap_long["spx_weight"] / total_w
+    for _ in range(100):
+        mktcap_long["spx_weight"] = mktcap_long["spx_weight"].clip(upper=CAP)
+        total_w = mktcap_long.groupby("date")["spx_weight"].transform("sum")
+        mktcap_long["spx_weight"] = mktcap_long["spx_weight"] / total_w
+        if mktcap_long["spx_weight"].max() <= CAP + 1e-9:
+            break
+    else:
+        print(f"  [WARN] weight cap did not converge; max is "
+              f"{mktcap_long['spx_weight'].max():.4f}")
 
     # Coverage diagnostics
     print("\nCoverage check:")
