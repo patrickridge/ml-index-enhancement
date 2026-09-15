@@ -44,9 +44,13 @@ FACT_CACHE = DATA_DIR / "edgar_facts"
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 
-# The SEC asks for no more than 10 requests a second. Staying well under it
-# costs a few minutes and avoids being blocked mid-run.
-SLEEP = 0.12
+# The SEC publishes a 10 requests/second guideline, but that is not what binds
+# here: companyfacts payloads run to several megabytes each, so their limiter
+# trips on bandwidth long before request count. At 0.12s every single request
+# came back 429, and once tripped the block persists rather than easing. Two a
+# second is slower than necessary on paper and actually works.
+SLEEP = 0.5
+MAX_RETRIES = 5
 
 UA = os.environ.get("SEC_USER_AGENT")
 
@@ -98,9 +102,22 @@ def fetch_json(url: str) -> dict:
             "User-Agent": UA,
             "Accept-Encoding": "gzip, deflate",
         })
-    r = _session.get(url, timeout=30)
-    r.raise_for_status()
-    return r.json()
+    delay = SLEEP
+    for attempt in range(MAX_RETRIES):
+        r = _session.get(url, timeout=30)
+        if r.status_code == 429:
+            # Back off rather than keep hammering. Honour Retry-After when the
+            # server sends one, otherwise double each time. Giving up quietly
+            # here is how a run ends with 628 failures and nothing cached.
+            wait = float(r.headers.get("Retry-After", 0)) or delay * (2 ** attempt)
+            wait = min(wait, 120)
+            print(f"    429, waiting {wait:.0f}s "
+                  f"(attempt {attempt + 1}/{MAX_RETRIES})")
+            time.sleep(wait)
+            continue
+        r.raise_for_status()
+        return r.json()
+    raise RuntimeError("rate limited after retries")
 
 
 def clean_ticker(tk: str) -> str:
