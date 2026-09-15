@@ -8,7 +8,9 @@ of the subset they need so they run without this module.
 import os
 from pathlib import Path
 
-DATA_DIR = Path("data")
+# Defaults to ./data. Override to run from a git worktree or a Kaggle input
+# mount without copying the panel, which is 100MB and not worth duplicating.
+DATA_DIR = Path(os.environ.get("ML_DATA_DIR", "data"))
 
 # Date splits
 # With 20 years of data (~2004-2024):

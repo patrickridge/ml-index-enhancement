@@ -28,11 +28,12 @@ BLOCK_SIZE = 6        # months; long enough to carry regime persistence
 SEED       = 0
 
 SERIES = {
-    "CS-Transformer IE": ("bt_ie_cs_transformer.csv", "active_ret"),
-    "FT-Transformer IE": ("bt_ie_transformer.csv",    "active_ret"),
-    "LightGBM IE":       ("bt_ie_lgbm.csv",           "active_ret"),
-    "Factor-combo IE":   ("bt_ie_factor_combo.csv",   "active_ret"),
-    "RL walk-forward":   ("bt_wf_rl.csv",             "active_ret"),
+    "CS-Transformer IE":  ("bt_ie_cs_transformer.csv", "active_ret"),
+    "FT-Transformer IE":  ("bt_ie_transformer.csv",    "active_ret"),
+    "LightGBM IE (legacy)": ("bt_ie_lgbm.csv",         "active_ret"),
+    "LightGBM IE (clean)":  ("bt_ie_lgbm_clean.csv",   "active_ret"),
+    "Factor-combo IE":    ("bt_ie_factor_combo.csv",   "active_ret"),
+    "RL walk-forward":    ("bt_wf_rl.csv",             "active_ret"),
 }
 
 

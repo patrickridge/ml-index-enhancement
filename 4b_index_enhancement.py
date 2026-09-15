@@ -61,8 +61,15 @@ OUT_DIR      = Path(os.environ.get("ML_OUT_DIR", str(DATA_DIR)))
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 WEIGHTS_FILE = DATA_DIR / "spx_weights.parquet"
 
+# LGBM appears twice on purpose. scores_lgbm.parquet is the legacy file whose
+# training script is no longer in the repo; it was produced before the index
+# weight floor existed. LGBM-clean comes from 3f, which applies the floor and
+# otherwise matches 3c's protocol. Keeping both visible is what lets the table
+# show the gap rather than quietly replacing one number with another. Missing
+# files are skipped, so this stays valid before 3f has been run.
 SCORE_FILES = {
-    "LGBM":           DATA_DIR / "scores_lgbm.parquet",
+    "LGBM (legacy)":  DATA_DIR / "scores_lgbm.parquet",
+    "LGBM-clean":     DATA_DIR / "scores_lgbm_clean.parquet",
     "FT-Transformer": DATA_DIR / "scores_transformer.parquet",
     "CS-Transformer": DATA_DIR / "scores_cs_transformer.parquet",
 }
@@ -330,12 +337,18 @@ def main():
 
     # Save best backtests
     file_map = {
-        "LGBM":           OUT_DIR / "bt_ie_lgbm.csv",
+        "LGBM (legacy)":  OUT_DIR / "bt_ie_lgbm.csv",
+        "LGBM-clean":     OUT_DIR / "bt_ie_lgbm_clean.csv",
         "FT-Transformer": OUT_DIR / "bt_ie_transformer.csv",
         "CS-Transformer": OUT_DIR / "bt_ie_cs_transformer.csv",
     }
     for model_name, bt in best_bt.items():
-        out = file_map[model_name]
+        out = file_map.get(model_name)
+        if out is None:
+            # A model was added to SCORE_FILES without a matching output path.
+            # Better to say so than to drop the backtest on the floor.
+            print(f"\n[WARN] no output path for {model_name}, backtest not saved")
+            continue
         bt.reset_index().to_csv(out, index=False)
         print(f"\nSaved → {out}")
 

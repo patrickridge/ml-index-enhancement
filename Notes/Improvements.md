@@ -312,10 +312,69 @@ market cap, execution spread over 3 days:
 | $10bn | 0.51% | 0.14% | 0.65% |
 | $50bn | 1.14% | 0.14% | 1.28% |
 
-Total cost stays under LightGBM's 0.83% gross alpha out to roughly $10bn. Two
+Total cost stays under a 0.83%/yr reference alpha out to roughly $10bn. Two
 structural reasons: real turnover is 12-15%/month, and at α=0.0005 most
 positions sit within a few basis points of index weight, so trades are small
-fractions of names already trading billions daily.
+fractions of names already trading billions daily. That 0.83% was LightGBM's
+gross alpha at the time; item 24 retracts it, so read the table as the size at
+which costs would eat an edge of that magnitude rather than one that exists.
 
 **The binding constraint is alpha, not capacity.** A strategy whose information
 ratio has a confidence interval spanning zero does not have a size problem.
+
+### 24. The LightGBM Baseline Was Also Zombies ✓ Fixed
+
+The surviving positive result after item 22 was a LightGBM baseline at IR
++0.56, and the README leaned on it as the one model that worked. It came from
+`data/scores_lgbm.parquet`, dated March. No script in the repo produced that
+file. `lightgbm` was in requirements.txt and nothing imported it.
+
+So the comparison the transformer results were being judged against was not
+reproducible, and it had not been measured on equal terms either:
+
+- 3c applies the index weight floor before training. The March LGBM file
+  predates that fix, so it was trained on exactly the delisted tickers item 22
+  is about.
+- Its window was 2023-01 to 2025-11 (35 months) against CS-T's 2024-07 to
+  2025-11 (17 months), and the CS-T window is the harder half.
+- Its date keys were actual last-trading-days, not calendar month-ends, so it
+  lost 17 of its 35 months when merged against `spx_weights.parquet`. The
+  quoted IR came from 18 months, not 35.
+
+`3f_lgbm_baseline.py` rebuilds it under 3c's protocol: same panel, same weight
+floor and return gate, same expanding-window walk-forward, same retrain
+cadence, same output schema. Two things came out of it.
+
+**The rebuild reproduces the lost file when the floor is off.** Same window,
+same hyperparameters, `ML_SKIP_WEIGHT_FLOOR=1`:
+
+| | IC | ICIR | Months |
+|---|---|---|---|
+| Legacy `scores_lgbm.parquet` | +0.0441 | +1.264 | 27 |
+| Rebuild, floor **off** | +0.0450 | +1.273 | 35 |
+| Rebuild, floor **on** | −0.0191 | −0.505 | 35 |
+
+Matching the legacy numbers to the third decimal is strong evidence the lost
+script differed from this one only in the filter. Turning the floor on takes
+the portfolio from IR +0.56 to −1.86.
+
+**Nothing in the study beats the benchmark.** The project's one positive model
+result had the same cause as the IR 1.87 it replaced. That is more coherent
+than the state it replaces, not less: the multiple-testing pass in
+`2i_multiple_testing.py` already found only size, liquidity and volatility
+factors surviving BHY, and that is not a base a stock ranker can build alpha
+on. A working tree model sitting on top of it was the odd one out.
+
+Two things worth not overstating. The −1.86 is much more negative than the IC
+of −0.019 justifies on its own, because the z-score tilt sizes by score
+magnitude and that model's tails were leaning against mega-cap concentration
+through 2023-25. And the l2 metric early-stops after one or two rounds on this
+target, because squared error is dominated by the market move common to every
+stock in a month; the script stops on validation rank IC instead. That choice
+was made on the grounds that l2 is mis-specified for a ranking problem, before
+seeing which way it moved the result, and it moved it *down*, from −0.004 to
+−0.019. `ML_LGBM_STOP=l2` reproduces the other one.
+
+The general lesson is the one that keeps repeating here: a result file with no
+script behind it is not a result. `scores_lgbm.parquet` sat in the repo for six
+months as the benchmark everything else was measured against.

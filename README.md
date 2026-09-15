@@ -20,11 +20,10 @@ This repo implements that strategy on the S&P 500 and tests whether a
 cross-sectional transformer can outperform simpler models at the ranking step.
 
 **The result is negative.** Once the universe is cleaned of delisted tickers
-with corrupt price data, neither transformer beats the benchmark
-out-of-sample. A LightGBM baseline is the only model with positive alpha, at
-IR 0.56. An earlier version of this README reported IR 1.87 for the
-CS-Transformer; that number was an artifact, and the audit that found it is
-documented in full below.
+with corrupt price data, no ranking model tested here beats the benchmark
+out-of-sample. An earlier version of this README reported IR 1.87 for the
+CS-Transformer, then IR 0.56 for a LightGBM baseline once that was retracted.
+Both numbers came from the same cause. The audit is documented in full below.
 
 Written as a working record of what was built and what the numbers actually
 show, including where they turned out to be wrong.
@@ -61,8 +60,9 @@ portfolio-level RL fine-tune (GRPO or DAPO) optimising portfolio return rather
 than per-stock label accuracy.
 
 **The corrected results do not support the hypothesis.** On clean data the
-CS-Transformer posts IR −0.54 against LightGBM's +0.56, and it is negative at
-every tilt size tested. Whether that reflects the architecture, the training
+CS-Transformer posts IR −0.31 and is negative at every tilt size tested. It
+does not lose to a working tree baseline, because on the same hygiene the tree
+baseline is negative too. Whether that reflects the architecture, the training
 setup, the 17-month evaluation window, or the fact that its scores predate the
 Macro FiLM upgrade is not resolved here. What can be said is that the
 cross-sectional attention did not earn its complexity on this data.
@@ -101,6 +101,8 @@ tracking-error problem it comes with.
    - `3c_cs_transformer.py` / `3d_cs_transformer_kaggle.py` - Cross-Sectional Transformer with
      Macro FiLM conditioning, optional correlation attention bias and a GRPO/DAPO RL fine-tune
      on portfolio return.
+   - `3f_lgbm_baseline.py` - LightGBM reference model on the same walk-forward protocol,
+     so the tree and transformer numbers are comparable rather than merely adjacent.
 5. **Portfolio construction** (`4*` scripts): tilt ±α around SPX cap weights based on scores,
    sweep α to maximise information ratio within a 2–4 % tracking-error budget.
 6. **RL overlay** (`5*` scripts): a two-layer policy that adjusts the tilt size month-to-month
@@ -120,6 +122,7 @@ tracking-error problem it comes with.
 ├── 3a–3d_*.py                      ranking models
 ├── 3e_cs_transformer_audit.py      post-hoc diagnostics on CS-T scores
 ├── 3e_hp_sweep{,_kaggle}.py        CS-Transformer hyperparameter sweeps
+├── 3f_lgbm_baseline.py             LightGBM reference on the same protocol
 ├── 4a–4g_*.py                      backtests + portfolio construction
 ├── 5a–5f_*.py                      RL overlays
 ├── 6_regime_dashboard.py           Streamlit regime analysis dashboard
@@ -272,10 +275,15 @@ times, so these rows are not a like-for-like horse race.
 
 | Model | Months | Ann. alpha | TE | IR | 95 % CI | P(IR>0) |
 |---|---|---|---|---|---|---|
-| LightGBM | 18 | +0.83 % | 1.47 % | +0.56 | [−0.69, +2.12] | 81 % |
+| LightGBM, no weight floor | 18 | +0.83 % | 1.47 % | +0.56 | [−0.69, +2.12] | 81 % |
 | Factor-combo | 35 | — | — | +0.44 | [−0.84, +1.21] | 79 % |
 | CS-Transformer | 17 | −0.38 % | 1.22 % | −0.31 | [−1.54, +0.88] | 31 % |
 | FT-Transformer | 24 | −0.74 % | 1.44 % | −0.52 | [−2.04, +0.91] | 23 % |
+| LightGBM, weight floor on | 35 | −7.99 % | 4.29 % | −1.86 | [−2.81, −1.23] | 0 % |
+
+The two LightGBM rows are the same script on the same 35 months with the same
+hyperparameters. The only difference is whether delisted tickers are filtered
+out of the training set. See the audit trail for how that was established.
 
 The CS-Transformer row is from a model retrained on the cleaned universe. An
 earlier run, trained on the panel that still contained delisted tickers, gave
@@ -288,14 +296,25 @@ that were fabricated.
 It improved toward zero without crossing it, and at 17 months the interval is
 far too wide to call either way.
 
-**Every one of those intervals contains zero.** No ranking model in this study
-is statistically distinguishable from no skill at all.
+**Every interval from a clean-trained model contains zero.** No ranking model
+in this study is statistically distinguishable from no skill at all.
 
 That cuts both ways, and it is worth being blunt about. LightGBM's +0.56 is not
-evidence that gradient boosting works here. The CS-Transformer's −0.54 is not
-evidence that cross-sectional attention fails. The two intervals overlap across
-nearly their whole range, so the data cannot separate them either. The point
-estimates differ; the evidence does not.
+evidence that gradient boosting works here, and it is now known to be an
+artifact. The CS-Transformer's −0.31 is not evidence that cross-sectional
+attention fails. The intervals overlap across nearly their whole range, so the
+data cannot separate the models either. The point estimates differ; the
+evidence does not.
+
+The one interval that excludes zero is the floor-on LightGBM at −1.86, and it
+is not a claim that gradient boosting is reliably harmful. Its monthly IC is
+−0.019 with an ICIR of −0.51, which is a t-statistic of about −0.9 and nothing
+like significant. The portfolio number is far more negative than the IC because
+the z-score tilt sizes positions by score magnitude, so the bet concentrates in
+the tails of the score distribution, and that model's tails were positioned
+against mega-cap concentration through 2023-25. A mild ranking error becomes a
+large active loss. It is the same IC-to-IR divergence documented in Notes item
+21, in the other direction.
 
 The cause is sample size, not modelling. These models have 17 to 35
 out-of-sample months, where the standard error on an information ratio is
@@ -438,7 +457,11 @@ daily volume:
 | $10bn | 0.51 % | 0.14 % | 0.65 % |
 | $50bn | 1.14 % | 0.14 % | 1.28 % |
 
-Total cost stays below LightGBM's 0.83 % gross alpha out to roughly **$10bn**.
+There is no surviving positive alpha to measure these against, so the reference
+point is a hypothetical 0.83 %/yr, the level the retracted LightGBM run showed.
+Read the table as the size at which costs would consume an edge of that size,
+not as a claim that the edge exists. Total cost stays below it out to roughly
+**$10bn**.
 Two structural reasons: real turnover is 12-15 % of the book per month, and at
 α = 0.0005 most positions sit within a few basis points of index weight, so
 trades are small fractions of names already trading billions daily.
@@ -469,8 +492,14 @@ Both transformers are negative at *every* α in the sweep, and their alpha
 degrades monotonically as the tilt grows — CS-Transformer runs from −0.19 % at
 the smallest α to −5.35 % at the largest. That is the signature of a signal
 that is actively wrong rather than merely absent: acting on it harder loses
-more. LightGBM degrades in the opposite direction (IR 0.66 at small α down to
-0.08 at large), which is what a weak but genuine signal looks like.
+more.
+
+The floor-on LightGBM does the same thing and harder, from −0.47 % to −15.77 %
+across the sweep at a 29 % monthly hit rate. The floor-off run is the only one
+that behaves like a weak but genuine signal, with IR falling from 0.62 at small
+α to 0.08 at large as costs catch up with a thin edge. That contrast is the
+clearest single picture of what the delisted tickers were doing: they are the
+difference between a signal that looks real and one that is not there.
 
 Reproduce with `python 4b_index_enhancement.py`. Full α sweep in
 `data/ie_summary.csv`.
