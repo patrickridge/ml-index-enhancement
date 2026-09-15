@@ -51,16 +51,33 @@ PAUSE  = 1.0          # seconds between chunks, to stay polite
 LIMIT  = int(os.environ.get("ML_REFETCH_LIMIT", 0))
 
 
+# .N, .O and .OQ identify an exchange and are dropped. Anything else after the
+# dot is a share class and has to be kept: BRK.B is Berkshire class B, which
+# Yahoo spells BRK-B, and dropping the suffix asks for "BRK", which is not a
+# ticker at all. Getting this wrong silently loses the name.
+EXCHANGE_SUFFIXES = {"N", "O", "OQ", "A_", "K", "P", "Z", "BAT"}
+
+
 def to_yahoo(ric: str) -> str:
     """
     Reuters RIC to Yahoo symbol.
 
-    The panel uses AAPL.O and XOM.N; Yahoo wants AAPL and XOM. Class shares
-    are the one real difference: Reuters writes BRKb, Yahoo wants BRK-B.
+    AAPL.O -> AAPL, BRK.B -> BRK-B, BRK_B.N -> BRK-B. The exchange code has to
+    come off before the share class is read, or BRK_B.N reduces to BRK.
     """
-    base = ric.split(".")[0]
-    if len(base) > 1 and base[-1].islower():
-        return f"{base[:-1].upper()}-{base[-1].upper()}"
+    parts = [p for p in ric.strip().replace("_", ".").split(".") if p]
+
+    if len(parts) > 1 and parts[-1].upper() in EXCHANGE_SUFFIXES:
+        parts = parts[:-1]
+
+    if len(parts) > 1:
+        return f"{parts[0].upper()}-{parts[-1].upper()}"
+
+    # Trailing lowercase letter is the older RIC spelling of a share class,
+    # so check it before uppercasing throws the case away.
+    base = parts[0]
+    if len(base) > 1 and base[-1].islower() and base[:-1].isupper():
+        return f"{base[:-1]}-{base[-1].upper()}"
     return base.upper()
 
 
