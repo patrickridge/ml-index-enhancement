@@ -387,20 +387,57 @@ not from the choice of policy gradient.
 
 ### Factor library, after multiple-testing correction
 
-Of 237 factors with computable t-statistics, 24 pass a raw p < 0.05 against
-roughly 12 expected by chance. **17 survive Benjamini-Hochberg-Yekutieli at
+Of 237 factors with computable t-statistics, 14 pass a raw p < 0.05 against
+roughly 12 expected by chance. **None survives Benjamini-Hochberg-Yekutieli at
 FDR 0.10** - BHY rather than BH because factor IC series are heavily
 cross-correlated and BH assumes independence.
 
-Every survivor is size, illiquidity, dollar volume or realised volatility:
-`size_proxy`, `log_mktcap`, `amihud_illiq_21d`, `dollar_vol_21d/63d`,
-`cand_kyle_lambda_21d`, `vol_above_avg`, `high_vol_week` and their tail dummies.
+Fourteen against twelve expected is what 237 tests produce on their own.
 
-**No momentum, seasonality or mined-alpha factor survives.** What the library
-reliably contains is well-documented risk premia and microstructure effects,
-not alpha - which is consistent with the models built on it showing no
-significant skill, and with the short-horizon technical factors being the ones
-that flip sign out of sample.
+An earlier version of this section reported **17 survivors, every one a size,
+liquidity or volatility factor**, and built the project's central explanation on
+it. That result did not survive the data repair in Notes item 27. Volume was
+missing for 505 of 697 tickers and `log_mktcap` was valid for 9 % of rows, so
+four of those five survivors were substantially measuring *whether the fetch had
+worked* rather than liquidity or size. On the rebuilt panel their t-statistics
+roughly halve:
+
+| Factor | before | after |
+|---|---|---|
+| `size_proxy` | −5.59 | −2.94 |
+| `dollar_vol_21d` | −5.31 | −2.98 |
+| `log_mktcap` | −5.05 | −2.62 |
+| `amihud_illiq_21d` | +4.50 | +2.42 |
+| `cand_kyle_lambda_21d` | +4.07 | +0.84 |
+
+The signs are unchanged - size negative, illiquidity positive, both the
+textbook directions - so the effects are real in direction. Their apparent
+*strength* was about half artifact. Median |t| across the whole library barely
+moved (0.59 to 0.56), which is what rules out a global degradation from the
+rebuild: the damage is confined to exactly the factors that depended on the
+broken inputs.
+
+**This is not a threshold artifact.** `2k_fdr_sensitivity.py` returns zero at
+every FDR from 0.01 to 0.30, and zero under plain BH as well, so it is neither
+the dependence correction being strict nor the tolerance being tight.
+
+**Read it narrowly.** It does not mean the factors are noise: the strongest sits
+at |t| 2.98, against the t > 3.0 hurdle Harvey, Liu and Zhu argue for once
+multiple testing is taken seriously. It means no single factor is strong enough
+to clear a bar set for 237 simultaneous tests. BHY answers *have I discovered
+something*, which is the right question for a research claim and the wrong one
+for whether a combination is worth trading.
+
+The result is also coherent rather than surprising. This library is entirely
+price and volume derived, over a universe that is entirely large-cap and liquid.
+**A size effect needs small caps and an illiquidity premium needs illiquid
+names**, and the S&P 500 supplies neither. The old data manufactured both,
+because "no volume data" was silently standing in for "illiquid".
+
+So the explanation for why no ranking model works is simpler than the one it
+replaces: there is no detectable cross-sectional signal in this data to find,
+and four independent models agreeing on that is the consistent answer rather
+than four separate failures.
 
 ### What 237 leaves out, and why it matters
 

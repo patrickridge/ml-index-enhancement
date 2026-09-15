@@ -25,13 +25,14 @@ Run time: ~2-5 min (bulk download + compute).
 import warnings
 warnings.filterwarnings("ignore")
 
+import os
 import numpy as np
 import pandas as pd
 from pathlib import Path
 import time as _time
 
 _t0 = _time.time()
-DATA_DIR = Path("data")
+DATA_DIR = Path(os.environ.get("ML_DATA_DIR", "data"))
 OUT_PATH = DATA_DIR / "fundamental.parquet"
 SIMFIN_DIR = str(DATA_DIR / "simfin_bulk")
 
@@ -40,7 +41,11 @@ print("SIMFIN FUNDAMENTAL DATA FETCH")
 print("=" * 65)
 
 # Load Simfin bulk data
-SIMFIN_API_KEY = None  # Set your free key from simfin.com, or None to use yfinance fallback
+# Read from the environment, never from the file. A key committed to a public
+# repo is leaked the moment it is pushed, and rotating it afterwards does not
+# un-leak it. Set it in your shell instead:
+#     export SIMFIN_API_KEY=your_key_here
+SIMFIN_API_KEY = os.environ.get("SIMFIN_API_KEY")
 
 try:
     import simfin as sf
