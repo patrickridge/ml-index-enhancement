@@ -70,8 +70,13 @@ Zombie filter: 147,733 → ~100,000 rows (... non-member pairs dropped, weight f
 
 6. Download from **Output** into your local `data/`:
    - `scores_cs_transformer.parquet`
+   - `scores_cs_transformer_model.pt`
    - `bt_cs_transformer.csv`
    - `bt_cs_transformer_ls.csv`
+
+   The checkpoint matters. Without it a score file has nothing behind it that
+   says which model produced it, which is exactly how `scores_lgbm.parquet`
+   ended up as an unreproducible benchmark for six months.
 
 7. Locally: `python 4b_index_enhancement.py`
 
@@ -103,9 +108,16 @@ enough for a meaningful walk-forward.
 Afterwards, locally:
 
 ```bash
-python 4b_index_enhancement.py          # index enhancement on the new scores
-python 5c_walk_forward.py               # RL overlay, now on transformer scores
+ML_OOS_START=2013-12-31 python 3f_lgbm_baseline.py   # tree baseline on the same months
+python 4b_index_enhancement.py                       # index enhancement on the new scores
+python 4h_bootstrap_ci.py                            # confidence intervals on both
+python 5c_walk_forward.py                            # RL overlay, now on transformer scores
 ```
+
+Run 3f with the same `ML_OOS_START` as the Kaggle job. It is CPU-only and takes
+a few minutes. Skipping it leaves the tree baseline on a different window from
+the transformer, which is the mismatch that let the retracted +0.56 stand for
+six months. Matching windows is the point of the whole exercise.
 
 ## Checks worth doing on the output
 
