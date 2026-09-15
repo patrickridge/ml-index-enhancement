@@ -93,8 +93,14 @@ def main():
     if LIMIT:
         tickers = tickers[:LIMIT]
 
+    # Run to today, not to wherever the existing file happens to stop. Deriving
+    # the end from the old file means a rerun can only ever reproduce the same
+    # window, so months that have since happened stay unused. Those months are
+    # the most genuinely out-of-sample data the project will ever have, because
+    # no version of any model here has seen them.
     start = old["date"].min().strftime("%Y-%m-%d")
-    end   = (old["date"].max() + pd.Timedelta(days=5)).strftime("%Y-%m-%d")
+    end   = (max(old["date"].max(), pd.Timestamp.today())
+             + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
     print(f"{len(tickers)} tickers | {start} to {end}")
     print(f"Writing to {OUT_PATH.name}, leaving {IN_PATH.name} untouched\n")
 
