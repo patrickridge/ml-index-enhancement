@@ -453,3 +453,57 @@ Worth stating plainly because the weight-floor check went the other way. A
 sensitivity analysis that always finds a problem is not measuring anything.
 Here the magnitude of the t-statistics is fragile and the survivor count is
 not, and both belong in the write-up.
+
+### 27. The Price File Had a Per-Ticker Scale Factor ✓ Refetched
+
+A question about what S&P 500 weights look like turned up market caps in the
+quadrillions, and unwinding that found three more faults. `0_data_audit.py`
+now checks all of them, plus the ones that passed.
+
+**Returns were fine.** Annual figures match known actuals to within dividends,
+and `fwd_ret_1m` correlates +0.999 with next month against -0.049 with the
+current one across 146,815 rows. No look-ahead in the target. Everything built
+on returns was sound the whole time.
+
+**Price levels were not.** Each ticker's series carried an arbitrary
+multiplier. The proof needs no reference price: a uniform factor shifts
+log-prices without spreading them, so dispersion is invariant to it and only
+moves if the factor varies per ticker. Cross-sectional log-sd was 1.78 on index
+members against a real 0.85, implying sd(log k) of 1.57.
+
+That corrupts every price-level feature - `log_mktcap`, `size_proxy`,
+`dollar_vol_*`, `amihud_illiq_*`, `kyle_lambda` - and since the factor is
+constant over time it misranks the same stocks the same way every month.
+
+**Volume was all-or-nothing by ticker.** 192 of 697 had it, 505 never did. The
+liquidity factors were therefore partly an indicator of whether the fetch
+succeeded.
+
+**The 8% weight cap was defeated by its own renormalisation.** Clipping drops
+the monthly sum below 1, so the divide that followed pushed capped names back
+over the ceiling: an 8% cap came out at 12.65%, with four stocks pinned at
+exactly that value. Top-10 concentration was 72% against a real 40%. Now
+iterates to convergence.
+
+`1s_refetch_prices.py` and `1t_validate_refetch.py` handle the repair. The gate
+is return agreement, since the old returns were verified correct and a scale
+factor cannot change a return: corr +0.9941, median absolute difference 0.0000.
+On index members the new file lands at log-sd 0.93, median $135, p95 $610,
+against a real S&P 500 at roughly 0.85, $100 and $500. Volume goes to 100%.
+
+Not yet adopted, deliberately. Swapping it rebuilds the panel and a GPU run was
+scoring the old one.
+
+**What this leaves open.** All 17 BHY survivors are price-level or volume
+derived. That finding is what the README uses to explain why every model lands
+on zero, and it now rests on two inputs that were broken. Rerun 2i and 2k on
+the rebuilt panel before relying on it.
+
+Two smaller things found on the way. Six live index members (AVB, BK, CTRA, EA,
+EQR, HOLX) will not refetch through two separate API paths; some are probably
+genuine 2025-26 delistings. And 13 of 669 tickers disagree with the old file on
+returns, all at corporate actions - spinoffs at DHR, DUK, LDOS, MDLZ, GEV, and
+more awkwardly **ticker reuse** at SW and TMUS, where the symbol referred to a
+different company earlier in the history. A reused ticker stitches two firms
+into one series, which is its own quiet contamination and is not something the
+weight floor catches.

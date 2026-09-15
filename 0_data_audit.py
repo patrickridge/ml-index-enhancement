@@ -37,8 +37,12 @@ KNOWN_RETURNS = {
     "MSFT.O": {2019: 0.578, 2020: 0.427, 2021: 0.525,
                2022: -0.280, 2023: 0.583, 2024: 0.132},
 }
-KNOWN_PRICE_DEC2025 = {"AAPL.O": 230, "MSFT.O": 430, "WMT.O": 95,
-                       "NVDA.O": 180, "XOM.N": 115}
+# Month-end closes, split and dividend adjusted, from the market rather than
+# from anything in this repo. An earlier version of this file carried values
+# typed from memory and they were 15% out, which made the per-ticker scale
+# factors it reported wrong even though the conclusion held.
+KNOWN_PRICE_DEC2025 = {"AAPL.O": 271, "MSFT.O": 481, "WMT.O": 111,
+                       "NVDA.O": 186, "XOM.N": 118}
 
 # Real S&P 500 concentration, for comparison. Top-10 share of index weight.
 PLAUSIBLE_TOP10 = {2005: 0.20, 2015: 0.18, 2025: 0.40}
@@ -107,6 +111,33 @@ def main():
               "A per-ticker factor corrupts every price-level feature:\n"
               "log_mktcap, size_proxy, dollar_vol_*, amihud_illiq_*.\n"
               "Constant over time, so the same stocks are misranked every month.")
+
+    # The stronger version of the same question, because it needs no reference
+    # price at all. Multiplying every stock by one constant shifts log-prices
+    # without spreading them, so dispersion is invariant to a uniform scale and
+    # only moves if the factor varies per ticker. Measured on index members:
+    # dead names carry stale quotes at both extremes and the weight floor drops
+    # them downstream anyway.
+    wpath = DATA_DIR / "spx_weights.parquet"
+    if wpath.exists():
+        wt = pd.read_parquet(wpath)
+        wt["date"] = pd.to_datetime(wt["date"])
+        members = set(wt[(wt["spx_weight"] >= 5e-6) &
+                         (wt["date"] >= wt["date"].max() - pd.DateOffset(months=6))
+                         ]["ticker"])
+        yr = prices["date"].dt.year.max()
+        px = (prices[prices["date"].dt.year == yr].sort_values("date")
+                     .groupby("ticker")["close"].last())
+        px = px[(px > 0) & (px.index.isin(members))]
+        if len(px) > 50:
+            sd = float(np.log(px).std())
+            excess = float(np.sqrt(max(sd ** 2 - 0.85 ** 2, 0.0)))
+            check("Cross-sectional price dispersion is realistic", sd < 1.15,
+                  f"log-sd {sd:.2f} on {len(px)} members against a real S&P 500 "
+                  f"at about 0.85\n"
+                  f"median ${px.median():,.0f}, p5 ${px.quantile(.05):,.0f}, "
+                  f"p95 ${px.quantile(.95):,.0f}\n"
+                  f"implied sd of the per-ticker factor: {excess:.2f}")
 
     check("No non-positive closes", bool((prices["close"] > 0).all()))
 
