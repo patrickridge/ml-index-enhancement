@@ -216,11 +216,18 @@ def build_ticker_frame(facts: dict) -> pd.DataFrame:
 
 
 def main():
-    if not UA:
+    # The SEC checks the shape of this, not just its presence. A string without
+    # an email address is refused with 403 "Your Request Originates from an
+    # Undeclared Automated Tool", which is easy to mistake for rate limiting
+    # and wait out pointlessly. Fail here, with the reason, instead.
+    if not UA or "@" not in UA or "." not in UA.split("@")[-1]:
         raise SystemExit(
-            "SEC_USER_AGENT is not set. The SEC requires automated clients to\n"
-            "identify themselves with a contact string, for example:\n\n"
-            '    export SEC_USER_AGENT="Your Name your@email.com"\n')
+            "SEC_USER_AGENT must be a name and a real email address.\n\n"
+            "The SEC requires automated clients to be contactable, and refuses\n"
+            "anything that does not look like a contact with 403. A made-up\n"
+            "address defeats the purpose, so use one that reaches you:\n\n"
+            '    export SEC_USER_AGENT="Patrick Ridge you@youremail.com"\n\n'
+            f"currently: {UA!r}")
 
     FACT_CACHE.mkdir(parents=True, exist_ok=True)
 
