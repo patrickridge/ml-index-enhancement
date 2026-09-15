@@ -46,7 +46,7 @@ from scipy import stats as sp_stats
 from config import (
     DATA_DIR, START_DATE, TRAIN_END, VALID_END,
     MIN_SPX_WEIGHT, MAX_ABS_MONTHLY_RET,
-    TOP_N, BOTTOM_N, LONG_FRAC, RETRAIN_EVERY,
+    TOP_N, BOTTOM_N, LONG_FRAC, RETRAIN_EVERY, drop_dead_features,
     TRANSFORMER_CS_PARAMS, RL_FINETUNE_PARAMS,
     USE_ORTHOGONALIZED_FEATURES, MACRO_COLS,
 )
@@ -1200,6 +1200,13 @@ def main():
     all_feat_cols = [c for c in panel.columns if c not in exclude]
     macro_cols = [c for c in MACRO_COLS if c in panel.columns]
     stock_feat_cols = [c for c in all_feat_cols if c not in macro_cols]
+
+    # Columns with no cross-sectional variation cannot rank anything, so they
+    # become stage-1 tokens that carry nothing. 21 of them are the fundamental,
+    # short-interest and 13F fetches that never landed; five are month-level
+    # series sitting in the stock feature set. Macro is exempt, since being
+    # constant across stocks is what macro is.
+    stock_feat_cols = drop_dead_features(panel, stock_feat_cols, label="stock")
     n_stock_features = len(stock_feat_cols)
     n_macro = len(macro_cols)
 

@@ -43,6 +43,50 @@ MIN_SPX_WEIGHT       = float(os.environ.get("ML_MIN_WEIGHT", 5e-6))
 MAX_ABS_MONTHLY_RET  = 1.0     # |ret| > 100% in one month = treat as bad data
 
 
+def drop_dead_features(df, feat_cols, label="", verbose=True):
+    """
+    Drop feature columns that carry no cross-sectional information.
+
+    Two kinds qualify, and both are undefined rather than weak: a column with
+    one value across the whole panel, and a column whose value is identical for
+    every stock within each month. Neither can rank anything, so a Spearman IC
+    against them is undefined and 2i drops them before testing anyway. Feeding
+    them to a model is not harmful but it is not free either, and quoting them
+    in a feature count overstates what the model actually had.
+
+    21 fundamental, short-interest and 13F columns are currently in the first
+    category because those fetches never landed usable data. The five
+    sentiment and calendar columns are in the second: real month-level series
+    sitting in the stock feature set, where they cannot do anything.
+
+    Detected at runtime rather than hardcoded, so a column comes back on its
+    own the day its data arrives.
+
+    Returns the surviving column list.
+    """
+    live, flat, monthly = [], [], []
+
+    for c in feat_cols:
+        if df[c].nunique(dropna=True) <= 1:
+            flat.append(c)
+        elif "date" in df.columns and df.groupby("date")[c].nunique().max() <= 1:
+            monthly.append(c)
+        else:
+            live.append(c)
+
+    if verbose and (flat or monthly):
+        tag = f" ({label})" if label else ""
+        print(f"  dead features{tag}: {len(feat_cols)} -> {len(live)} "
+              f"[-{len(flat)} empty, -{len(monthly)} not cross-sectional]")
+        if flat:
+            print(f"    empty: {', '.join(flat[:6])}"
+                  f"{' ...' if len(flat) > 6 else ''}")
+        if monthly:
+            print(f"    month-level: {', '.join(monthly)}")
+
+    return live
+
+
 def clean_universe(df, weight_col="spx_weight", ret_col="fwd_ret_1m",
                    label="", verbose=True):
     """

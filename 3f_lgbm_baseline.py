@@ -70,6 +70,7 @@ from config import (
     DATA_DIR, START_DATE, VALID_END,
     MIN_SPX_WEIGHT, MAX_ABS_MONTHLY_RET,
     RETRAIN_EVERY, USE_ORTHOGONALIZED_FEATURES, MACRO_COLS,
+    drop_dead_features,
 )
 
 _panel_file = ("panel_monthly_orthogonalized.parquet" if USE_ORTHOGONALIZED_FEATURES
@@ -235,8 +236,16 @@ def main():
     exclude = {"date", "ticker", "fwd_ret_1m"}
     macro_cols = [c for c in MACRO_COLS if c in panel.columns]
     feat_cols = [c for c in panel.columns if c not in exclude]
-    print(f"Features: {len(feat_cols)} ({len(macro_cols)} macro) | "
-          f"Rows: {len(panel):,} | Tickers: {panel['ticker'].nunique()}")
+
+    # Macro columns are constant across stocks by definition, so they are held
+    # out of the check that would otherwise flag every one of them.
+    stock_cols = drop_dead_features(
+        panel, [c for c in feat_cols if c not in macro_cols], label="stock")
+    feat_cols = stock_cols + macro_cols
+
+    print(f"Features: {len(feat_cols)} ({len(stock_cols)} stock, "
+          f"{len(macro_cols)} macro) | Rows: {len(panel):,} | "
+          f"Tickers: {panel['ticker'].nunique()}")
 
     # Same split arithmetic as 3c so the two runs line up month for month.
     months    = sorted(panel["date"].unique())

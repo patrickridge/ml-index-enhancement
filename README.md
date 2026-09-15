@@ -91,7 +91,8 @@ tracking-error problem it comes with.
 
 1. **Data prep** (`1*` scripts): pull OHLCV, constituent history, fundamentals, short interest,
    institutional ownership, prediction markets, insider trades, news sentiment, sector mappings.
-2. **Feature engineering** (`1h_feature_engineering.py`): compute ~270 factors across 24 categories
+2. **Feature engineering** (`1h_feature_engineering.py`): compute ~263 factor columns across 24 categories,
+   of which 237 carry cross-sectional information and the rest are empty fetches (see below)
    (momentum, volatility, fundamentals, macro, mined-alpha candidates, insider, sentiment, etc.).
    Per-stock features are cross-sectionally ranked each month; macro features are kept at raw scale.
 3. **Factor diagnostics** (`2*` scripts): IC, IC decay, quintile returns, crowding/correlation,
@@ -279,7 +280,7 @@ times, so these rows are not a like-for-like horse race.
 | Factor-combo | 35 | — | — | +0.44 | [−0.84, +1.21] | 79 % |
 | CS-Transformer | 17 | −0.38 % | 1.22 % | −0.31 | [−1.54, +0.88] | 31 % |
 | FT-Transformer | 24 | −0.74 % | 1.44 % | −0.52 | [−2.04, +0.91] | 23 % |
-| LightGBM, weight floor on | 35 | −7.99 % | 4.29 % | −1.86 | [−2.81, −1.23] | 0 % |
+| LightGBM, weight floor on | 35 | −1.54 % | 1.50 % | −1.03 | [−2.40, +0.10] | 4 % |
 
 The two LightGBM rows are the same script on the same 35 months with the same
 hyperparameters. The only difference is whether delisted tickers are filtered
@@ -296,25 +297,17 @@ that were fabricated.
 It improved toward zero without crossing it, and at 17 months the interval is
 far too wide to call either way.
 
-**Every interval from a clean-trained model contains zero.** No ranking model
-in this study is statistically distinguishable from no skill at all.
+**Every interval contains zero.** No ranking model in this study, clean-trained
+or otherwise, is statistically distinguishable from no skill at all.
 
 That cuts both ways, and it is worth being blunt about. LightGBM's +0.56 is not
 evidence that gradient boosting works here, and it is now known to be an
-artifact. The CS-Transformer's −0.31 is not evidence that cross-sectional
+artifact. The floor-on −1.03 is not evidence that gradient boosting is
+reliably harmful either; its interval reaches +0.10 and its monthly IC is
+−0.004. The CS-Transformer's −0.31 is not evidence that cross-sectional
 attention fails. The intervals overlap across nearly their whole range, so the
-data cannot separate the models either. The point estimates differ; the
-evidence does not.
-
-The one interval that excludes zero is the floor-on LightGBM at −1.86, and it
-is not a claim that gradient boosting is reliably harmful. Its monthly IC is
-−0.019 with an ICIR of −0.51, which is a t-statistic of about −0.9 and nothing
-like significant. The portfolio number is far more negative than the IC because
-the z-score tilt sizes positions by score magnitude, so the bet concentrates in
-the tails of the score distribution, and that model's tails were positioned
-against mega-cap concentration through 2023-25. A mild ranking error becomes a
-large active loss. It is the same IC-to-IR divergence documented in Notes item
-21, in the other direction.
+data cannot separate the models from each other, let alone from zero. The point
+estimates differ; the evidence does not.
 
 The cause is sample size, not modelling. These models have 17 to 35
 out-of-sample months, where the standard error on an information ratio is
@@ -401,11 +394,41 @@ Every survivor is size, illiquidity, dollar volume or realised volatility:
 `size_proxy`, `log_mktcap`, `amihud_illiq_21d`, `dollar_vol_21d/63d`,
 `cand_kyle_lambda_21d`, `vol_above_avg`, `high_vol_week` and their tail dummies.
 
-**No momentum, value, quality, seasonality, insider, sentiment or mined-alpha
-factor survives.** What the library reliably contains is well-documented risk
-premia and microstructure effects, not alpha - which is consistent with the
-models built on it showing no significant skill, and with the short-horizon
-technical factors being the ones that flip sign out of sample.
+**No momentum, seasonality or mined-alpha factor survives.** What the library
+reliably contains is well-documented risk premia and microstructure effects,
+not alpha - which is consistent with the models built on it showing no
+significant skill, and with the short-horizon technical factors being the ones
+that flip sign out of sample.
+
+### What 237 leaves out, and why it matters
+
+The panel carries 263 stock factor columns but only 237 can be tested, and the
+26 missing ones are not a rounding detail. Twenty-one hold a single value
+across all 147,733 rows, because those fetches never landed usable data:
+
+| Group | Columns | Status |
+|---|---|---|
+| Fundamentals | 12 | `1j_fetch_simfin.py` produced nothing; the Wind export covered Dec 2025 only |
+| Short interest | 4 | `1k_fetch_short_interest.py` produced nothing |
+| Institutional / 13F | 4 | `1l_fetch_13f.py` produced nothing |
+| Other | 1 | `log_mktcap_bot` |
+
+The remaining five (`january_dummy` and four sentiment/news columns) vary by
+month but are identical across stocks, so they cannot rank anything. A Spearman
+IC against a column with no cross-sectional variation is undefined, not weak,
+which is why they drop out before testing rather than failing it.
+
+**So the tested library is entirely price and volume derived.** Read the
+survivor list again with that in mind: only size, liquidity and volatility
+survive because those are the only *kinds* of effect price and volume data can
+express. There were never any fundamentals in there to find. That is a
+different and more useful statement than "the factors were weak", and it names
+the one input most likely to change the conclusion.
+
+Value, quality and sentiment are absent from the survivor list because they
+were **never tested**, not because they were tested and failed. `config.py`
+drops these columns at load, detected at runtime rather than hardcoded, so each
+returns on its own the day its data arrives.
 
 #### Threshold sensitivity, and a caveat on the above
 
@@ -494,12 +517,12 @@ the smallest α to −5.35 % at the largest. That is the signature of a signal
 that is actively wrong rather than merely absent: acting on it harder loses
 more.
 
-The floor-on LightGBM does the same thing and harder, from −0.47 % to −15.77 %
-across the sweep at a 29 % monthly hit rate. The floor-off run is the only one
-that behaves like a weak but genuine signal, with IR falling from 0.62 at small
-α to 0.08 at large as costs catch up with a thin edge. That contrast is the
-clearest single picture of what the delisted tickers were doing: they are the
-difference between a signal that looks real and one that is not there.
+The floor-on LightGBM does the same thing, from −0.29 % to −12.52 % across the
+sweep at a 37 % monthly hit rate. The floor-off run is the only one that
+behaves like a weak but genuine signal, with IR falling from 0.62 at small α to
+0.08 at large as costs catch up with a thin edge. That contrast is the clearest
+single picture of what the delisted tickers were doing: they are the difference
+between a signal that looks real and one that is not there.
 
 Reproduce with `python 4b_index_enhancement.py`. Full α sweep in
 `data/ie_summary.csv`.

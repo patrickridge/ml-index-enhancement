@@ -378,3 +378,40 @@ seeing which way it moved the result, and it moved it *down*, from −0.004 to
 The general lesson is the one that keeps repeating here: a result file with no
 script behind it is not a result. `scores_lgbm.parquet` sat in the repo for six
 months as the benchmark everything else was measured against.
+
+### 25. 26 of the 263 Factor Columns Are Empty ✓ Fixed
+
+Chasing why 2i tests 237 factors and not 263 turned up something larger than a
+counting discrepancy. Twenty-one columns hold a single value across all 147,733
+rows: the twelve fundamentals, four short-interest, four 13F columns and
+`log_mktcap_bot`. Those fetches never landed. Five more (`january_dummy` and
+the sentiment/news group) vary by month but are identical across stocks, so
+they are macro series sitting in the stock feature set.
+
+A Spearman IC against a column with no cross-sectional variation is undefined
+rather than weak, which is why 2i drops them at `dropna(subset=["t_stat"])`
+instead of testing and failing them.
+
+**The consequence is the interesting part.** The tested library is entirely
+price and volume derived, which reframes the BHY result completely: only size,
+liquidity and volatility survive because those are the only kinds of effect
+price and volume can express. The models were not failing to find alpha in a
+rich dataset. They were never given the data where alpha usually lives.
+
+It also means the README was wrong to say no value, quality or sentiment factor
+survives correction. Those were never tested. Corrected.
+
+`config.py` now has `drop_dead_features()`, wired into 3c and 3f. Detection is
+at runtime rather than a hardcoded list, so a column comes back on its own the
+day its data arrives.
+
+One honest side effect: this is not a no-op for LightGBM. `feature_fraction`
+samples columns at random each round, so removing 26 changes which real columns
+get drawn. Clean LGBM moved from IR −1.86 to −1.03 and its interval now spans
+zero. That tidies the picture rather than muddying it, since **every model in
+the study now has a confidence interval containing zero** and the outlier that
+needed a paragraph of explanation is gone.
+
+3d is untouched, because it inlines its own config and a GPU run was in flight.
+It needs the same treatment before the next one, or the CS-T comparison is
+back to being measured on two different feature sets.
