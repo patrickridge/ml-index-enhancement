@@ -47,6 +47,13 @@ Remaining imprecision: turnover is measured against last month's *target*
 weights rather than their drifted end-of-month values, so passive drift is
 counted as traded. That overstates turnover and therefore overstates cost.
 
+**Quantified (see item 23).** The overstatement is roughly 4x. Measuring actual
+month-on-month weight changes gives **12-15% of the book per month**, not the
+64-73% in the table above. The cost figures here are inflated by the same
+factor: realistic drag is 0.19-0.30%/yr at plausible AUM rather than 0.77-0.87%.
+The table is left as-is because it is what the backtests currently charge - the
+strategies are costed conservatively, not optimistically.
+
 ### 4. No Fundamental Data - Partly Addressed
 ~~All 26 features are price-derived.~~ The panel now carries ~270 features across
 24 categories, including fundamentals (Cat 9), short interest (19), institutional
@@ -286,3 +293,29 @@ looks like.
 upgrade, so this tests a stale artifact rather than the model currently in the
 code. The correct claim is "the scored artifact shows negative alpha", not "the
 architecture does not work". A Kaggle retrain is needed to separate those.
+
+**Retrain done.** Trained on the cleaned universe the CS-Transformer gives
+−0.38% alpha at 1.22% TE, IR −0.314 (was −2.52%, 4.64%, −0.54). Validation MSE
+fell 0.234 → 0.0072 and validation IC went −0.002 → +0.046: the zombies were
+corrupting the loss surface, not just the evaluation. It improved toward zero
+without crossing it, and at 17 months the interval [−1.54, +0.88] cannot
+separate it from zero or from LightGBM.
+
+### 23. Capacity - Not the Binding Constraint
+
+Square-root impact model (`4i_capacity.py`), C=1.0, ADV proxied at 0.7% of
+market cap, execution spread over 3 days:
+
+| AUM | Impact/yr | Flat 10 bps | Total |
+|---|---|---|---|
+| $1bn | 0.16% | 0.14% | 0.30% |
+| $10bn | 0.51% | 0.14% | 0.65% |
+| $50bn | 1.14% | 0.14% | 1.28% |
+
+Total cost stays under LightGBM's 0.83% gross alpha out to roughly $10bn. Two
+structural reasons: real turnover is 12-15%/month, and at α=0.0005 most
+positions sit within a few basis points of index weight, so trades are small
+fractions of names already trading billions daily.
+
+**The binding constraint is alpha, not capacity.** A strategy whose information
+ratio has a confidence interval spanning zero does not have a size problem.

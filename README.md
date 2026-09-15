@@ -424,6 +424,36 @@ The control group is the reassuring part: factors that failed BHY stay
 insignificant at every floor, so the filter is not distorting the cross-section
 broadly. Override with `ML_MIN_WEIGHT` to reproduce any row above.
 
+### Capacity
+
+The backtests charge a flat 10 bps per side, which captures spread and
+commission but is blind to size. `4i_capacity.py` applies a square-root impact
+model instead - cost scales with the square root of participation in each name's
+daily volume:
+
+| AUM | Impact/yr | Flat 10 bps | Total |
+|---|---|---|---|
+| $1bn | 0.16 % | 0.14 % | 0.30 % |
+| $5bn | 0.36 % | 0.14 % | 0.50 % |
+| $10bn | 0.51 % | 0.14 % | 0.65 % |
+| $50bn | 1.14 % | 0.14 % | 1.28 % |
+
+Total cost stays below LightGBM's 0.83 % gross alpha out to roughly **$10bn**.
+Two structural reasons: real turnover is 12-15 % of the book per month, and at
+α = 0.0005 most positions sit within a few basis points of index weight, so
+trades are small fractions of names already trading billions daily.
+
+(The 64 % turnover figure quoted elsewhere in `Notes/Improvements.md` counts
+benchmark drift as trading and overstates the tradeable quantity about 4×. Costs
+in the backtests are conservative as a result, not optimistic.)
+
+**The binding constraint here is alpha, not capacity.** A strategy whose
+information ratio has a confidence interval spanning zero does not have a size
+problem. Assumptions: C = 1.0, 2 %/day single-name vol, ADV at 0.7 % of market
+cap, execution over 3 days - halving C or doubling the execution window roughly
+halves the impact estimate, so read the levels as indicative and the scaling
+across AUM as the robust part.
+
 ### Survivorship bias, quantified
 
 The 247 unfetchable tickers cannot be recovered without CRSP or Compustat, so
