@@ -31,12 +31,13 @@ show, including where they turned out to be wrong.
 ## How the strategy works
 
 1. **Score the universe every month.** A Cross-Sectional Transformer reads a
-   panel of 237 usable features per stock (momentum, volatility, liquidity and
-   microstructure, mined OHLCV candidates) plus 20 macro series, and produces
-   one score per stock. The panel also declares fundamental, short-interest,
-   13F and sentiment columns, but **those fetches never landed and the columns
-   are empty**, so the working library is price and volume derived. That turns
-   out to explain most of what follows.
+   panel of ~250 usable features per stock plus 20 macro series, and produces
+   one score per stock. Momentum, volatility, liquidity and microstructure come
+   from price and volume; fundamentals come from SEC EDGAR (2005-2026) and
+   short interest from FINRA (2018-2026), each stamped with the date it became
+   public rather than the period it describes. The 13F and news-sentiment
+   columns are still empty, and sentiment varies by month rather than across
+   stocks, so neither is in the tested library.
 2. **Tilt around benchmark weights.** `w_i = w_SPX_i + α × score_z_i`,
    long-only, renormalised to sum to 1. α is a single number controlling how
    aggressive the tilt is this month.
