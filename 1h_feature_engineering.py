@@ -44,6 +44,7 @@ Run time: ~5-10 min on a laptop.
 
 import numpy as np
 import pandas as pd
+import os
 from pathlib import Path
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -75,7 +76,7 @@ from utils_factors import (
 from config import MACRO_COLS, USE_CANDIDATE_FEATURES
 import time as _time; _t0 = _time.time()
 
-DATA_DIR  = Path("data")
+DATA_DIR = Path(os.environ.get("ML_DATA_DIR", "data"))
 PANEL_IN  = DATA_DIR / "panel_monthly.parquet"
 PRICES_IN = DATA_DIR / "prices.parquet"
 FUND_IN   = DATA_DIR / "fundamental.parquet"

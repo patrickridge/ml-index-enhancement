@@ -33,10 +33,11 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+import os
 from pathlib import Path
 
 # Paths
-DATA_DIR  = Path("data")
+DATA_DIR = Path(os.environ.get("ML_DATA_DIR", "data"))
 PRICES_IN = DATA_DIR / "prices.parquet"
 PANEL_OUT = DATA_DIR / "panel_monthly.parquet"
 

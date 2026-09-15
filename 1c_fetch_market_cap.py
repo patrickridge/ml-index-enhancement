@@ -29,10 +29,11 @@ warnings.filterwarnings("ignore")
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import os
 from pathlib import Path
 
 # Paths
-DATA_DIR    = Path("data")
+DATA_DIR = Path(os.environ.get("ML_DATA_DIR", "data"))
 PRICES_IN   = DATA_DIR / "prices.parquet"
 OUT_WEIGHTS = DATA_DIR / "spx_weights.parquet"
 
