@@ -5,9 +5,39 @@ then multiplies by monthly close prices to build a time-varying market-cap
 matrix. Saves monthly SPX-constituent weights to data/spx_weights.parquet.
 
 Approach: use current shares outstanding as a constant proxy across all months.
-For S&P 500 stocks, shares change slowly (buybacks/issuances are gradual), so
-current shares × historical price is a good approximation of relative cap weights.
-Weights are what matter for portfolio construction, not absolute market cap values.
+For S&P 500 stocks shares change slowly, so current shares × historical price
+approximates relative cap weights. Weights are what matter for portfolio
+construction, not absolute market cap values.
+
+Known limitations, measured rather than assumed
+-----------------------------------------------
+The rebuilt benchmark returns 15.7%/yr over 2010-2024 against a real S&P 500 at
+about 13.5%, so it runs roughly 2.2pp/yr hot. Four causes, in order of size:
+
+1. Constant shares. Companies that are giants today were small in 2005, and
+   projecting today's share count backwards inflates their past weight. The
+   index therefore leans toward the names that turned out to win, which is a
+   mild look-ahead sitting in the weights themselves. The year pattern is the
+   fingerprint: top-10 concentration comes out at 31% for 2005 against a real
+   20%, 23% for 2015 against 18%, and 43% for 2025 against 40%. The error
+   shrinks as you approach the present, which is exactly what this cause
+   predicts. Fixing it needs quarterly historical shares outstanding;
+   mktcap_shares.parquet has them for 152 tickers, not 677.
+
+2. Total shares rather than free float. Real index weights exclude insider and
+   strategic holdings. Walmart's founding family holds roughly 45% of the
+   company, so counting all of it overweights WMT against the real index.
+
+3. The universe is not exactly the index: 478 to 612 names by year rather than
+   500, because the weight floor is permissive at both ends.
+
+4. The 8% cap is not an index rule. It is a guard against bad share data, and
+   it binds on NVDA at 8.00% when the true weight is nearer 7%.
+
+Why this is tolerable: active return is (benchmark + tilt) minus benchmark, so
+the level cancels and the information ratios are largely unaffected. What it
+does reach is the absolute Sharpe figures, the claim that tracking error is
+2-4% against the S&P 500 specifically, and the capacity analysis.
 
 Output
 ------
@@ -45,6 +75,9 @@ def clean_ticker(tk: str) -> str:
     Convert exchange-suffixed ticker to yfinance format.
     Examples:  AAPL.O → AAPL,  A.N → A,  BRK.B.N → BRK-B
     """
+    # BRK_B.N is the same security as BRK.B written differently, and leaving
+    # the underscore asks Yahoo for BRK_B, which 404s.
+    tk = tk.replace('_', '.')
     # Strip trailing single-char exchange suffix (.O NASDAQ, .N NYSE, .A AMEX)
     if len(tk) >= 2 and tk[-2] == '.' and tk[-1].upper() in ('O', 'N', 'A'):
         tk = tk[:-2]

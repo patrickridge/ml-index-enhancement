@@ -507,3 +507,51 @@ more awkwardly **ticker reuse** at SW and TMUS, where the symbol referred to a
 different company earlier in the history. A reused ticker stitches two firms
 into one series, which is its own quiet contamination and is not something the
 weight floor catches.
+
+### 28. What the Rebuild Fixed, and What It Did Not
+
+Ran the repair: refetched prices swapped in, 1g and 1h rebuilt, 1c rerun with
+the iterative cap.
+
+**Volume was the big win.** Three of the five BHY survivors were previously
+sitting on a single modal value for 77.4% of every cross-section, because the
+505 tickers with no volume all took the same fill. A factor that is four fifths
+tied cannot rank anything, so what those columns really encoded was whether the
+fetch had succeeded.
+
+| Factor | On modal value, before | After |
+|---|---|---|
+| size_proxy | 77.4% | 0.3% |
+| dollar_vol_21d | 77.4% | 0.3% |
+| amihud_illiq_21d | 77.4% | 0.3% |
+
+**log_mktcap was broken for a different reason and had to be fixed separately.**
+It did not move in the first rebuild: 79.8% to 80.5% on one value. The shares
+cache holds 152 tickers and writes them without the exchange suffix, so merging
+against a panel keyed on AAPL.O matched 142 of 677 names and left the factor
+valid for 9% of rows. 1h now takes its caps from spx_weights.parquet, which
+covers 625 tickers in the panel's own format, and falls back to the cache only
+for the remainder.
+
+Worth pausing on: a factor with four fifths of the cross-section tied had been
+**surviving multiple-testing correction**. Whatever t-statistic it earned came
+from the fifth of names whose fetch happened to work, which is a selected
+subset skewed toward large and liquid. That is the same failure as the volume
+one wearing different clothes.
+
+**The benchmark went from wrong to approximate.** Top-10 concentration 72.1% to
+43.0% against a real 40%, max weight now exactly 8.00% rather than 12.65%,
+monthly sums exactly 1.0000, and the top ten reads NVDA 6.90 / AAPL 5.98 /
+GOOGL 5.83 / MSFT 5.29 rather than four companies implausibly tied.
+
+It is not exact, and the residual is measured rather than assumed: 15.7%/yr
+over 2010-2024 against a real 13.5%, so about 2.2pp hot, down from 5.7pp. The
+causes are listed at the top of 1c_fetch_market_cap.py; the dominant one is
+projecting today's share count backwards, which tilts the index toward the
+names that went on to win. Tolerable because active return differences out the
+benchmark level, but it does reach the absolute Sharpe figures, the claim that
+tracking error is 2-4% against the S&P 500 specifically, and capacity.
+
+So of the five BHY survivors, four had materially wrong inputs when the
+original finding was computed. Rerunning 2i and 2k is the point of the whole
+exercise, not a formality.

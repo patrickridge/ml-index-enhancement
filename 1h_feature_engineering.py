@@ -456,13 +456,45 @@ def main():
     else:
         print(f"\n{PRED_IN} not found - skipping Cat 21 prediction market factors.")
 
-    # Cat 14: size factor - log(market cap) = log(shares × close_me)
-    mktcap_cache = str(DATA_DIR / "mktcap_shares.parquet")
-    all_tickers  = panel["ticker"].unique().tolist()
-    print("\nFetching market cap data (Cat 14: log_mktcap)...")
-    shares_df = fetch_market_cap_data(all_tickers, start_str, end_str,
-                                      cache_path=mktcap_cache)
-    panel = add_size_factor(panel, shares_df)
+    # Cat 14: size factor - log(market cap).
+    #
+    # Prefer the caps 1c already computed. The shares cache this used to rely
+    # on holds 152 tickers and writes them without the exchange suffix, so
+    # merging it against a panel keyed on AAPL.O matched 142 of 677 names and
+    # log_mktcap came out valid for 9% of rows. The other 91% were filled, which
+    # left four fifths of every cross-section sharing one value: a factor that
+    # cannot rank, yet one that had been surviving multiple-testing correction.
+    #
+    # spx_weights.parquet carries mktcap for 625 tickers in the panel's own
+    # ticker format, so it is both wider and already aligned.
+    weights_path = DATA_DIR / "spx_weights.parquet"
+    panel["log_mktcap"] = np.nan
+
+    if weights_path.exists():
+        print("\nCat 14: log_mktcap from spx_weights.parquet...")
+        caps = pd.read_parquet(weights_path)[["date", "ticker", "mktcap"]]
+        caps["date"] = pd.to_datetime(caps["date"]) + pd.offsets.MonthEnd(0)
+        panel["date"] = pd.to_datetime(panel["date"]) + pd.offsets.MonthEnd(0)
+        panel = panel.merge(caps, on=["date", "ticker"], how="left")
+        good = panel["mktcap"] > 0
+        panel.loc[good, "log_mktcap"] = np.log(panel.loc[good, "mktcap"])
+        panel = panel.drop(columns=["mktcap"])
+        print(f"  log_mktcap: {int(good.sum()):,}/{len(panel):,} valid "
+              f"({good.mean() * 100:.1f}%)")
+
+    # Fall back to the shares cache only where 1c had nothing to say.
+    if panel["log_mktcap"].isna().any():
+        mktcap_cache = str(DATA_DIR / "mktcap_shares.parquet")
+        all_tickers  = panel["ticker"].unique().tolist()
+        print("Cat 14: filling gaps from the shares cache...")
+        shares_df = fetch_market_cap_data(all_tickers, start_str, end_str,
+                                          cache_path=mktcap_cache)
+        filled = add_size_factor(panel.drop(columns=["log_mktcap"]), shares_df)
+        panel["log_mktcap"] = panel["log_mktcap"].fillna(filled["log_mktcap"])
+        print(f"  after fallback: {int(panel['log_mktcap'].notna().sum()):,}/"
+              f"{len(panel):,} valid "
+              f"({panel['log_mktcap'].notna().mean() * 100:.1f}%)")
+
     # Drop the helper column - it is not a model feature
     panel = panel.drop(columns=["close_me"], errors="ignore")
 
