@@ -415,3 +415,41 @@ needed a paragraph of explanation is gone.
 3d is untouched, because it inlines its own config and a GPU run was in flight.
 It needs the same treatment before the next one, or the CS-T comparison is
 back to being measured on two different feature sets.
+
+Two README claims fell out of this, both now corrected. The opening described
+the model as reading "~270 features per stock (momentum, volatility,
+fundamentals, short interest, institutional ownership, insider filings, news
+sentiment...)". Four of those categories are empty columns. And the summary
+paragraph quoted the overlay at IR 0.314 over 4 of 5 folds, which is the
+alpha-cap 0.050 row at 7.24% tracking error, not the mandate-compliant result.
+The detailed table had it right at IR 0.299, 3.82% TE, 5 of 5 folds; the
+summary was quoting a different configuration. Anyone reading only the top of
+the README would have taken away a number from a portfolio breaching the
+budget it claims to respect.
+
+### 26. Do the Statistical Thresholds Drive the Survivor Count? No
+
+Companion to 22's weight-floor check, prompted by the obvious question of why
+p < 0.05 at all. Three conventions sit behind "17 survive": the raw screen, the
+FDR level, and the choice to correct for arbitrary dependence.
+`2k_fdr_sensitivity.py` sweeps all three.
+
+| FDR q | BHY | plain BH |
+|---|---|---|
+| 0.01 | 15 | 16 |
+| 0.05 | 16 | 17 |
+| **0.10** | **17** | 18 |
+| 0.20 | 17 | 19 |
+| 0.30 | 17 | 22 |
+
+Flat at 17 from q=0.10 to q=0.30, so tripling the tolerance for false
+discoveries finds nothing new. 17 factors clear p < 0.001 against 0.2 expected
+by chance, a ratio of 72, while the 24 clearing p < 0.05 sit against 11.9
+expected: everything between those two levels is noise. And BHY costs one
+factor against plain BH despite a 6.0x stricter bar, so the result does not
+depend on the dependence correction either.
+
+Worth stating plainly because the weight-floor check went the other way. A
+sensitivity analysis that always finds a problem is not measuring anything.
+Here the magnitude of the t-statistics is fragile and the survivor count is
+not, and both belong in the write-up.

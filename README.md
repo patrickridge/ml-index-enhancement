@@ -31,10 +31,12 @@ show, including where they turned out to be wrong.
 ## How the strategy works
 
 1. **Score the universe every month.** A Cross-Sectional Transformer reads a
-   panel of ~270 features per stock (momentum, volatility, fundamentals,
-   short interest, institutional ownership, insider filings, news sentiment,
-   macro regime signals, mined OHLCV candidates) and produces one score per
-   stock.
+   panel of 237 usable features per stock (momentum, volatility, liquidity and
+   microstructure, mined OHLCV candidates) plus 20 macro series, and produces
+   one score per stock. The panel also declares fundamental, short-interest,
+   13F and sentiment columns, but **those fetches never landed and the columns
+   are empty**, so the working library is price and volume derived. That turns
+   out to explain most of what follows.
 2. **Tilt around benchmark weights.** `w_i = w_SPX_i + α × score_z_i`,
    long-only, renormalised to sum to 1. α is a single number controlling how
    aggressive the tilt is this month.
@@ -81,11 +83,11 @@ shared training data between folds, factor weights refitted from scratch each
 fold, agent retrained fresh. That design is sound and is the most defensible
 part of the evaluation setup here.
 
-On 143 out-of-sample months the SAC overlay returns **IR 0.314 against 0.025**
-for a fixed-α baseline, beating it in 4 of 5 folds. That is well short of the
-0.88 an earlier version of this README claimed, but it is the one headline
-number here that survived the data audit. Full table below, including the
-tracking-error problem it comes with.
+On 143 out-of-sample months the SAC overlay returns **IR 0.299 at 3.82 %
+tracking error**, inside the mandate, beating a fixed-α baseline in **5 of 5
+folds**. That is well short of the 0.88 an earlier version of this README
+claimed, but it is the one headline number here that survived the data audit.
+Full table below, including the tracking-error tension it comes with.
 
 ## What the pipeline does
 
@@ -93,7 +95,7 @@ tracking-error problem it comes with.
    institutional ownership, prediction markets, insider trades, news sentiment, sector mappings.
 2. **Feature engineering** (`1h_feature_engineering.py`): compute ~263 factor columns across 24 categories,
    of which 237 carry cross-sectional information and the rest are empty fetches (see below)
-   (momentum, volatility, fundamentals, macro, mined-alpha candidates, insider, sentiment, etc.).
+   (momentum, volatility, liquidity, microstructure, mined-alpha candidates, macro).
    Per-stock features are cross-sectionally ranked each month; macro features are kept at raw scale.
 3. **Factor diagnostics** (`2*` scripts): IC, IC decay, quintile returns, crowding/correlation,
    IS-only screening of new candidates via Lasso / RF / LightGBM and BHY.
@@ -119,7 +121,7 @@ tracking-error problem it comes with.
 ├── run_pipeline.sh                 end-to-end: fetch → panel → diagnostics
 │
 ├── 1a–1p_*.py                      data fetch + feature engineering
-├── 2a–2h_*.py                      factor diagnostics
+├── 2a–2k_*.py                      factor diagnostics + multiple-testing checks
 ├── 3a–3d_*.py                      ranking models
 ├── 3e_cs_transformer_audit.py      post-hoc diagnostics on CS-T scores
 ├── 3e_hp_sweep{,_kaggle}.py        CS-Transformer hyperparameter sweeps
@@ -465,6 +467,43 @@ not tuned for significance, but that is an assurance rather than a proof.
 The control group is the reassuring part: factors that failed BHY stay
 insignificant at every floor, so the filter is not distorting the cross-section
 broadly. Override with `ML_MIN_WEIGHT` to reproduce any row above.
+
+#### Statistical thresholds, which hold up better
+
+Three conventions sit behind "17 survive": the raw p < 0.05 screen, the FDR
+level of 0.10, and the decision to correct for arbitrary dependence. None is
+derived from anything. The 5% is Fisher's 1925 convention, which stuck largely
+because statistical tables were printed at 5% and 1%. `2k_fdr_sensitivity.py`
+sweeps all three.
+
+| FDR q | BHY | plain BH |
+|---|---|---|
+| 0.01 | 15 | 16 |
+| 0.05 | 16 | 17 |
+| **0.10** | **17** | 18 |
+| 0.20 | 17 | 19 |
+| 0.30 | 17 | 22 |
+
+**The count is flat at 17 from q = 0.10 to q = 0.30.** Tripling the tolerance
+for false discoveries finds nothing new, so the FDR choice is not what produces
+the answer.
+
+The raw level matters even less. 17 factors clear p < 0.001 against 0.2
+expected by chance, a ratio of 72, while the 24 that clear p < 0.05 sit against
+11.9 expected. Everything between 0.001 and 0.05 is noise, so the conventional
+level is reported for contrast rather than relied on.
+
+BHY costs one factor against plain BH despite a bar 6.0x stricter, because the
+survivors' p-values are small enough that the dependence penalty does not reach
+them. The result does not rest on assuming the tests are independent, which
+matters given that 308 factor pairs correlate above 0.70.
+
+So the two sensitivity checks point different ways, and both are reported.
+The weight floor is a genuine weakness in the *magnitude* of the t-statistics.
+The statistical thresholds are not a weakness at all. On the wider question of
+whether the profession's conventional hurdle is too lenient once you account
+for how many factors have been tested, see Harvey, Liu and Zhu (2016), which
+argues for t > 3.0 rather than t > 2.0.
 
 ### Capacity
 
