@@ -100,25 +100,45 @@ def main():
     print("\n" + "=" * 62)
     print("VERDICT")
     print("=" * 62)
-    if flat:
+    n_raw = int((pvals < 0.05).sum())
+    bh_headline = step_up(ranked, 0.10, m, 1.0)
+
+    if headline == 0:
+        # Nothing survives. The interesting question flips: rather than asking
+        # whether the survivor count is robust, ask whether any choice of knob
+        # could have produced one. If plain BH at a lenient FDR also finds
+        # nothing, the answer is not hiding behind a conservative setting.
+        print("No factor survives at any tested FDR level.")
+        print(f"{n_raw} clear raw p < 0.05 against {0.05 * m:.0f} expected by "
+              f"chance, so the individually significant ones are what "
+              f"{m} tests produce on their own.")
+        if bh_headline == 0:
+            print("\nPlain BH finds nothing either, so this is not the "
+                  "dependence correction being strict.")
+            print("Nor is it the FDR level: q=0.30 is three times the usual "
+                  "tolerance and still returns zero.")
+        print("\nThe library is price and volume derived over a universe that "
+              "is entirely large-cap and liquid.")
+        print("A size effect needs small caps and an illiquidity premium needs "
+              "illiquid names, so finding neither here is coherent rather "
+              "than surprising.")
+    elif flat:
         print(f"Survivor count is flat at {counts[0]} from q=0.10 through "
               f"q={max(FDR_LEVELS)}.")
         print("Tripling the tolerance for false discoveries finds nothing new,")
         print("so the FDR choice is not what produces the answer.")
+        print(f"\n{tiny} factors clear p < 0.001 against "
+              f"{0.001 * m:.1f} expected by chance.")
+        if tiny >= headline:
+            print("Every survivor sits far below the 5% boundary, so the")
+            print("conventional level is reported for contrast, not relied on.")
+        print(f"\nBHY costs {bh_headline - headline} factor(s) against plain BH "
+              f"despite a {c_bhy:.0f}x stricter bar.")
+        print("The dependence correction is close to free here, which means the")
+        print("result does not rest on assuming the tests are independent.")
     else:
         print(f"Survivor count moves across the FDR range: {counts}.")
         print("The choice of q is doing real work and should be justified.")
-
-    print(f"\n{tiny} factors clear p < 0.001 against 0.2 expected by chance.")
-    if tiny >= headline:
-        print("Every survivor sits far below the 5% boundary, so the")
-        print("conventional level is reported for contrast, not relied on.")
-
-    gap = step_up(ranked, 0.10, m, 1.0) - headline
-    print(f"\nBHY costs {gap} factor(s) against plain BH despite a "
-          f"{c_bhy:.0f}x stricter bar.")
-    print("The dependence correction is close to free here, which means the")
-    print("result does not rest on assuming the tests are independent.")
 
 
 if __name__ == "__main__":
