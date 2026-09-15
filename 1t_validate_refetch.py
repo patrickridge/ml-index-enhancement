@@ -78,15 +78,36 @@ def main():
 
     print("\nPrice scale")
     print("-" * 62)
+
+    # Measured on current index members, not on every ticker that has ever
+    # appeared. Dead names carry stale quotes at both extremes - MHS last
+    # printed at $15,869 and CPWR at $0.01 - which widens the spread without
+    # saying anything about the live universe. The weight floor removes them
+    # downstream, so they should not be in the test either.
+    members = set()
+    wpath = DATA_DIR / "spx_weights.parquet"
+    if wpath.exists():
+        w = pd.read_parquet(wpath)
+        w["date"] = pd.to_datetime(w["date"])
+        members = set(w[(w["spx_weight"] >= 5e-6) &
+                        (w["date"] >= w["date"].max() - pd.DateOffset(months=6))
+                        ]["ticker"])
+
     for lbl, d in (("old", old), ("new", new)):
         yr = d["date"].dt.year.max()
         px = (d[d["date"].dt.year == yr].sort_values("date")
                 .groupby("ticker")["close"].last())
         px = px[px > 0]
-        lp = np.log(px)
-        print(f"  {lbl}: log-sd {lp.std():.2f} | p5 ${px.quantile(.05):>9,.0f} "
-              f"| median ${px.median():>9,.0f} | p95 ${px.quantile(.95):>10,.0f}")
-    print("  realistic: log-sd ~0.85 | p5 ~$25 | median ~$100 | p95 ~$500")
+        for scope, sel in (("all   ", px),
+                           ("members", px[px.index.isin(members)] if members
+                            else px)):
+            if not len(sel):
+                continue
+            print(f"  {lbl} {scope}: log-sd {np.log(sel).std():.2f} "
+                  f"| p5 ${sel.quantile(.05):>9,.0f} "
+                  f"| median ${sel.median():>8,.0f} "
+                  f"| p95 ${sel.quantile(.95):>9,.0f}")
+    print("  real S&P 500 : log-sd ~0.85 | p5 ~$25 | median ~$100 | p95 ~$500")
 
     print("\nVolume")
     print("-" * 62)
