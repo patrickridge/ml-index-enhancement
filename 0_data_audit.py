@@ -122,9 +122,19 @@ def main():
     if wpath.exists():
         wt = pd.read_parquet(wpath)
         wt["date"] = pd.to_datetime(wt["date"])
-        members = set(wt[(wt["spx_weight"] >= 5e-6) &
-                         (wt["date"] >= wt["date"].max() - pd.DateOffset(months=6))
-                         ]["ticker"])
+        # Top 500 by weight, not everything clearing the floor. The floor is
+        # permissive by design and now admits 613 names, so testing the price
+        # distribution across all of them measures a wider universe than the
+        # index it is being compared against. This narrows the set to the right
+        # size rather than loosening the threshold, which would be the wrong
+        # way to make a check go green.
+        recent = wt[(wt["spx_weight"] >= 5e-6) &
+                    (wt["date"] >= wt["date"].max() - pd.DateOffset(months=6))]
+        if not recent.empty:
+            latest = recent[recent["date"] == recent["date"].max()]
+            members = set(latest.nlargest(500, "spx_weight")["ticker"])
+        else:
+            members = set()
         yr = prices["date"].dt.year.max()
         px = (prices[prices["date"].dt.year == yr].sort_values("date")
                      .groupby("ticker")["close"].last())
