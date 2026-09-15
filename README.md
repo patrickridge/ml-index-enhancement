@@ -62,13 +62,18 @@ conditioning. Training is two-stage: masked-MSE pre-train, then a
 portfolio-level RL fine-tune (GRPO or DAPO) optimising portfolio return rather
 than per-stock label accuracy.
 
-**The corrected results do not support the hypothesis.** On clean data the
-CS-Transformer posts IR −0.31 and is negative at every tilt size tested. It
-does not lose to a working tree baseline, because on the same hygiene the tree
-baseline is negative too. Whether that reflects the architecture, the training
-setup, the 17-month evaluation window, or the fact that its scores predate the
-Macro FiLM upgrade is not resolved here. What can be said is that the
-cross-sectional attention did not earn its complexity on this data.
+**The hypothesis is not supported, and is not yet cleanly tested either.** On
+the pre-rebuild panel the CS-Transformer posted IR −0.31 over 17 months, an
+interval far too wide to conclude anything from. Those scores are now
+quarantined: they were produced before the price, volume and benchmark repairs,
+so comparing them against the current benchmark would be meaningless. A GPU run
+on the rebuilt panel is what settles it.
+
+What *can* be said already is that the architecture question is not where the
+binding constraint lies. On matched hygiene the tree baseline reaches IR 0.143
+over 152 months with an interval spanning zero, and no factor in the library
+survives multiple-testing correction. A better ranker has very little to rank
+on.
 
 ## Why reinforcement learning on top
 
@@ -321,10 +326,9 @@ or otherwise, is statistically distinguishable from no skill at all.
 
 That cuts both ways, and it is worth being blunt about. LightGBM's +0.56 is not
 evidence that gradient boosting works here, and it is now known to be an
-artifact. The floor-on −1.03 is not evidence that gradient boosting is
-reliably harmful either; its interval reaches +0.10 and its monthly IC is
-−0.004. The CS-Transformer's −0.31 is not evidence that cross-sectional
-attention fails. The intervals overlap across nearly their whole range, so the
+artifact. The clean +0.143 over 152 months is not evidence that it works
+either; its interval runs from −0.37 to +0.74. Nor was the earlier −0.31 for
+the CS-Transformer evidence that cross-sectional attention fails. The intervals overlap across nearly their whole range, so the
 data cannot separate the models from each other, let alone from zero. The point
 estimates differ; the evidence does not.
 
@@ -382,18 +386,18 @@ Matched-sample tests difference out the period effect, so they carry far more
 power than comparing two noisy information ratios.
 
 **The defensible statement:** adaptive tilt sizing reliably outperforms a static
-tilt, inside the tracking-error budget, with drawdown cut by more than a third.
-Whether its absolute information ratio is positive is not settled by 143 months.
+tilt at every risk budget tested, cutting maximum active drawdown by roughly two
+thirds. Its absolute information ratio is significant at 5 % tracking error and
+not at 4 %, so whether it clears zero *inside the mandate* is still unsettled
+after 144 months.
 
 ### α is a risk parameter, not a performance one
 
 | α cap | Ann. alpha | TE | IR | Folds |
 |---|---|---|---|---|
-| 0.004 | 1.14 % | 3.82 % | 0.299 | 5/5 |
-| 0.006 | 1.33 % | 4.50 % | 0.297 | 4/5 |
-| 0.009 | 2.24 % | 6.41 % | 0.349 | 5/5 |
-| 0.012 | 2.49 % | 6.86 % | 0.363 | 5/5 |
-| 0.018 | 3.58 % | 7.24 % | 0.494 | 5/5 |
+| 0.0025 | 1.56 % | 4.05 % | 0.386 | 5/5 |
+| 0.0040 | 2.90 % | 5.00 % | 0.579 | 5/5 |
+| 0.0180 | 6.75 % | 9.39 % | 0.719 | 5/5 |
 | 0.050 | 3.05 % | 9.71 % | 0.314 | 4/5 |
 
 IR spans 0.297 to 0.494 across the sweep - a range of 0.197 against a bootstrap
@@ -543,7 +547,7 @@ broadly. Override with `ML_MIN_WEIGHT` to reproduce any row above.
 
 #### Statistical thresholds, which hold up better
 
-Three conventions sit behind "17 survive": the raw p < 0.05 screen, the FDR
+Three conventions sit behind a survivor count: the raw p < 0.05 screen, the FDR
 level of 0.10, and the decision to correct for arbitrary dependence. None is
 derived from anything. The 5% is Fisher's 1925 convention, which stuck largely
 because statistical tables were printed at 5% and 1%. `2k_fdr_sensitivity.py`
