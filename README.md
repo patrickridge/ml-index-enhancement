@@ -93,6 +93,10 @@ Full table below, including the tracking-error tension it comes with.
 
 1. **Data prep** (`1*` scripts): pull OHLCV, constituent history, fundamentals, short interest,
    institutional ownership, prediction markets, insider trades, news sentiment, sector mappings.
+   Fundamentals come from SEC EDGAR and short interest from FINRA, both free and keyless. Each is
+   stamped with the date the figure became *public* rather than the period it describes - a 10-K
+   lands about 40 days after quarter end and short interest about 8 days after settlement, so
+   using the period date would hand the model weeks of hindsight.
 2. **Feature engineering** (`1h_feature_engineering.py`): compute ~263 factor columns across 24 categories,
    of which 237 carry cross-sectional information and the rest are empty fetches (see below)
    (momentum, volatility, liquidity, microstructure, mined-alpha candidates, macro).
@@ -121,6 +125,9 @@ Full table below, including the tracking-error tension it comes with.
 ├── run_pipeline.sh                 end-to-end: fetch → panel → diagnostics
 │
 ├── 1a–1p_*.py                      data fetch + feature engineering
+├── 1s/1t_*.py                      price refetch + validation gate
+├── 1u_fetch_edgar_fundamentals.py  SEC EDGAR fundamentals, point-in-time
+├── 1v_fetch_short_interest.py      FINRA consolidated short interest
 ├── 2a–2k_*.py                      factor diagnostics + multiple-testing checks
 ├── 3a–3d_*.py                      ranking models
 ├── 3e_cs_transformer_audit.py      post-hoc diagnostics on CS-T scores
