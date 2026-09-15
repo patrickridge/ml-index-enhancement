@@ -84,11 +84,13 @@ shared training data between folds, factor weights refitted from scratch each
 fold, agent retrained fresh. That design is sound and is the most defensible
 part of the evaluation setup here.
 
-On 143 out-of-sample months the SAC overlay returns **IR 0.299 at 3.82 %
-tracking error**, inside the mandate, beating a fixed-α baseline in **5 of 5
-folds**. That is well short of the 0.88 an earlier version of this README
-claimed, but it is the one headline number here that survived the data audit.
-Full table below, including the tracking-error tension it comes with.
+On 144 out-of-sample months the SAC overlay beats a fixed-α baseline in **5 of
+5 folds** at every risk budget tested, and cuts maximum active drawdown from
+**−15.6 % to −5.9 %**. The information ratio depends on where the tilt cap is
+set: **0.579 at 5.0 % tracking error**, where the 95 % interval excludes zero,
+falling to 0.386 at the 4 % mandate boundary, where it does not. Both rows are
+in the table below, because reporting only the first would repeat the mistake
+that produced IR 1.87.
 
 ## What the pipeline does
 
@@ -286,15 +288,22 @@ times, so these rows are not a like-for-like horse race.
 
 | Model | Months | Ann. alpha | TE | IR | 95 % CI | P(IR>0) |
 |---|---|---|---|---|---|---|
-| LightGBM, no weight floor | 18 | +0.83 % | 1.47 % | +0.56 | [−0.69, +2.12] | 81 % |
-| Factor-combo | 35 | — | — | +0.44 | [−0.84, +1.21] | 79 % |
-| CS-Transformer | 17 | −0.38 % | 1.22 % | −0.31 | [−1.54, +0.88] | 31 % |
-| FT-Transformer | 24 | −0.74 % | 1.44 % | −0.52 | [−2.04, +0.91] | 23 % |
-| LightGBM, weight floor on | 35 | −1.54 % | 1.50 % | −1.03 | [−2.40, +0.10] | 4 % |
+| **RL tilt overlay** | 144 | +2.90 % | 5.00 % | **+0.579** | **[+0.10, +1.06]** | **99 %** |
+| LightGBM | 152 | +0.29 % | 2.02 % | +0.143 | [−0.37, +0.74] | 70 % |
+| Factor-combo | 44 | — | — | −0.264 | [−1.20, +0.44] | 24 % |
+| CS-Transformer | — | — | — | pending | — | — |
+| *LightGBM, weight floor off* | 18 | +0.83 % | 1.47 % | *+0.56* | [−0.69, +2.12] | 81 % |
 
-The two LightGBM rows are the same script on the same 35 months with the same
-hyperparameters. The only difference is whether delisted tickers are filtered
-out of the training set. See the audit trail for how that was established.
+The overlay is the only row whose interval excludes zero, and it sits at 5 %
+tracking error rather than inside the 2-4 % mandate; the sweep across tilt caps
+is below. The CS-Transformer row is empty on purpose: its previous scores were
+produced on the pre-rebuild panel, and comparing them against a freshly built
+benchmark is the exact mismatch that let the retracted +0.56 stand for six
+months. It returns when a GPU run on the current panel completes.
+
+The italic row is kept as a control rather than a result. It is the same script
+on the same months with the same hyperparameters as the clean LightGBM run, and
+the only difference is whether delisted tickers are filtered out of training.
 
 The CS-Transformer row is from a model retrained on the cleaned universe. An
 earlier run, trained on the panel that still contained delisted tickers, gave
@@ -328,18 +337,37 @@ blocks, from `4h_bootstrap_ci.py`.
 ### The RL overlay, and an awkward tension
 
 The overlay that sizes the tilt is the only part of the project with enough
-out-of-sample data to measure - 143 months rather than 17. Two configurations
-matter, and they do not agree:
+out-of-sample data to measure - 144 months rather than 17. The α cap bounds the
+action space and therefore the tracking error, so the result has to be read
+across the whole sweep rather than at one convenient point:
 
 | α cap | Ann. alpha | TE | IR | 95 % CI | Folds won | In mandate? |
 |---|---|---|---|---|---|---|
-| 1.8 % | 3.58 % | 7.24 % | 0.494 | [+0.046, +0.919] | 5/5 | no |
-| **0.4 %** | 1.14 % | **3.82 %** | 0.299 | [−0.173, +0.787] | **5/5** | **yes** |
+| 1.80 % | 6.75 % | 9.39 % | 0.719 | [+0.244, +1.181] | 5/5 | no |
+| 0.40 % | 2.90 % | 5.00 % | 0.579 | [+0.095, +1.062] | 5/5 | no |
+| **0.25 %** | 1.56 % | **4.05 %** | 0.386 | [−0.114, +0.899] | **5/5** | **yes** |
 
-**The configuration that fits the 2-4 % mandate is the one whose interval spans
-zero. The configuration whose interval excludes zero breaches the budget by
-roughly 2×.** Reporting only the second would be the same selective reading
-that produced the original IR 1.87.
+Fixed-α baseline, for reference: IR 0.289 at 9.63 % TE.
+
+**The significance boundary sits at roughly 5 % tracking error, just outside a
+2-4 % mandate.** Shrink the budget to fit the product and the interval reopens
+across zero. Quoting 0.719 without that sentence would be the same selective
+reading that produced the original IR 1.87.
+
+Two things do not depend on where the cap is set, and they are the claims worth
+making:
+
+- **5 of 5 folds at every cap tested.**
+- **Maximum active drawdown falls from −15.6 % to −5.9 %**, roughly two thirds,
+  again at every cap. For a product whose entire promise is behaving like the
+  index, that is arguably the more relevant number than the IR.
+
+Before the data repair in Notes item 27 this same overlay measured IR 0.299
+with an interval spanning zero, and the crossover sat near 7 % TE. Nothing about
+the agent changed. The benchmark it is measured against had a top-10 weight of
+72 % against a real 40 %, and active return is defined relative to that
+benchmark. **This is the one result in the project that the broken data was
+suppressing rather than inflating.**
 
 What rescues the result is that those intervals test the wrong question. They
 ask whether absolute IR exceeds zero. The claim worth making is relative:
@@ -348,7 +376,7 @@ ask whether absolute IR exceeds zero. The claim worth making is relative:
   p = 0.5⁵ = **0.031**.
 - Paired t-test across matched folds: **p = 0.024** for PPO, with all four
   algorithms pointing the same way (`5h_algo_significance.py`).
-- Max active drawdown falls from **−20.4 % to −5.9 %** at the compliant cap.
+- Max active drawdown falls from **−15.6 % to −5.9 %**, at every cap tested.
 
 Matched-sample tests difference out the period effect, so they carry far more
 power than comparing two noisy information ratios.
