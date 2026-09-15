@@ -58,6 +58,7 @@ PANEL_IN    = DATA_DIR / _panel_file
 OUT_SCORES  = DATA_DIR / "scores_cs_transformer.parquet"
 OUT_BT_LO   = DATA_DIR / "bt_cs_transformer.csv"
 OUT_BT_LS   = DATA_DIR / "bt_cs_transformer_ls.csv"
+PARTIAL_SCORES = OUT_SCORES.with_name(OUT_SCORES.stem + "_partial.parquet")
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -450,8 +451,18 @@ class ScoreNoiseHead(nn.Module):
         )
 
     def forward(self, enriched: torch.Tensor) -> torch.Tensor:
-        """enriched: (N, d_model) → log_std: (N,)"""
+        """enriched: (N, d_model) → log_std: (N,)
+
+        Sanitised here rather than at the call sites. clamp() passes NaN
+        straight through, so the bound below is no protection on its own, and
+        a full-history run died five hours in at the one call site that had no
+        guard of its own while the other did. Doing it once, in the place every
+        caller goes through, is the only version that cannot drift apart again.
+        """
         log_std = self.net(enriched).squeeze(-1)
+        log_std = torch.nan_to_num(log_std, nan=0.0,
+                                   posinf=self.LOG_STD_MAX,
+                                   neginf=self.LOG_STD_MIN)
         return log_std.clamp(self.LOG_STD_MIN, self.LOG_STD_MAX)
 
 
@@ -977,7 +988,7 @@ def grpo_finetune_cs_model(
                 X, mask, x_macro=x_macro, corr_matrix=corr_matrix)
             mu_now    = scores_now[:n_valid]
             log_s_now = noise_head(enriched_now[:n_valid])
-            std_now   = log_s_now.exp()
+            std_now   = log_s_now.exp().clamp(min=1e-4, max=10.0)
             dist_now  = torch.distributions.Normal(mu_now, std_now)
 
             # Re-sample same noisy scores (use old log_probs for ratio)
@@ -1315,15 +1326,39 @@ def main():
                 corr_np = retrain_panel[stock_feat_cols].corr(method="spearman").values
                 retrain_corr = torch.FloatTensor(corr_np).to(DEVICE)
 
+            # Flush what has been scored so far before touching the model.
+            #
+            # A retrain is the only thing in this loop that can fail, and the
+            # scores were previously held in memory until every month was done.
+            # A crash on the last of eleven retrains therefore threw away 132
+            # already-scored months along with five hours of GPU time. Writing
+            # here means the worst a late failure costs is the tail.
+            if all_scores:
+                try:
+                    part = pd.concat(all_scores, ignore_index=True)
+                    part.to_parquet(PARTIAL_SCORES, index=False)
+                    print(f"  [checkpoint] {len(part):,} rows through "
+                          f"{part['date'].max().date()} -> {PARTIAL_SCORES.name}")
+                except Exception as e:
+                    print(f"  [WARN] partial save failed: {e}")
+
             if va_cs_rl:
                 print(f"  Retraining at {m.date()} (train={len(tr_cs_exp)}, "
                       f"val={len(va_cs_rl)} months)...")
-                models = train_ensemble(
-                    tr_cs_exp, va_cs_rl, n_stock_features,
-                    n_macro=n_macro, corr_matrix=retrain_corr,
-                    n_seeds=n_seeds, rl_method=rl_method,
-                )
-                corr_matrix = retrain_corr  # use updated corr for predictions
+                # One bad fold should cost that fold, not the whole run. The
+                # RL stage is where instability shows up, so a failure here
+                # keeps the previous fold's models and carries on scoring.
+                try:
+                    models = train_ensemble(
+                        tr_cs_exp, va_cs_rl, n_stock_features,
+                        n_macro=n_macro, corr_matrix=retrain_corr,
+                        n_seeds=n_seeds, rl_method=rl_method,
+                    )
+                    corr_matrix = retrain_corr
+                except Exception as e:
+                    print(f"  [WARN] retrain failed at {m.date()}: "
+                          f"{type(e).__name__}: {e}")
+                    print( "  [WARN] carrying the previous fold's model forward.")
 
         if m not in cs_map:
             continue
