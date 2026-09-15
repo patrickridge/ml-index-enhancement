@@ -1155,6 +1155,35 @@ def main():
     all_feat_cols = [c for c in panel.columns if c not in exclude]
     macro_cols = [c for c in MACRO_COLS if c in panel.columns]
     stock_feat_cols = [c for c in all_feat_cols if c not in macro_cols]
+
+    # Drop columns with no cross-sectional variation. Inlined rather than
+    # imported from config, because this file has to run standalone on Kaggle.
+    # Keep it in step with config.drop_dead_features.
+    #
+    # Two kinds qualify and both are undefined rather than weak: a column with
+    # one value across the whole panel, and one whose value is identical for
+    # every stock within a month. Neither can rank anything, so in stage 1 they
+    # become attention tokens that carry nothing while still consuming
+    # parameters. Detected at runtime, so a column returns on its own the day
+    # its data arrives.
+    _flat, _monthly, _live = [], [], []
+    for c in stock_feat_cols:
+        if panel[c].nunique(dropna=True) <= 1:
+            _flat.append(c)
+        elif panel.groupby("date")[c].nunique().max() <= 1:
+            _monthly.append(c)
+        else:
+            _live.append(c)
+    if _flat or _monthly:
+        print(f"Dead features: {len(stock_feat_cols)} -> {len(_live)} "
+              f"[-{len(_flat)} empty, -{len(_monthly)} not cross-sectional]")
+        if _flat:
+            print(f"  empty: {', '.join(_flat[:6])}"
+                  f"{' ...' if len(_flat) > 6 else ''}")
+        if _monthly:
+            print(f"  month-level: {', '.join(_monthly)}")
+    stock_feat_cols = _live
+
     n_stock_features = len(stock_feat_cols)
     n_macro = len(macro_cols)
 
