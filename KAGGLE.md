@@ -111,13 +111,20 @@ Afterwards, locally:
 ML_OOS_START=2013-12-31 python 3f_lgbm_baseline.py   # tree baseline on the same months
 python 4b_index_enhancement.py                       # index enhancement on the new scores
 python 4h_bootstrap_ci.py                            # confidence intervals on both
-python 5c_walk_forward.py                            # RL overlay, now on transformer scores
 ```
 
 Run 3f with the same `ML_OOS_START` as the Kaggle job. It is CPU-only and takes
 a few minutes. Skipping it leaves the tree baseline on a different window from
 the transformer, which is the mismatch that let the retracted +0.56 stand for
 six months. Matching windows is the point of the whole exercise.
+
+**`5c_walk_forward.py` is deliberately not in that list.** It does not consume
+a scores file. It rebuilds factor-combo scores inside each fold, refitting the
+factor weights, z-score normalisation, SAC agent and regime median from that
+fold's own training slice, which is what keeps the walk-forward honest. So the
+RL overlay result does not change when this run lands, and rerunning 5c
+afterwards does nothing. Pointing the overlay at transformer scores would mean
+changing the script, not changing its inputs.
 
 ## Checks worth doing on the output
 
