@@ -19,11 +19,22 @@ considered institutional-grade; > 1.0 is top-quartile.
 This repo implements that strategy on the S&P 500 and tests whether a
 cross-sectional transformer can outperform simpler models at the ranking step.
 
-**The result is negative.** Once the universe is cleaned of delisted tickers
-with corrupt price data, no ranking model tested here beats the benchmark
-out-of-sample. An earlier version of this README reported IR 1.87 for the
-CS-Transformer, then IR 0.56 for a LightGBM baseline once that was retracted.
-Both numbers came from the same cause. The audit is documented in full below.
+**Stock selection does not work here; tilt sizing does.** On clean data no
+ranking model beats the benchmark over 140-152 out-of-sample months, and no
+factor in a 253-strong library survives multiple-testing correction. What does
+survive is the reinforcement-learning overlay that decides *how large* the tilt
+should be: it beats a fixed tilt in 5 of 5 walk-forward folds at every risk
+budget tested, cuts maximum active drawdown from −15.6 % to −5.9 %, and returns
+IR 0.579 with a 95 % interval of [+0.10, +1.06] at 5 % tracking error. Those are
+separable problems and only one of them was solvable with this data.
+
+Earlier versions of this README reported IR 1.87 for the CS-Transformer, then
+IR 0.56 for a LightGBM baseline once that was retracted, then 17 surviving
+factors. All three traced to silent data faults: delisted tickers with
+fabricated returns, a benchmark holding 19 % cash, volume missing for 72 % of
+the universe, and a per-ticker price scale factor. The audit that found them is
+documented in full below, along with the one result the same faults were
+*suppressing* rather than inflating.
 
 Written as a working record of what was built and what the numbers actually
 show, including where they turned out to be wrong.
@@ -106,9 +117,10 @@ that produced IR 1.87.
    stamped with the date the figure became *public* rather than the period it describes - a 10-K
    lands about 40 days after quarter end and short interest about 8 days after settlement, so
    using the period date would hand the model weeks of hindsight.
-2. **Feature engineering** (`1h_feature_engineering.py`): compute ~263 factor columns across 24 categories,
-   of which 237 carry cross-sectional information and the rest are empty fetches (see below)
-   (momentum, volatility, liquidity, microstructure, mined-alpha candidates, macro).
+2. **Feature engineering** (`1h_feature_engineering.py`): compute ~283 factor columns across 24 categories,
+   of which 253 carry cross-sectional information and are testable; the rest are 13F and
+   news-sentiment columns that are empty or vary only by month (momentum, volatility, liquidity,
+   microstructure, fundamentals, short interest, mined-alpha candidates, macro).
    Per-stock features are cross-sectionally ranked each month; macro features are kept at raw scale.
 3. **Factor diagnostics** (`2*` scripts): IC, IC decay, quintile returns, crowding/correlation,
    IS-only screening of new candidates via Lasso / RF / LightGBM and BHY.
