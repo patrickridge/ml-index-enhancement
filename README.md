@@ -62,18 +62,19 @@ conditioning. Training is two-stage: masked-MSE pre-train, then a
 portfolio-level RL fine-tune (GRPO or DAPO) optimising portfolio return rather
 than per-stock label accuracy.
 
-**The hypothesis is not supported, and is not yet cleanly tested either.** On
-the pre-rebuild panel the CS-Transformer posted IR −0.31 over 17 months, an
-interval far too wide to conclude anything from. Those scores are now
-quarantined: they were produced before the price, volume and benchmark repairs,
-so comparing them against the current benchmark would be meaningless. A GPU run
-on the rebuilt panel is what settles it.
+**The hypothesis is not supported, and it has now been tested properly.** On
+140 out-of-sample months of rebuilt data, with Macro FiLM active and
+fundamentals in the feature set, the CS-Transformer posts IR −0.221 with a 95 %
+interval of [−0.74, +0.36]. The LightGBM baseline it was supposed to beat posts
++0.143 over 152 months with an interval of [−0.36, +0.75]. **Those intervals
+overlap across almost their entire range**, so the data cannot separate the two
+architectures, and neither is separable from zero.
 
-What *can* be said already is that the architecture question is not where the
-binding constraint lies. On matched hygiene the tree baseline reaches IR 0.143
-over 152 months with an interval spanning zero, and no factor in the library
-survives multiple-testing correction. A better ranker has very little to rank
-on.
+The architecture was never the binding constraint. No factor in the library
+survives multiple-testing correction, so a better ranker has very little to
+rank on. Cross-sectional attention is a reasonable idea that this dataset
+cannot evaluate, because there is not enough cross-sectional signal present for
+any ranker to exploit.
 
 ## Why reinforcement learning on top
 
@@ -294,17 +295,23 @@ times, so these rows are not a like-for-like horse race.
 | Model | Months | Ann. alpha | TE | IR | 95 % CI | P(IR>0) |
 |---|---|---|---|---|---|---|
 | **RL tilt overlay** | 144 | +2.90 % | 5.00 % | **+0.579** | **[+0.10, +1.06]** | **99 %** |
-| LightGBM | 152 | +0.29 % | 2.02 % | +0.143 | [−0.37, +0.74] | 70 % |
-| Factor-combo | 44 | — | — | −0.264 | [−1.20, +0.44] | 24 % |
-| CS-Transformer | — | — | — | pending | — | — |
-| *LightGBM, weight floor off* | 18 | +0.83 % | 1.47 % | *+0.56* | [−0.69, +2.12] | 81 % |
+| LightGBM | 152 | +0.29 % | 2.02 % | +0.143 | [−0.36, +0.75] | 70 % |
+| CS-Transformer | 140 | −1.04 % | 4.70 % | −0.221 | [−0.74, +0.36] | 21 % |
+| Factor-combo | 44 | — | — | −0.264 | [−1.21, +0.45] | 24 % |
+| *LightGBM, weight floor off* | 18 | +0.83 % | 1.47 % | *+0.56* | [−0.69, +1.99] | 81 % |
 
 The overlay is the only row whose interval excludes zero, and it sits at 5 %
 tracking error rather than inside the 2-4 % mandate; the sweep across tilt caps
-is below. The CS-Transformer row is empty on purpose: its previous scores were
-produced on the pre-rebuild panel, and comparing them against a freshly built
-benchmark is the exact mismatch that let the retracted +0.56 stand for six
-months. It returns when a GPU run on the current panel completes.
+is below.
+
+**The CS-Transformer row is now a real test rather than a 17-month fragment.**
+140 out-of-sample months on the rebuilt panel, trained with Macro FiLM active,
+on a feature set that includes fundamentals and short interest. Its monthly IC
+is *positive* at +0.0042 (ICIR +0.294) while its portfolio IR is −0.221, which
+is the same IC-to-IR divergence documented in item 21: the z-score tilt sizes
+positions by score magnitude, so the bet concentrates in the tails of the score
+distribution and a mildly positive ranking with badly positioned extremes loses
+money. Its interval spans zero either way.
 
 The italic row is kept as a control rather than a result. It is the same script
 on the same months with the same hyperparameters as the clean LightGBM run, and
