@@ -377,13 +377,37 @@ Fixed-α baseline, for reference: IR 0.289 at 9.63 % TE.
 across zero. Quoting 0.719 without that sentence would be the same selective
 reading that produced the original IR 1.87.
 
-Two things do not depend on where the cap is set, and they are the claims worth
-making:
+#### The baseline has to be the same size, or the test measures nothing
 
-- **5 of 5 folds at every cap tested.**
-- **Maximum active drawdown falls from −15.6 % to −5.9 %**, roughly two thirds,
-  again at every cap. For a product whose entire promise is behaving like the
-  index, that is arguably the more relevant number than the IR.
+The fixed-α baseline originally ran at 1.0 % against an agent averaging 0.32 %,
+three times the tilt and therefore three times the tracking error. Since IR
+falls as α grows, a smaller tilt wins that comparison on arithmetic alone, and
+"beats fixed in 5 of 5 folds" would have been true and empty. A cumulative
+active return plot makes the problem obvious: the fixed leg earns nearly twice
+as much in absolute terms and only loses on the denominator.
+
+Re-run with the baseline at the agent's own mean tilt, so both carry the same
+risk:
+
+| | RL overlay | Fixed, same size |
+|---|---|---|
+| Ann. alpha | **2.90 %** | 1.73 % |
+| Tracking error | 5.00 % | 5.04 % |
+| Information ratio | **0.579** | 0.344 |
+| Max active drawdown | **−5.78 %** | −7.77 % |
+| Folds won | **5/5** | — |
+
+**At matched tracking error the agent produces 67 % more alpha.** That cannot be
+a level effect, because the levels are equal. `5c` now defaults to the matched
+baseline; `ML_FIXED_ALPHA=0.010` reproduces the old comparison.
+
+Two things do not depend on where the cap is set:
+
+- **5 of 5 folds at every cap tested**, against a same-size baseline.
+- **Maximum active drawdown falls from −15.6 % to −5.9 %** against the 1 % leg,
+  and −5.78 % against −7.77 % at matched size. For a product whose entire
+  promise is behaving like the index, that is arguably more relevant than the
+  IR.
 
 Before the data repair in Notes item 27 this same overlay measured IR 0.299
 with an interval spanning zero, and the crossover sat near 7 % TE. Nothing about

@@ -89,7 +89,16 @@ TRAIN_START_GLOBAL = "2010-01-01"
 # unconstrained behaviour:  ML_ALPHA_MAX=0.05 python 5c_walk_forward.py
 ALPHA_MIN  = float(os.environ.get("ML_ALPHA_MIN", 0.002))
 ALPHA_MAX  = float(os.environ.get("ML_ALPHA_MAX", 0.018))
-FIXED_ALPHA = 0.010       # baseline to beat
+# Baseline to beat. Must be comparable in SIZE to what the agent picks, or the
+# comparison measures level rather than adaptation: at 0.010 against an agent
+# averaging 0.0032, the fixed leg carries three times the tracking error, and
+# since IR falls as alpha grows the agent wins on arithmetic alone.
+#
+# The default is now the agent's own mean tilt, so the baseline carries the
+# same tracking error (5.04% against 5.00%) and the comparison isolates
+# adaptation. Set ML_FIXED_ALPHA=0.010 to reproduce the old, flattering
+# version, which the README reports alongside as a control.
+FIXED_ALPHA = float(os.environ.get("ML_FIXED_ALPHA", 0.00316))
 
 TRAIN_EPOCHS = 400
 BATCH_SIZE   = 32
