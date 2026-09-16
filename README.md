@@ -273,7 +273,7 @@ Method is selectable in `config.py: RL_FINETUNE_PARAMS["method"]`.
 | 6 | Beta / correlation | market / downside / rolling beta |
 | 7 | Microstructure | spread, price impact, autocorr |
 | 8 | Cross-sectional | SPX- and sector-relative moves |
-| 9 | Fundamentals | ROE, ROA, margins, growth, EQ (`1j`) |
+| 9 | Fundamentals | ROE, ROA, margins, growth, EQ (`1u`, SEC EDGAR) |
 | 10 | Macro / regime | VIX, yield curve, credit, PMI |
 | 11 | Time-signal v1 | ADX, trend consistency |
 | 12 | Barra-style | value, growth, leverage, EY |
@@ -283,7 +283,7 @@ Method is selectable in `config.py: RL_FINETUNE_PARAMS["method"]`.
 | 16 | Mined alpha | 12 hand-mined price signals |
 | 17 | Time-signal v2 | ADX regime, roll spread, vol expansion |
 | 18 | Seasonality | same-month, turn-of-month, January |
-| 19 | Short interest | % float, days-to-cover (`1k`) |
+| 19 | Short interest | % float, days-to-cover (`1v`, FINRA) |
 | 20 | Institutional | ownership %, HHI (`1l`) |
 | 21 | Prediction markets | Fed/VIX/policy uncertainty (`1m`) |
 | 22 | Factor-mining candidates | 9 families, ~69 features + entropy regime |
@@ -470,12 +470,19 @@ not from the choice of policy gradient.
 
 ### Factor library, after multiple-testing correction
 
-Of 237 factors with computable t-statistics, 14 pass a raw p < 0.05 against
-roughly 12 expected by chance. **None survives Benjamini-Hochberg-Yekutieli at
+Of 253 factors with computable t-statistics, 15 pass a raw p < 0.05 against
+12.7 expected by chance. **None survives Benjamini-Hochberg-Yekutieli at
 FDR 0.10** - BHY rather than BH because factor IC series are heavily
 cross-correlated and BH assumes independence.
 
-Fourteen against twelve expected is what 237 tests produce on their own.
+Fifteen against twelve-point-seven is what 253 tests produce on their own. At
+p < 0.001, where 0.25 are expected, **zero** clear it. The strongest factor in
+the library is `dollar_vol_21d` at t = −3.03; BHY at 253 tests needs roughly
+t > 4.0 for the leading factor, and plain BH needs 3.55.
+
+Median |t| across the library is **0.566**, against 0.674 for the median of a
+standard normal. The distribution of t-statistics here is not a weakened
+version of a real signal. It is what 253 correlated tests on noise look like.
 
 An earlier version of this section reported **17 survivors, every one a size,
 liquidity or volatility factor**, and built the project's central explanation on
@@ -522,35 +529,47 @@ replaces: there is no detectable cross-sectional signal in this data to find,
 and four independent models agreeing on that is the consistent answer rather
 than four separate failures.
 
-### What 237 leaves out, and why it matters
+### The escape hatch is now closed
 
-The panel carries 263 stock factor columns but only 237 can be tested, and the
-26 missing ones are not a rounding detail. Twenty-one hold a single value
-across all 147,733 rows, because those fetches never landed usable data:
+An earlier version of this section said the tested library was entirely price
+and volume derived, so value and quality were absent from the results because
+they had **never been tested** rather than because they failed. That was true
+and it was the single most likely thing to change the conclusion. It is no
+longer true. `1u_fetch_edgar_fundamentals.py` and `1v_fetch_short_interest.py`
+landed real point-in-time data, and both are now in the tested library:
 
-| Group | Columns | Status |
-|---|---|---|
-| Fundamentals | 12 | `1j_fetch_simfin.py` produced nothing; the Wind export covered Dec 2025 only |
-| Short interest | 4 | `1k_fetch_short_interest.py` produced nothing |
-| Institutional / 13F | 4 | `1l_fetch_13f.py` produced nothing |
-| Other | 1 | `log_mktcap_bot` |
+| Factor | IC | t | Months |
+|---|---|---|---|
+| `eps_growth_yoy` | +0.0097 | +1.49 | 99 |
+| `roa` | +0.0115 | +1.18 | 109 |
+| `debt_to_equity` | −0.0078 | −1.09 | 109 |
+| `roe` | +0.0078 | +1.03 | 107 |
+| `revenue_growth_yoy` | +0.0058 | +0.96 | 97 |
+| `pb_ratio` | +0.0103 | +0.82 | 109 |
+| `pe_ratio` | +0.0065 | +0.57 | 109 |
+| `short_change_2w` | −0.0061 | −1.02 | 60 |
+| `short_pct_float` | −0.0080 | −0.45 | 60 |
 
-The remaining five (`january_dummy` and four sentiment/news columns) vary by
-month but are identical across stocks, so they cannot rank anything. A Spearman
-IC against a column with no cross-sectional variation is undefined, not weak,
-which is why they drop out before testing rather than failing it.
+**Nothing reaches |t| = 1.5.** The bar for BHY at 253 tests is near 4.0.
 
-**So the tested library is entirely price and volume derived.** Read the
-survivor list again with that in mind: only size, liquidity and volatility
-survive because those are the only *kinds* of effect price and volume data can
-express. There were never any fundamentals in there to find. That is a
-different and more useful statement than "the factors were weak", and it names
-the one input most likely to change the conclusion.
+One honest caveat: these run on shorter samples than the price factors, because
+EDGAR coverage starts later and FINRA's API history begins in 2017-12. A t-stat
+scales with √months, so on the full 156 months the short-interest figures would
+be about 1.6× larger - which moves the best of them from 1.02 to 1.65 and
+changes no conclusion.
 
-Value, quality and sentiment are absent from the survivor list because they
-were **never tested**, not because they were tested and failed. `config.py`
-drops these columns at load, detected at runtime rather than hardcoded, so each
-returns on its own the day its data arrives.
+Ten columns still cannot be tested: four 13F columns, which are genuinely empty
+(`1l_fetch_13f.py` produced nothing), and six that vary by month but are
+identical across stocks - `january_dummy`, `turn_of_month`, and four
+sentiment/news aggregates. A Spearman IC against a column with no
+cross-sectional variation is undefined, not weak, which is why they drop out
+before testing rather than failing it. `config.py` detects them at load at
+runtime rather than hardcoding a list, so each returns on its own the day its
+data arrives.
+
+The remaining untested input is institutional ownership. It is the only one
+left that could carry a different *kind* of effect, and on the evidence above
+it is not where the money is.
 
 #### Threshold sensitivity, and a caveat on the above
 
@@ -588,7 +607,7 @@ The control group is the reassuring part: factors that failed BHY stay
 insignificant at every floor, so the filter is not distorting the cross-section
 broadly. Override with `ML_MIN_WEIGHT` to reproduce any row above.
 
-#### Statistical thresholds, which hold up better
+#### The thresholds are not what produce the answer
 
 Three conventions sit behind a survivor count: the raw p < 0.05 screen, the FDR
 level of 0.10, and the decision to correct for arbitrary dependence. None is
@@ -598,32 +617,44 @@ sweeps all three.
 
 | FDR q | BHY | plain BH |
 |---|---|---|
-| 0.01 | 15 | 16 |
-| 0.05 | 16 | 17 |
-| **0.10** | **17** | 18 |
-| 0.20 | 17 | 19 |
-| 0.30 | 17 | 22 |
+| 0.01 | 0 | 0 |
+| 0.05 | 0 | 0 |
+| **0.10** | **0** | 0 |
+| 0.15 | 0 | 0 |
+| 0.20 | 0 | 0 |
+| 0.30 | 0 | 3 |
 
-**The count is flat at 17 from q = 0.10 to q = 0.30.** Tripling the tolerance
-for false discoveries finds nothing new, so the FDR choice is not what produces
-the answer.
+**Zero, flat across a thirtyfold range of tolerance**, and zero under plain BH
+until q = 0.30, where a 30 % false-discovery rate admits three. Neither the
+dependence correction nor the FDR level is what produces the answer, which is
+the only thing this sweep is for.
 
-The raw level matters even less. 17 factors clear p < 0.001 against 0.2
-expected by chance, a ratio of 72, while the 24 that clear p < 0.05 sit against
-11.9 expected. Everything between 0.001 and 0.05 is noise, so the conventional
-level is reported for contrast rather than relied on.
+The raw level tells the same story from the other side:
 
-BHY costs one factor against plain BH despite a bar 6.0x stricter, because the
-survivors' p-values are small enough that the dependence penalty does not reach
-them. The result does not rest on assuming the tests are independent, which
-matters given that 308 factor pairs correlate above 0.70.
+| Raw p | Pass | Expected by chance | Ratio |
+|---|---|---|---|
+| 0.10 | 22 | 25.3 | 0.87 |
+| 0.05 | 15 | 12.7 | 1.19 |
+| 0.01 | 4 | 2.5 | 1.58 |
+| 0.005 | 3 | 1.3 | 2.37 |
+| 0.001 | 0 | 0.25 | 0.00 |
 
-So the two sensitivity checks point different ways, and both are reported.
-The weight floor is a genuine weakness in the *magnitude* of the t-statistics.
-The statistical thresholds are not a weakness at all. On the wider question of
-whether the profession's conventional hurdle is too lenient once you account
-for how many factors have been tested, see Harvey, Liu and Zhu (2016), which
-argues for t > 3.0 rather than t > 2.0.
+**At every conventional level the library produces about as many hits as chance
+would.** The ratio never reaches 2.4 and the tail is empty: not one factor in
+253 clears p < 0.001. A library with a few genuinely strong factors buried in
+noise looks nothing like this - it has a fat tail of small p-values and a ratio
+that climbs as the screen tightens. This one flattens.
+
+So the correction is not what kills the factors, and reporting it as though a
+harsher test defeated a real signal would overstate what is here. The
+uncorrected numbers already sit at chance. BHY is reported because it is the
+right test when 308 factor pairs correlate above 0.70, not because it is doing
+the work.
+
+On the wider question of whether the profession's conventional hurdle is too
+lenient once you account for how many factors have been tested, see Harvey, Liu
+and Zhu (2016), which argues for t > 3.0 rather than t > 2.0. Exactly one
+factor here reaches it, at 3.03.
 
 ### Capacity
 
@@ -744,7 +775,13 @@ drops rather than filtering silently.
 Applied to the CS-Transformer test panel it removes 2,620 of 8,840 stock-months,
 all on the weight criterion. Those rows were carrying the entire result.
 
-### RL walk-forward (143 OOS months, 2014-2025)
+### Fold-level detail, at the widest cap
+
+The α = 0.050 row from the sweep above, broken out by fold. It is the least
+flattering configuration and the one with the loosest risk budget, kept because
+the fold breakdown is where the result actually lives. The baseline here is the
+old fixed α = 1 % leg rather than the matched-size one, so read the *pattern*
+across folds rather than the IR gap.
 
 Clean universe, benchmark renormalised, all parameters refit per fold.
 
@@ -764,39 +801,35 @@ Clean universe, benchmark renormalised, all parameters refit per fold.
 | 2020-2021 | 24 | 0.184 | 0.122 |
 | 2022-2025 | 47 | 0.486 | 0.274 |
 
-**The RL overlay beats a fixed tilt in 4 of 5 folds**, across four distinct
-regimes, with factor weights, state normalisation and the policy all refit
-inside each fold's training slice. This is the one result in the project that
-survived the audit intact, and the fold-level consistency is what makes it
-worth anything — a single concatenated IR of 0.31 on its own would not be.
+At this cap the overlay beats the fixed tilt in **4 of 5 folds**, across four
+distinct regimes, with factor weights, state normalisation and the policy all
+refit inside each fold's training slice. Tightening the cap to anything in the
+tested range takes it to 5 of 5. The fold-level consistency is what makes the
+result worth anything - a single concatenated IR of 0.31 on its own would not
+be.
 
 An earlier version reported IR 0.88 against 0.28. Those runs carried the same
 benchmark-normalisation bug and contaminated universe as everything else here.
 
 Two things to be clear about:
 
-- **Tracking error is 9.71 %, not 2-4 %.** The agent picks a mean α of 2.61 %
-  and tops out at the 5 % cap. Whatever its IR, this is not operating inside
-  an index-enhancement mandate. Constraining α to hold TE in budget, and
-  re-measuring, is unfinished work.
+- **Tracking error is 9.71 %, not 2-4 %.** At this cap the agent picks a mean α
+  of 2.61 % and tops out at the 5 % limit, so this configuration is not
+  operating inside an index-enhancement mandate. The capped runs in the sweep
+  above are the ones to quote.
 - **It runs on factor-combo scores, not CS-Transformer scores.** So this is a
   different signal from the model comparison above, and the two results cannot
   be chained together.
 
-### RL algorithm comparison
-
-| Algorithm | IR | Notes |
-|---|---|---|
-| GRPO | **0.88** | PPO clipping + KL penalty |
-| PPO | 0.87 | critic baseline |
-| SAC | 0.79 | twin Q-critics, entropy reg |
-| Fixed α = 1 % | 0.28 | no RL |
-
 ### Data splits
+
+The ranking models use a fixed three-way split; the RL overlay uses the 5-fold
+expanding walk-forward described above instead, which is why its sample is 144
+months rather than 12.
 
 | Split | Period | Months |
 |---|---|---|
-| Train | 2010–2022 | ~156 |
+| Train | 2010-2022 | ~156 |
 | Validation | 2023-01 to 2024-06 | 18 |
 | Test | 2024-07 onward | ~12+ |
 
@@ -861,10 +894,16 @@ rather than 500. Survivorship is estimated at about 0.50 %/yr in
 earlier in the history, so those series stitch two firms together. The weight
 floor does not catch this.
 
-**No fundamental data.** 21 columns for fundamentals, short interest and 13F
-are declared and empty, so the working library is entirely price and volume
-derived. This is the single most likely thing to change the conclusions, and
-the pipeline is already built to take the data.
+**Institutional ownership is still empty.** Four 13F columns are declared and
+never populated, so ownership and crowding are untested. Fundamentals and short
+interest used to sit in this paragraph; they now carry real point-in-time data
+from SEC EDGAR and FINRA, are tested above, and reach |t| 1.49 at best.
+
+**Fundamental and short-interest history is shorter than the price history.**
+EDGAR coverage gives 97-109 months against 156 for price factors, and FINRA's
+API starts in 2017-12, so short interest has 60. Those factors are tested on
+less data than everything else and their t-statistics are correspondingly
+smaller.
 
 **Six live index members are missing** (AVB, BK, CTRA, EA, EQR, HOLX) because
 they will not refetch from the price provider.
@@ -875,9 +914,15 @@ fault gets caught - every bug in the audit trail below was silent.
 
 ## Status / open work
 
-- The CS-Transformer scores in `data/` predate the full-history run. A Kaggle
-  retrain on the rebuilt panel is the next step.
-- Fundamental data is only a handful of recent quarterly snapshots. A Simfin
-  API key pulls the full history in a few minutes.
-- Quarterly historical shares outstanding would close most of the remaining
+- **Widen the universe past the S&P 500.** Size and illiquidity are the two
+  strongest effects in the library and both are structurally underpowered in a
+  universe selected for being large and liquid. A Russell 2000 or all-cap panel
+  is the one change that could plausibly move the factor result, and the
+  pipeline is universe-agnostic below `1b_fetch_constituents.py`.
+- **13F institutional ownership**, the last declared-and-empty group. EDGAR
+  serves it free on the same endpoint pattern `1u` already uses.
+- **Quarterly historical shares outstanding** would close most of the remaining
   benchmark gap. `mktcap_shares.parquet` has them for 152 of 677 tickers.
+- More OHLCV factor mining is the *weakest* remaining option: 70 mined
+  candidates already underperform the hand-built factors, and every additional
+  test raises the BHY bar for all of them.
