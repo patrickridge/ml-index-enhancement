@@ -401,6 +401,27 @@ risk:
 a level effect, because the levels are equal. `5c` now defaults to the matched
 baseline; `ML_FIXED_ALPHA=0.010` reproduces the old comparison.
 
+#### The agent tilts harder in the months that pay more per unit
+
+A second test of the same claim, from a different direction. If the policy is
+genuinely adapting rather than drifting, the months it chooses to tilt hard
+should be months where tilting *pays better*, not merely months where it tilted
+more. Dividing active return by α removes the mechanical part and leaves the
+payoff per unit of tilt:
+
+| | Mean active return per unit of α |
+|---|---|
+| High-tilt months (above median α) | **+2.02** |
+| Low-tilt months (below median α) | −1.35 |
+
+Welch t = 4.64, p = 7.8e-6, 72 months each side. Across all 144 months α
+correlates with per-unit payoff at **r = +0.425, p = 1.1e-7**.
+
+The agent only ever moves α between 0.20 % and 0.40 %, so this is a narrow
+range producing a wide separation in outcome. Two independent pieces of
+evidence now point the same way: more alpha at matched risk, and tilt size
+lining up with when tilting works.
+
 Two things do not depend on where the cap is set:
 
 - **5 of 5 folds at every cap tested**, against a same-size baseline.
